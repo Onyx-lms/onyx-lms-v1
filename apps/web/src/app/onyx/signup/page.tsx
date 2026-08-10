@@ -17,7 +17,9 @@ export default async function OnyxSignupPage() {
       footer={
         <>
           Already have an account?{' '}
-          <Link href="/onyx/login" className="text-brand-600 hover:underline">Sign in</Link>
+          {/* See the matching comment in onyx/login/page.tsx: a link inside a
+              sentence needs a non-colour cue, not just a 1.17:1 hover state. */}
+          <Link href="/onyx/login" className="text-brand-600 underline">Sign in</Link>
         </>
       }
     >

@@ -18,6 +18,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   placement: 'Placement',
   employer: 'Employer',
   admin: 'Administrator',
+  guardian: 'Parent or guardian',
 };
 
 const STUDENT: OnyxNavItem[] = [
@@ -29,6 +30,10 @@ const STUDENT: OnyxNavItem[] = [
   { href: '/onyx/contests', label: 'Contests' },
   { href: '/onyx/jobs', label: 'Jobs' },
   { href: '/onyx/interviews', label: 'Interviews' },
+  { href: '/onyx/timetable', label: 'Timetable' },
+  { href: '/onyx/results', label: 'Results' },
+  { href: '/onyx/fees', label: 'Fees' },
+  { href: '/onyx/support', label: 'Help' },
   { href: '/onyx/profile', label: 'Your profile' },
 ];
 
@@ -40,6 +45,8 @@ const FACULTY: OnyxNavItem[] = [
   { href: '/onyx/assessments', label: 'Assessments' },
   { href: '/onyx/invigilate', label: 'Invigilate' },
   { href: '/onyx/programs', label: 'Programmes' },
+  { href: '/onyx/timetable', label: 'Timetable' },
+  { href: '/onyx/support', label: 'Mentor queue' },
   { href: '/onyx/people', label: 'People' },
 ];
 
@@ -52,6 +59,8 @@ const EXAMS: OnyxNavItem[] = [
   { href: '/onyx/workspaces', label: 'Workspaces' },
   { href: '/onyx/assessments', label: 'Assessments' },
   { href: '/onyx/invigilate', label: 'Invigilate' },
+  { href: '/onyx/exams', label: 'Examinations' },
+  { href: '/onyx/timetable', label: 'Timetable' },
 ];
 
 // Placement is the role O05 gives work to: employers, posts, drives and the
@@ -82,8 +91,23 @@ const ADMIN: OnyxNavItem[] = [
   { href: '/onyx/assessments', label: 'Assessments' },
   { href: '/onyx/invigilate', label: 'Invigilate' },
   { href: '/onyx/programs', label: 'Programmes' },
+  { href: '/onyx/timetable', label: 'Timetable' },
+  { href: '/onyx/exams', label: 'Examinations' },
+  { href: '/onyx/finance', label: 'Fees' },
+  { href: '/onyx/support', label: 'Mentor queue' },
   { href: '/onyx/people', label: 'People' },
   { href: '/onyx/audit', label: 'Audit log' },
+];
+
+/**
+ * A guardian has one page.
+ *
+ * Everything they can see is derived from links other people control, so there
+ * is nothing else to navigate to -- no courses of their own, no profile, no
+ * catalogue. A menu with items they cannot use would be worse than a short one.
+ */
+const GUARDIAN: OnyxNavItem[] = [
+  { href: '/onyx/family', label: 'Your family' },
 ];
 
 const NAV: Record<Role, OnyxNavItem[]> = {
@@ -93,6 +117,7 @@ const NAV: Record<Role, OnyxNavItem[]> = {
   employer: EMPLOYER,
   placement: PLACEMENT,
   admin: ADMIN,
+  guardian: GUARDIAN,
 };
 
 export function navFor(role: Role): OnyxNavItem[] {

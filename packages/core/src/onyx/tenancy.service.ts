@@ -16,7 +16,17 @@ const TENANT_COLUMNS = 'id, name, slug, status, plan, created_at, updated_at';
 const USER_COLUMNS = 'id, email, name, phone, photo, status, email_verified_at, created_at';
 const MEMBERSHIP_COLUMNS = 'id, tenant_id, user_id, role, status, created_at';
 
-export const ROLES: Role[] = ['student', 'faculty', 'exams', 'placement', 'employer', 'admin'];
+/**
+ * Every role a membership may hold.
+ *
+ * Two of these are outsiders rather than staff: `employer` (O05) sees only its
+ * own posts, and `guardian` (O07) sees only what a learner has consented to
+ * share. Both are in this list because both need an account; neither is
+ * anywhere in a staff check.
+ */
+export const ROLES: Role[] = [
+  'student', 'faculty', 'exams', 'placement', 'employer', 'admin', 'guardian',
+];
 
 export class TenancyService {
   #db: OnyxDb;

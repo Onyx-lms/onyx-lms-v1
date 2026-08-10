@@ -1,0 +1,495 @@
+/**
+ * Onyx O07 -- CMP-01 to CMP-04.
+ *
+ * Academic administration, timetables, examinations, fees and guardians.
+ *
+ * Three roles appear here that appear nowhere else in this shape:
+ *
+ *   * **`exams`** owns the calendar, the halls, moderation and publication. Not
+ *     `faculty`: a lecturer may enter marks for their own paper and may not
+ *     decide when results go out.
+ *   * **`admin`** owns money. Fees are the one area where faculty have no
+ *     access at all, in either direction.
+ *   * **`guardian`** reaches exactly four routes, all of them derived from
+ *     links other people control, and none of them taking a learner id the
+ *     guardian chose without the service checking the link first.
+ */
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { z } from 'zod';
+import { validate, ok, requireOnyx, requireOnyxRole } from '@onyx/core';
+import type { AppContext } from '../../context.ts';
+
+const asReq = (req: FastifyRequest) => ({
+  headers: req.headers as Record<string, string | string[] | undefined>,
+  cookies: (req as unknown as { cookies?: Record<string, string> }).cookies,
+});
+
+const idOf = (req: FastifyRequest, key = 'id') =>
+  Number((req.params as Record<string, string>)[key]);
+
+/** The registry: who builds the term. */
+const REGISTRY = ['admin'] as const;
+/** The examinations office. */
+const EXAMS = ['admin', 'exams'] as const;
+/** Faculty may enter marks for a paper; only EXAMS may moderate or publish. */
+const MARKERS = ['admin', 'exams', 'faculty'] as const;
+
+const TimeSchema = z.string().regex(/^\d{1,2}:\d{2}(:\d{2})?$/,
+  'A time looks like 09:00.');
+
+export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext): void {
+  const viewerOf = (req: FastifyRequest) => {
+    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    return { claims, viewer: { role: claims.tenant_role, userId: claims.user_id } };
+  };
+
+  // =========================================================================
+  // CMP-01a -- faculty allocation
+  // =========================================================================
+
+  app.post('/api/onyx/allocations', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...REGISTRY);
+    const body = validate(z.object({
+      semester_id: z.number().int().positive(),
+      course_id: z.number().int().positive(),
+      user_id: z.number().int().positive(),
+      batch_id: z.number().int().positive().nullish(),
+      kind: z.enum(['lead', 'assistant', 'lab']).optional(),
+      hours_per_week: z.number().int().min(0).max(60).optional(),
+    }), req.body);
+    return ok(await ctx.onyxCampus.allocate(claims.tenant_id, body));
+  });
+
+  app.get('/api/onyx/allocations', async (req) => {
+    const { claims } = viewerOf(req);
+    const query = req.query as { semester_id?: string; user_id?: string };
+    return ok(await ctx.onyxCampus.allocations(claims.tenant_id, {
+      semester_id: query.semester_id ? Number(query.semester_id) : undefined,
+      user_id: query.user_id ? Number(query.user_id) : undefined,
+    }));
+  });
+
+  app.get('/api/onyx/semesters/:id/workload', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    return ok(await ctx.onyxCampus.workload(claims.tenant_id, idOf(req)));
+  });
+
+  // =========================================================================
+  // CMP-01b -- rooms and the timetable
+  // =========================================================================
+
+  app.post('/api/onyx/rooms', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...REGISTRY);
+    const body = validate(z.object({
+      code: z.string().min(1).max(40),
+      name: z.string().min(1).max(255),
+      capacity: z.number().int().min(0).max(5000).optional(),
+      kind: z.enum(['lecture', 'lab', 'seminar', 'hall']).optional(),
+      building: z.string().max(120).nullish(),
+    }), req.body);
+    return ok(await ctx.onyxCampus.createRoom(claims.tenant_id, body));
+  });
+
+  app.get('/api/onyx/rooms', async (req) => {
+    const { claims } = viewerOf(req);
+    return ok(await ctx.onyxCampus.rooms(claims.tenant_id));
+  });
+
+  /**
+   * Ask before you submit.
+   *
+   * The UI calls this as the form is filled in, so a registrar sees the clash
+   * named while they can still change the answer rather than after a 409.
+   */
+  app.post('/api/onyx/timetable/check', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...REGISTRY);
+    const body = validate(z.object({
+      semester_id: z.number().int().positive(),
+      course_id: z.number().int().positive(),
+      batch_id: z.number().int().positive(),
+      room_id: z.number().int().positive(),
+      faculty_id: z.number().int().positive(),
+      day_of_week: z.number().int().min(1).max(7),
+      starts_at: TimeSchema,
+      ends_at: TimeSchema,
+      exclude_id: z.number().int().positive().optional(),
+    }), req.body);
+    const clashes = await ctx.onyxCampus.clashes(claims.tenant_id, body);
+    return ok({ clear: clashes.length === 0, clashes });
+  });
+
+  app.post('/api/onyx/timetable', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...REGISTRY);
+    const body = validate(z.object({
+      semester_id: z.number().int().positive(),
+      course_id: z.number().int().positive(),
+      batch_id: z.number().int().positive(),
+      room_id: z.number().int().positive(),
+      faculty_id: z.number().int().positive(),
+      day_of_week: z.number().int().min(1).max(7),
+      starts_at: TimeSchema,
+      ends_at: TimeSchema,
+    }), req.body);
+    return ok(await ctx.onyxCampus.schedule(claims.tenant_id, body));
+  });
+
+  /**
+   * The grid. A learner only ever sees the published one -- a draft timetable
+   * on a learner's phone is a room they turn up to and nobody else does.
+   */
+  app.get('/api/onyx/timetable', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    const query = req.query as {
+      semester_id?: string; batch_id?: string; faculty_id?: string; room_id?: string;
+    };
+    const staff = viewer.role === 'admin' || viewer.role === 'faculty'
+      || viewer.role === 'exams';
+    return ok(await ctx.onyxCampus.timetable(claims.tenant_id, {
+      semester_id: query.semester_id ? Number(query.semester_id) : undefined,
+      batch_id: query.batch_id ? Number(query.batch_id) : undefined,
+      faculty_id: query.faculty_id ? Number(query.faculty_id) : undefined,
+      room_id: query.room_id ? Number(query.room_id) : undefined,
+      publishedOnly: !staff,
+    }));
+  });
+
+  app.post('/api/onyx/timetable/publish', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...REGISTRY);
+    const body = validate(z.object({
+      semester_id: z.number().int().positive(),
+    }), req.body);
+    return ok(await ctx.onyxCampus.publish(claims.tenant_id, body.semester_id, claims.user_id));
+  });
+
+  app.delete('/api/onyx/timetable/:id', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...REGISTRY);
+    return ok(await ctx.onyxCampus.removeSlot(claims.tenant_id, idOf(req)));
+  });
+
+  // =========================================================================
+  // CMP-02a -- the exam calendar
+  // =========================================================================
+
+  app.post('/api/onyx/exams', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    const body = validate(z.object({
+      semester_id: z.number().int().positive(),
+      course_id: z.number().int().positive(),
+      title: z.string().min(1).max(255),
+      starts_at: z.string().min(1),
+      duration_minutes: z.number().int().min(5).max(600).optional(),
+      max_marks: z.number().int().min(1).max(1000).optional(),
+      pass_marks: z.number().int().min(0).max(1000).optional(),
+      assessment_id: z.number().int().positive().nullish(),
+    }), req.body);
+    return ok(await ctx.onyxExams.schedule(claims.tenant_id, viewer, body));
+  });
+
+  app.get('/api/onyx/exams', async (req) => {
+    const { claims } = viewerOf(req);
+    const query = req.query as { semester_id?: string; course_id?: string };
+    return ok(await ctx.onyxExams.exams(claims.tenant_id, {
+      semester_id: query.semester_id ? Number(query.semester_id) : undefined,
+      course_id: query.course_id ? Number(query.course_id) : undefined,
+    }));
+  });
+
+  app.get('/api/onyx/exams/:id', async (req) => {
+    const { claims } = viewerOf(req);
+    return ok(await ctx.onyxExams.exam(claims.tenant_id, idOf(req)));
+  });
+
+  // =========================================================================
+  // CMP-02b -- halls and seating
+  // =========================================================================
+
+  app.post('/api/onyx/halls', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...EXAMS);
+    const body = validate(z.object({
+      code: z.string().min(1).max(40),
+      name: z.string().min(1).max(255),
+      row_count: z.number().int().min(1).max(100),
+      col_count: z.number().int().min(1).max(100),
+      capacity: z.number().int().min(1).max(5000).optional(),
+    }), req.body);
+    return ok(await ctx.onyxExams.createHall(claims.tenant_id, body));
+  });
+
+  app.get('/api/onyx/halls', async (req) => {
+    const { claims } = viewerOf(req);
+    return ok(await ctx.onyxExams.halls(claims.tenant_id));
+  });
+
+  app.post('/api/onyx/exams/:id/seating', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    const body = validate(z.object({
+      hall_ids: z.array(z.number().int().positive()).min(1).max(50),
+    }), req.body);
+    return ok(await ctx.onyxExams.allocateSeats(
+      claims.tenant_id, idOf(req), body.hall_ids, viewer));
+  });
+
+  /** The printable plan. Staff only -- it is every candidate's name and seat. */
+  app.get('/api/onyx/exams/:id/seating', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...EXAMS);
+    return ok(await ctx.onyxExams.seatingPlan(claims.tenant_id, idOf(req)));
+  });
+
+  /** Where you sit. Yours only, from the token. */
+  app.get('/api/onyx/exams/:id/seat', async (req) => {
+    const { claims } = viewerOf(req);
+    return ok(await ctx.onyxExams.seatFor(claims.tenant_id, idOf(req), claims.user_id));
+  });
+
+  // =========================================================================
+  // CMP-02c -- marks, moderation, transcripts
+  // =========================================================================
+
+  app.post('/api/onyx/exams/:id/marks', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...MARKERS);
+    const viewer = { role: claims.tenant_role, userId: claims.user_id };
+    const body = validate(z.object({
+      entries: z.array(z.object({
+        user_id: z.number().int().positive(),
+        raw_marks: z.number().min(0).max(1000),
+      })).min(1).max(500),
+    }), req.body);
+    return ok(await ctx.onyxExams.enterMarks(claims.tenant_id, idOf(req), viewer, body.entries));
+  });
+
+  app.get('/api/onyx/exams/:id/marks', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    return ok(await ctx.onyxExams.marksForExam(claims.tenant_id, idOf(req), viewer));
+  });
+
+  app.post('/api/onyx/exams/:id/moderate', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    const body = validate(z.object({
+      delta: z.number().min(-100).max(100),
+      reason: z.string().min(1).max(500),
+    }), req.body);
+    return ok(await ctx.onyxExams.moderate(
+      claims.tenant_id, idOf(req), viewer, body.delta, body.reason));
+  });
+
+  app.post('/api/onyx/exams/:id/publish', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    return ok(await ctx.onyxExams.publishMarks(claims.tenant_id, idOf(req), viewer));
+  });
+
+  /** Your own marks. Published ones only unless you run examinations. */
+  app.get('/api/onyx/results', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    return ok(await ctx.onyxExams.marksFor(claims.tenant_id, claims.user_id, viewer));
+  });
+
+  app.get('/api/onyx/results/:userId', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    return ok(await ctx.onyxExams.marksFor(
+      claims.tenant_id, idOf(req, 'userId'), viewer));
+  });
+
+  app.post('/api/onyx/transcripts', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    const body = validate(z.object({
+      user_id: z.number().int().positive(),
+      program_id: z.number().int().positive().nullish(),
+    }), req.body);
+    return ok(await ctx.onyxExams.issueTranscript(claims.tenant_id, body.user_id, viewer, {
+      program_id: body.program_id ?? null,
+    }));
+  });
+
+  app.get('/api/onyx/transcripts', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    return ok(await ctx.onyxExams.transcripts(claims.tenant_id, claims.user_id, viewer));
+  });
+
+  /**
+   * Does the document reconcile with the marks behind it?
+   *
+   * Inside the institution rather than public: unlike a certificate, a
+   * transcript is a full academic record and the serial is not a capability
+   * meant for strangers.
+   */
+  app.get('/api/onyx/transcripts/:serial/verify', async (req) => {
+    const { claims } = viewerOf(req);
+    const serial = String((req.params as { serial: string }).serial ?? '');
+    return ok(await ctx.onyxExams.verifyTranscript(claims.tenant_id, serial));
+  });
+
+  // =========================================================================
+  // CMP-03 -- fees, invoices, payment
+  // =========================================================================
+
+  app.post('/api/onyx/fee-heads', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    const body = validate(z.object({
+      code: z.string().min(1).max(40),
+      name: z.string().min(1).max(255),
+      category: z.enum(['tuition', 'exam', 'hostel', 'transport', 'library', 'misc']).optional(),
+      refundable: z.boolean().optional(),
+    }), req.body);
+    return ok(await ctx.onyxFinance.createHead(claims.tenant_id, viewer, body));
+  });
+
+  app.get('/api/onyx/fee-heads', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...REGISTRY);
+    return ok(await ctx.onyxFinance.heads(claims.tenant_id));
+  });
+
+  app.post('/api/onyx/fee-structures', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    const body = validate(z.object({
+      name: z.string().min(1).max(255),
+      program_id: z.number().int().positive().nullish(),
+      semester_id: z.number().int().positive().nullish(),
+      instalments: z.number().int().min(1).max(12).optional(),
+      currency: z.string().length(3).optional(),
+      lines: z.array(z.object({
+        head_id: z.number().int().positive(),
+        amount_minor: z.number().int().min(0),
+      })).min(1).max(50),
+    }), req.body);
+    return ok(await ctx.onyxFinance.createStructure(claims.tenant_id, viewer, body));
+  });
+
+  app.get('/api/onyx/fee-structures', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...REGISTRY);
+    return ok(await ctx.onyxFinance.structures(claims.tenant_id));
+  });
+
+  app.get('/api/onyx/fee-structures/:id', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...REGISTRY);
+    return ok(await ctx.onyxFinance.structure(claims.tenant_id, idOf(req)));
+  });
+
+  app.post('/api/onyx/fee-structures/:id/publish', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    return ok(await ctx.onyxFinance.publishStructure(claims.tenant_id, idOf(req), viewer));
+  });
+
+  app.post('/api/onyx/invoices', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    const body = validate(z.object({
+      user_id: z.number().int().positive(),
+      structure_id: z.number().int().positive(),
+      instalment_no: z.number().int().min(1).max(12).optional(),
+      due_at: z.string().nullish(),
+    }), req.body);
+    return ok(await ctx.onyxFinance.issueInvoice(claims.tenant_id, viewer, body));
+  });
+
+  /** Your own invoices. An id in the path is refused for anyone but finance. */
+  app.get('/api/onyx/invoices', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    const query = req.query as { user_id?: string };
+    const userId = query.user_id ? Number(query.user_id) : claims.user_id;
+    return ok(await ctx.onyxFinance.invoicesFor(claims.tenant_id, userId, viewer));
+  });
+
+  app.get('/api/onyx/invoices/:id', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    return ok(await ctx.onyxFinance.invoice(claims.tenant_id, idOf(req), viewer));
+  });
+
+  app.get('/api/onyx/invoices/:id/reconcile', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    return ok(await ctx.onyxFinance.reconcile(claims.tenant_id, idOf(req), viewer));
+  });
+
+  app.get('/api/onyx/finance/outstanding', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    return ok(await ctx.onyxFinance.outstanding(claims.tenant_id, viewer));
+  });
+
+  /**
+   * A gateway callback.
+   *
+   * Idempotent on (gateway, reference): a replay returns the original payment
+   * with `replayed: true` and does not touch the invoice a second time. The
+   * response is 200 either way -- a gateway that gets an error retries, which
+   * is exactly the wrong response to "I have already processed this".
+   */
+  app.post('/api/onyx/payments', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...REGISTRY);
+    const body = validate(z.object({
+      invoice_id: z.number().int().positive(),
+      gateway: z.string().min(1).max(30),
+      reference: z.string().min(1).max(191),
+      amount_minor: z.number().int().positive(),
+      method: z.string().max(30).nullish(),
+      status: z.enum(['captured', 'failed', 'pending']).optional(),
+      raw: z.unknown().optional(),
+    }), req.body);
+    return ok(await ctx.onyxFinance.recordPayment(claims.tenant_id, body));
+  });
+
+  // =========================================================================
+  // CMP-04 -- guardians
+  // =========================================================================
+
+  app.post('/api/onyx/guardians', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    const body = validate(z.object({
+      guardian_user_id: z.number().int().positive(),
+      student_user_id: z.number().int().positive(),
+      relationship: z.string().max(40).optional(),
+    }), req.body);
+    return ok(await ctx.onyxGuardians.link(claims.tenant_id, viewer, body));
+  });
+
+  app.post('/api/onyx/guardians/:id/accept', async (req) => {
+    const { claims } = viewerOf(req);
+    return ok(await ctx.onyxGuardians.accept(claims.tenant_id, idOf(req),
+      { userId: claims.user_id }));
+  });
+
+  app.post('/api/onyx/guardians/:id/consent', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    const body = validate(z.object({
+      scope: z.enum(['attendance', 'results', 'fees']),
+      allowed: z.boolean(),
+    }), req.body);
+    return ok(await ctx.onyxGuardians.setConsent(
+      claims.tenant_id, idOf(req), viewer, body.scope, body.allowed));
+  });
+
+  app.delete('/api/onyx/guardians/:id', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    return ok(await ctx.onyxGuardians.unlink(claims.tenant_id, idOf(req), viewer));
+  });
+
+  /** A learner's own list: who is watching, and what they can see. */
+  app.get('/api/onyx/guardians', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    return ok(await ctx.onyxGuardians.linksForStudent(claims.tenant_id, claims.user_id, viewer));
+  });
+
+  /**
+   * The guardian's whole world. No id anywhere: which children exist comes
+   * from verified links, and each scope comes from the consent on that link.
+   */
+  app.get('/api/onyx/family', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'guardian');
+    return ok(await ctx.onyxGuardians.overview(claims.tenant_id, claims.user_id));
+  });
+
+  app.get('/api/onyx/family/:studentId/attendance', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'guardian');
+    return ok(await ctx.onyxGuardians.attendanceFor(
+      claims.tenant_id, claims.user_id, idOf(req, 'studentId')));
+  });
+
+  app.get('/api/onyx/family/:studentId/results', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'guardian');
+    return ok(await ctx.onyxGuardians.resultsFor(
+      claims.tenant_id, claims.user_id, idOf(req, 'studentId')));
+  });
+
+  app.get('/api/onyx/family/:studentId/fees', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'guardian');
+    return ok(await ctx.onyxGuardians.feesFor(
+      claims.tenant_id, claims.user_id, idOf(req, 'studentId')));
+  });
+}

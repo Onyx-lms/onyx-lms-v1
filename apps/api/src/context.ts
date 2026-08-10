@@ -12,6 +12,8 @@ import {
   QueueService, CodeLabService, WorkspaceService, onyxSql,
   AssessService, ProctorService, AssessAnalyticsService,
   CareerService, PlacementService, ContestService,
+  EngageService, SupportService, CampusService, ExaminationsService,
+  FinanceService, GuardianService,
   executionProviderFromEnv, runCodeLabWorker,
   type ExecutionProvider, type CodeLabWorkerOptions,
   RegistrationService, VerificationService, PasswordResetService,
@@ -106,6 +108,12 @@ export interface AppContext {
   onyxCareer: CareerService;
   onyxPlacement: PlacementService;
   onyxContests: ContestService;
+  onyxEngage: EngageService;
+  onyxSupport: SupportService;
+  onyxCampus: CampusService;
+  onyxExams: ExaminationsService;
+  onyxFinance: FinanceService;
+  onyxGuardians: GuardianService;
   /** One pass of the Code Lab worker. Also driven by an interval in server.ts. */
   onyxRunWorker: (opts?: CodeLabWorkerOptions) =>
     Promise<{ done: number; retried: number; failed: number }>;
@@ -147,6 +155,10 @@ export function createContext(): AppContext {
   // Career reads across everything before it -- attendance, assessment,
   // practice, projects -- which is what makes a readiness score mean anything.
   const onyxCareer = new CareerService(onyxDb, onyxAcademics, onyxAttendance);
+  // CMP-02. Guardians read published marks through this rather than
+  // querying onyx_exam_marks themselves, so the 'published only' rule
+  // lives in one place.
+  const onyxExams = new ExaminationsService(onyxDb, onyxAudit);
   const bootcampPurchases = new BootcampPurchaseService(db, settings);
   const teamMembers = new TeamMemberService(db, settings);
   const revenue = new RevenueService(db);
@@ -228,6 +240,12 @@ export function createContext(): AppContext {
     onyxCareer,
     onyxPlacement: new PlacementService(onyxDb, onyxCareer, onyxAttendance),
     onyxContests: new ContestService(onyxDb),
+    onyxEngage: new EngageService(onyxDb, onyxAcademics, onyxAudit),
+    onyxSupport: new SupportService(onyxDb, onyxAudit),
+    onyxCampus: new CampusService(onyxDb, onyxAudit),
+    onyxExams,
+    onyxFinance: new FinanceService(onyxDb, onyxAudit),
+    onyxGuardians: new GuardianService(onyxDb, onyxAudit, onyxExams),
     onyxRunWorker: (opts) => runCodeLabWorker(onyxQueue, onyxCodeLab, {
       ...opts, onError: (m) => console.error('[onyx] ' + m),
     }),

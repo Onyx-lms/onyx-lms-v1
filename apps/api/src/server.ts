@@ -32,6 +32,8 @@ import { registerOnyxLearnRoutes } from './routes/onyx/learn.routes.ts';
 import { registerOnyxCodeLabRoutes } from './routes/onyx/codelab.routes.ts';
 import { registerOnyxAssessRoutes } from './routes/onyx/assess.routes.ts';
 import { registerOnyxCareerRoutes } from './routes/onyx/career.routes.ts';
+import { registerOnyxEngageRoutes } from './routes/onyx/engage.routes.ts';
+import { registerOnyxCampusRoutes } from './routes/onyx/campus.routes.ts';
 import { registerPlatformRoutes } from './routes/platform.routes.ts';
 
 export async function buildServer() {
@@ -87,6 +89,8 @@ export async function buildServer() {
   registerOnyxCodeLabRoutes(app, ctx);
   registerOnyxAssessRoutes(app, ctx);
   registerOnyxCareerRoutes(app, ctx);
+  registerOnyxEngageRoutes(app, ctx);
+  registerOnyxCampusRoutes(app, ctx);
 
   // The worker interval below needs the same context the routes use --
   // building a second one would mean a second connection pool.

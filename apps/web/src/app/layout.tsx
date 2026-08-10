@@ -26,9 +26,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <html lang="en">
         <body className="flex min-h-screen flex-col">
           {/* WCAG 2.4.1: the Onyx shell repeats the same sidebar on every
-              page, so a keyboard user gets a way past it. */}
+              page, so a keyboard user gets a way past it. tabIndex={-1} is
+              load-bearing: <main> is not natively focusable, so without it
+              following the link only scrolls -- focus stays on the link (or
+              falls back to <body>) and a screen reader never announces the
+              jump. -1 keeps it out of the normal Tab order; it is only ever
+              focused programmatically, by this link. */}
           <a href="#main" className="skip-link">Skip to the main content</a>
-          <main id="main" className="flex-1">{children}</main>
+          <main id="main" tabIndex={-1} className="flex-1">{children}</main>
         </body>
       </html>
     );
@@ -45,7 +50,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="flex min-h-screen flex-col">
         <a href="#main" className="skip-link">Skip to the main content</a>
         <SiteHeader settings={settings} categories={categories ?? []} />
-        <main id="main" className="flex-1">{children}</main>
+        <main id="main" tabIndex={-1} className="flex-1">{children}</main>
         <SiteFooter settings={settings} />
       </body>
     </html>

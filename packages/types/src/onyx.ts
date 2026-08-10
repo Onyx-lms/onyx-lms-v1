@@ -13,8 +13,14 @@
  * account, scoped to their own company and nothing else. It is deliberately not
  * a kind of staff -- every staff check names the roles it allows rather than
  * excluding the ones it does not.
+ *
+ * `guardian` arrived with O07 and is the same idea again: an outsider whose
+ * whole view is derived from a link somebody else consented to. A guardian is
+ * not a weaker student -- they have no courses, no submissions and no profile
+ * of their own, only children and the categories those children have shared.
  */
-export type Role = 'student' | 'faculty' | 'exams' | 'placement' | 'employer' | 'admin';
+export type Role =
+  | 'student' | 'faculty' | 'exams' | 'placement' | 'employer' | 'admin' | 'guardian';
 
 export interface TenantRow {
   id: number;
@@ -131,6 +137,26 @@ export interface OnyxDatabase {
       onyx_contest_members: Table<ContestMemberRow>;
       onyx_contest_submissions: Table<ContestSubmissionRow>;
       onyx_mock_interviews: Table<MockInterviewRow>;
+      onyx_discussions: Table<DiscussionRow>;
+      onyx_discussion_posts: Table<DiscussionPostRow>;
+      onyx_discussion_mentions: Table<DiscussionMentionRow>;
+      onyx_tickets: Table<TicketRow>;
+      onyx_ticket_events: Table<TicketEventRow>;
+      onyx_faculty_allocations: Table<FacultyAllocationRow>;
+      onyx_rooms: Table<RoomRow>;
+      onyx_timetable_slots: Table<TimetableSlotRow>;
+      onyx_exams: Table<ExamRow>;
+      onyx_halls: Table<HallRow>;
+      onyx_seat_allocations: Table<SeatAllocationRow>;
+      onyx_exam_marks: Table<ExamMarkRow>;
+      onyx_transcripts: Table<TranscriptRow>;
+      onyx_fee_heads: Table<FeeHeadRow>;
+      onyx_fee_structures: Table<FeeStructureRow>;
+      onyx_fee_structure_lines: Table<FeeStructureLineRow>;
+      onyx_invoices: Table<InvoiceRow>;
+      onyx_invoice_lines: Table<InvoiceLineRow>;
+      onyx_payments: Table<PaymentRow>;
+      onyx_guardians: Table<GuardianRow>;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -507,4 +533,302 @@ export interface MockInterviewRow {
   feedback: unknown; overall: number | null; notes: string | null;
   recording_path: string | null; recording_consented_at: string | null;
   released_at: string | null; created_at: string; updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// O06: engagement -- discussion, mentions, escalation
+// ---------------------------------------------------------------------------
+
+export type DiscussionStatus = 'open' | 'resolved' | 'closed';
+
+export interface DiscussionRow {
+  id: number;
+  tenant_id: number;
+  course_id: number;
+  lesson_id: number | null;
+  author_id: number;
+  title: string;
+  body: string;
+  status: DiscussionStatus;
+  resolved_at: string | null;
+  resolved_by: number | null;
+  answer_post_id: number | null;
+  reply_count: number;
+  last_post_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DiscussionPostRow {
+  id: number;
+  tenant_id: number;
+  discussion_id: number;
+  parent_id: number | null;
+  author_id: number;
+  body: string;
+  /** Who voted, not how many -- a counter lets one account click forever. */
+  votes: number[];
+  is_answer: boolean;
+  edited_at: string | null;
+  created_at: string;
+}
+
+export interface DiscussionMentionRow {
+  id: number;
+  tenant_id: number;
+  discussion_id: number;
+  post_id: number | null;
+  user_id: number;
+  read_at: string | null;
+  created_at: string;
+}
+
+export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent';
+export type TicketStatus = 'open' | 'assigned' | 'answered' | 'resolved' | 'closed';
+
+export interface TicketRow {
+  id: number;
+  tenant_id: number;
+  discussion_id: number | null;
+  course_id: number | null;
+  raised_by: number;
+  owner_id: number | null;
+  subject: string;
+  body: string;
+  priority: TicketPriority;
+  status: TicketStatus;
+  sla_minutes: number;
+  due_at: string;
+  first_response_at: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type TicketEventKind =
+  | 'raised' | 'assigned' | 'responded' | 'escalated' | 'resolved' | 'reopened' | 'commented';
+
+export interface TicketEventRow {
+  id: number;
+  tenant_id: number;
+  ticket_id: number;
+  actor_id: number | null;
+  kind: TicketEventKind;
+  note: string | null;
+  detail: unknown;
+  created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// O07: campus operations
+// ---------------------------------------------------------------------------
+
+export interface FacultyAllocationRow {
+  id: number;
+  tenant_id: number;
+  semester_id: number;
+  course_id: number;
+  batch_id: number | null;
+  user_id: number;
+  kind: 'lead' | 'assistant' | 'lab';
+  hours_per_week: number;
+  created_at: string;
+}
+
+export interface RoomRow {
+  id: number;
+  tenant_id: number;
+  code: string;
+  name: string;
+  capacity: number;
+  kind: 'lecture' | 'lab' | 'seminar' | 'hall';
+  building: string | null;
+  status: number;
+  created_at: string;
+}
+
+export interface TimetableSlotRow {
+  id: number;
+  tenant_id: number;
+  semester_id: number;
+  course_id: number;
+  batch_id: number;
+  room_id: number;
+  faculty_id: number;
+  /** ISO weekday: 1 = Monday .. 7 = Sunday. */
+  day_of_week: number;
+  /** Local wall-clock time, "HH:MM:SS". A timetable is read off a wall. */
+  starts_at: string;
+  ends_at: string;
+  status: 'draft' | 'published';
+  created_at: string;
+}
+
+export interface ExamRow {
+  id: number;
+  tenant_id: number;
+  semester_id: number;
+  course_id: number;
+  assessment_id: number | null;
+  title: string;
+  starts_at: string;
+  duration_minutes: number;
+  max_marks: number;
+  pass_marks: number;
+  status: 'draft' | 'scheduled' | 'completed' | 'cancelled';
+  created_by: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HallRow {
+  id: number;
+  tenant_id: number;
+  code: string;
+  name: string;
+  row_count: number;
+  col_count: number;
+  capacity: number;
+  status: number;
+  created_at: string;
+}
+
+export interface SeatAllocationRow {
+  id: number;
+  tenant_id: number;
+  exam_id: number;
+  hall_id: number;
+  user_id: number;
+  seat_label: string;
+  created_at: string;
+}
+
+export type MarkStatus = 'entered' | 'moderated' | 'published';
+
+export interface ExamMarkRow {
+  id: number;
+  tenant_id: number;
+  exam_id: number;
+  user_id: number;
+  raw_marks: number;
+  moderation_delta: number;
+  final_marks: number;
+  grade: string | null;
+  grade_points: number | null;
+  status: MarkStatus;
+  entered_by: number | null;
+  moderated_by: number | null;
+  moderated_at: string | null;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TranscriptRow {
+  id: number;
+  tenant_id: number;
+  user_id: number;
+  program_id: number | null;
+  serial: string;
+  payload: unknown;
+  gpa: number | null;
+  credits_earned: number;
+  /** SHA-256 over the canonicalised payload. */
+  checksum: string;
+  issued_by: number | null;
+  issued_at: string;
+  revoked_at: string | null;
+}
+
+export interface FeeHeadRow {
+  id: number;
+  tenant_id: number;
+  code: string;
+  name: string;
+  category: 'tuition' | 'exam' | 'hostel' | 'transport' | 'library' | 'misc';
+  refundable: boolean;
+  created_at: string;
+}
+
+export interface FeeStructureRow {
+  id: number;
+  tenant_id: number;
+  program_id: number | null;
+  semester_id: number | null;
+  name: string;
+  currency: string;
+  instalments: number;
+  status: 'draft' | 'published';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FeeStructureLineRow {
+  id: number;
+  tenant_id: number;
+  structure_id: number;
+  head_id: number;
+  /** Minor units (paise). Money in a float is a rounding error with a delay. */
+  amount_minor: number;
+  created_at: string;
+}
+
+export type InvoiceStatus = 'issued' | 'part_paid' | 'paid' | 'void';
+
+export interface InvoiceRow {
+  id: number;
+  tenant_id: number;
+  user_id: number;
+  structure_id: number | null;
+  number: string;
+  instalment_no: number;
+  currency: string;
+  total_minor: number;
+  paid_minor: number;
+  status: InvoiceStatus;
+  due_at: string | null;
+  issued_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InvoiceLineRow {
+  id: number;
+  tenant_id: number;
+  invoice_id: number;
+  head_id: number | null;
+  description: string;
+  amount_minor: number;
+  created_at: string;
+}
+
+export interface PaymentRow {
+  id: number;
+  tenant_id: number;
+  invoice_id: number;
+  user_id: number;
+  gateway: string;
+  /** The gateway's id. Unique per tenant -- this is what makes a replay a no-op. */
+  reference: string;
+  amount_minor: number;
+  currency: string;
+  status: 'pending' | 'captured' | 'failed' | 'refunded';
+  method: string | null;
+  raw: unknown;
+  captured_at: string | null;
+  created_at: string;
+}
+
+export interface GuardianRow {
+  id: number;
+  tenant_id: number;
+  guardian_user_id: number;
+  student_user_id: number;
+  relationship: string;
+  can_view_attendance: boolean;
+  can_view_results: boolean;
+  can_view_fees: boolean;
+  verified_at: string | null;
+  created_at: string;
+  updated_at: string;
 }

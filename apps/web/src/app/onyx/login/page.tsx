@@ -17,7 +17,13 @@ export default async function OnyxLoginPage() {
       footer={
         <>
           Setting up a new institution?{' '}
-          <Link href="/onyx/signup" className="text-brand-600 hover:underline">Start here</Link>
+          {/* WCAG 1.4.1: a link inside a sentence cannot rely on colour alone
+              to be distinguishable, and brand-600 on this background is only
+              1.17:1 against the surrounding text -- nowhere near the 3:1 a
+              colour-only distinction would need. Underlined unconditionally
+              rather than only on hover, which is what a mouse user never sees
+              until it is too late to matter. */}
+          <Link href="/onyx/signup" className="text-brand-600 underline">Start here</Link>
         </>
       }
     >
