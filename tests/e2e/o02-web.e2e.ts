@@ -169,10 +169,15 @@ test('the session page shows the code to faculty and a box to a learner', async 
   assert.ok(!learner.includes('Only the code on screen'), 'a learner was shown the code panel');
   assert.ok(!learner.includes('Save attendance'), 'a learner was shown the roster');
 
-  // And the code itself is fetched from a faculty-only endpoint, so nothing
-  // code-shaped should be in what a learner is served at all.
-  assert.equal(/[^A-Z0-9][0-9A-F]{8}[^A-Z0-9]/.test(learner), false,
-    'something code-shaped reached a learner');
+  // The exact code, rather than anything that looks like one: a hex-shaped
+  // string test matches asset hashes and ids and says nothing.
+  const code = await viaWeb<{ code: string }>(
+    'attendance/' + w.session + '/code', w.cookies.faculty);
+  assert.equal(code.ok, true, code.message);
+  const served = (await webPage(
+    '/onyx/courses/' + w.course + '/attendance/' + w.session, w.cookies.student)).html;
+  assert.equal(served.includes(code.data.code), false,
+    'the check-in code reached a learner');
 });
 
 test('the assignment page shows the brief to a learner and the queue to faculty', async () => {

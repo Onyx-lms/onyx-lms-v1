@@ -31,11 +31,15 @@ before(async () => {
 });
 
 after(async () => {
-  if (originalTitle !== null) {
-    await api('/api/admin/settings/system',
-      { token: adminToken, body: { system_title: originalTitle } });
-  }
   await withDb(async (c) => {
+    // Restored in the database rather than through the API on purpose. This
+    // ran through the admin endpoint once, and when the token had expired the
+    // restore failed as quietly as the test that preceded it -- leaving the
+    // seeded title overwritten, which the next run's audit caught instead.
+    if (originalTitle !== null) {
+      await c.query("update public.settings set description=$1 where type='system_title'",
+        [originalTitle]);
+    }
     await c.query('delete from applications where user_id=$1', [applicantId]);
     await c.query('delete from users where email like $1', ['applicant+' + RUN + '@%']);
     await c.query('delete from newsletters where subject like $1', ['%E2E ' + RUN + '%']);
@@ -190,7 +194,7 @@ test('SET-08 a page is saved, updated and deleted', async () => {
     token: adminToken,
     body: { identifier: 'e2e-' + RUN, name: 'Page E2E ' + RUN, html: '<h1>v1</h1>' },
   });
-  assert.equal(made.ok, true);
+  assert.equal(made.ok, true, 'create page failed: ' + made.status + ' ' + made.message);
 
   const updated = await api<{ id: number; name: string }>('/api/admin/pages', {
     token: adminToken,
@@ -224,8 +228,9 @@ test('SET-09 an application is submitted, approved, and promotes the applicant',
   });
   assert.equal(again.status, 422, 'one pending application at a time');
 
-  assert.equal((await api('/api/admin/instructor-applications',
-    { token: studentToken })).status, 403);
+  const denied = await api('/api/admin/instructor-applications', { token: studentToken });
+  assert.equal(denied.status, 403,
+    'expected a student to be forbidden, got ' + denied.status + ' ' + denied.message);
 
   const queue = await api<{ id: number; user: { id: number } | null }[]>(
     '/api/admin/instructor-applications?status=0', { token: adminToken });

@@ -59,7 +59,14 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
                   {outline.progress.completed} of {outline.progress.total} lessons
                 </span>
               </div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100"
+                role="progressbar"
+                aria-valuenow={outline.progress.percent}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label="Course progress"
+              >
                 <div className="h-full bg-slate-900" style={{ width: outline.progress.percent + '%' }} />
               </div>
             </div>

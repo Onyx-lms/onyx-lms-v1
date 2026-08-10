@@ -36,7 +36,11 @@ export function OnyxReadiness({ readiness }: { readiness: Readiness }) {
                 {c.points} <span className="text-xs text-slate-400">of {c.weight}</span>
               </span>
             </div>
-            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">
+            {/* The bar is decoration; the number beside it is the value, and
+                the detail line below is the working. Marked so a screen reader
+                does not read an empty div. */}
+            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100"
+              role="presentation">
               <div className="h-full bg-slate-900" style={{ width: (c.raw * 100) + '%' }} />
             </div>
             {/* The counts behind the bar, so "why is it 8 of 20" has an answer. */}

@@ -57,7 +57,7 @@ process.on('SIGINT', () => { stopAll(); process.exit(130); });
 
 // Anything left over from a previous run holds the port and its state.
 if (process.platform === 'win32') {
-  for (const port of [4000, 5173]) {
+  for (const port of [4000, 5173, Number(process.env.JUDGE0_STUB_PORT ?? 2358)]) {
     try {
       const out = execSync('netstat -ano | findstr :' + port, { encoding: 'utf8' });
       const pids = new Set(
@@ -82,7 +82,29 @@ if (!process.env.E2E_SKIP_BUILD) {
   execSync('npm run build --workspace @onyx/web', { cwd: ROOT, stdio: 'inherit' });
 }
 
-console.log('starting api and web...');
+/**
+ * A stand-in for the Code Lab sandbox.
+ *
+ * Without it the whole submit -> queue -> evaluate -> score path is unreachable
+ * in the suite, because the API refuses to queue work with no sandbox
+ * configured. It speaks Judge0's protocol and nothing more: it verifies the
+ * adapter and everything downstream of it, and verifies nothing about
+ * isolation, which needs a real Judge0.
+ */
+const SANDBOX_PORT = Number(process.env.JUDGE0_STUB_PORT ?? 2358);
+const SANDBOX_URL = 'http://127.0.0.1:' + SANDBOX_PORT;
+process.env.ONYX_JUDGE0_URL = process.env.ONYX_JUDGE0_URL ?? SANDBOX_URL;
+
+// The token cache exists to stay under the login rate limit within a run, not
+// between them. A token left by an earlier run can be alive enough to be reused
+// in the first file and expired by the last.
+const { clearTokenCache } = await import('../tests/e2e/harness.ts');
+clearTokenCache();
+
+console.log('starting the sandbox stub, api and web...');
+start('sandbox', 'node', ['tools/judge0-stub.mjs'], ROOT);
+await waitFor(SANDBOX_URL + '/__received', 'sandbox stub');
+
 start('api', 'node', ['--env-file=../../.env', 'src/server.ts'], path.join(ROOT, 'apps/api'));
 start('web', 'npx', ['next', 'start', '-p', '5173'], path.join(ROOT, 'apps/web'));
 

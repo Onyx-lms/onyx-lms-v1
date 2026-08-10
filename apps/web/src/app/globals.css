@@ -6,6 +6,57 @@
 
 @layer base {
   body { @apply bg-white text-slate-800 antialiased; }
+
+  /*
+   * WCAG 2.2 AA -- 2.4.7 Focus Visible and 2.4.11 Focus Not Obscured.
+   *
+   * Tailwind's preflight removes the browser's focus ring, which leaves a
+   * keyboard user with no idea where they are. `:focus-visible` puts it back
+   * for keyboard navigation without drawing a ring around every clicked
+   * button, and `scroll-margin` keeps a focused element from landing under the
+   * sticky headers the timer and the toolbar use.
+   */
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-600 ring-offset-2 ring-offset-white;
+    border-radius: 0.25rem;
+  }
+
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    scroll-margin-block: 6rem;
+  }
+
+  /*
+   * 2.4.1 Bypass Blocks. Every page puts the same navigation before its
+   * content, and a keyboard user should not have to walk through it each time.
+   * The target is #main, set on the <main> in the root layout.
+   */
+  .skip-link {
+    @apply absolute left-4 z-50 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white;
+    top: -100vh;
+  }
+  .skip-link:focus {
+    @apply top-4;
+  }
+
+  /*
+   * 2.3.3 Animation from Interactions. Onyx animates progress bars, the
+   * check-in countdown and card hovers; none of it carries meaning, so all of
+   * it goes when somebody has asked for less motion.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /*
+   * 1.4.11 Non-text Contrast. Placeholder text at the browser default sits
+   * around 2.5:1, which is below the 3:1 a form control needs to be readable.
+   */
+  ::placeholder { @apply text-slate-500 opacity-100; }
 }
 
 @layer components {

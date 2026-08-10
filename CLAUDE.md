@@ -169,7 +169,16 @@ overflow was caught, and it is why RLS assertions belong there.
 
 - `node --test` runs **one process per file**, so the e2e harness caches tokens
   in a file. That cache is expiry-aware — it was not, and a stale cookie looked
-  like a broken role guard.
+  like a broken role guard. It is also cleared **once per run** by the runner and
+  its freshness margin is 20 minutes, not 60 seconds: the suite takes about
+  thirteen, so a token left by an earlier run could pass the check in the first
+  file and be expired by the last. That surfaced as a 401 in S18 and read as a
+  permissions bug for far longer than it should have.
+- **Clean up in the database, not through the API.** S18 restored `system_title`
+  through the admin endpoint; when the token had expired the restore failed as
+  quietly as the test before it, and the *next* run's audit failed on the leftover
+  value. A cleanup that needs auth to work is a cleanup that fails exactly when
+  it is needed.
 - Pages with `revalidate` are ISR-cached, and `apiSafe` caches per fetch URL.
   Asserting that freshly created content appears on a fixed URL tests Next's
   cache, not our rendering. Use a **run-unique query string**.
@@ -178,6 +187,21 @@ overflow was caught, and it is why RLS assertions belong there.
   — a fake that silently matches everything makes tests worse than none.
 - A test that opens a Supabase Realtime socket must `client.realtime.disconnect()`,
   or `node --test` never exits.
+
+## What the tests do not cover
+
+Worth stating so nobody reads a green gate as more than it is:
+
+- **Sandbox isolation.** `tools/judge0-stub.mjs` speaks the Judge0 protocol and
+  the suite asserts the flags we send (no network, CPU limit set, wall limit
+  above it). Whether those flags are *enforced* is a property of the deployed
+  container. That is a deployment check against a real endpoint.
+- **Scale.** The proposal names 1,000 concurrent learners. Nothing here is a load
+  test; the queue is built for it (`FOR UPDATE SKIP LOCKED`, horizontal workers)
+  but the number is unmeasured.
+- **Accessibility beyond structure.** The a11y suite checks skip links, focus
+  rings, reduced motion, control names and table headers. WCAG 2.2 AA conformance
+  needs a person with a screen reader, and no test here claims to be one.
 
 ## Environment
 

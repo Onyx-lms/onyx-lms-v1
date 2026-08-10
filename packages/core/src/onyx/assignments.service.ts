@@ -18,7 +18,7 @@
  *     side under the same row the submission will become.
  */
 import type { OnyxDb } from './db.ts';
-import type { LatePolicy, Role, SubmissionStatus } from '@onyx/types';
+import type { LatePolicy, SubmissionStatus } from '@onyx/types';
 import { HttpError } from '../http/errors.ts';
 import type { AcademicsService } from './academics.service.ts';
 

@@ -11,7 +11,6 @@
  * the logger instead, where they are visible without being destructive.
  */
 import type { OnyxDb } from './db.ts';
-import type { OnyxTokenClaims } from './auth.ts';
 
 const COLUMNS = 'id, tenant_id, actor_id, action, entity_type, entity_id, before, after, ip, created_at';
 

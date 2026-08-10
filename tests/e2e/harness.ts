@@ -75,11 +75,21 @@ function writeCache(cache: Record<string, string>): void {
   try { fs.writeFileSync(CACHE_FILE, JSON.stringify(cache)); } catch { /* best effort */ }
 }
 
+/**
+ * How much life a cached token needs before it is worth reusing.
+ *
+ * Sixty seconds was not enough. The suite takes upwards of thirteen minutes,
+ * and a token minted near the end of an earlier run would pass the check in the
+ * first file and be expired by the last -- which showed up as a 401 in S18 and
+ * looked like a permissions bug rather than a stale token.
+ */
+const TOKEN_MARGIN_MS = 20 * 60_000;
+
 function stillValid(token: string | undefined): boolean {
   if (!token) return false;
   try {
     const claims = JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString());
-    return Number(claims.exp) * 1000 > Date.now() + 60_000;
+    return Number(claims.exp) * 1000 > Date.now() + TOKEN_MARGIN_MS;
   } catch {
     return false;
   }
@@ -96,7 +106,11 @@ export async function login(email: string, password: string): Promise<string> {
   return res.data.token;
 }
 
-/** Call once before a run so a previous run's expired tokens are not reused. */
+/**
+ * Called once by tools/e2e-run.mjs before the suite, so a previous run's tokens
+ * are never reused. The file cache exists to stay under the login rate limit
+ * WITHIN a run, not between them.
+ */
 export function clearTokenCache(): void {
   try { fs.unlinkSync(CACHE_FILE); } catch { /* nothing cached */ }
 }

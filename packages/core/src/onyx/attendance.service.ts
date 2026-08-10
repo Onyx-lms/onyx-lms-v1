@@ -23,7 +23,7 @@
  */
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { OnyxDb } from './db.ts';
-import type { AttendanceStatus, Role } from '@onyx/types';
+import type { AttendanceStatus } from '@onyx/types';
 import { HttpError } from '../http/errors.ts';
 import type { AcademicsService } from './academics.service.ts';
 

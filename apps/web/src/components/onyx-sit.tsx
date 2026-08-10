@@ -152,8 +152,20 @@ export function OnyxSitPaper({ assessment, attempt }: {
       <div className={'sticky top-0 z-10 flex flex-wrap items-center gap-4 rounded-xl border p-3 '
         + (low ? 'border-rose-300 bg-rose-50' : 'border-slate-200 bg-white')}>
         <div>
-          <div className="text-xs uppercase tracking-wide text-slate-500">Time remaining</div>
-          <div className={'font-mono text-2xl tabular-nums ' + (low ? 'text-rose-700' : '')}>
+          <div className="text-xs uppercase tracking-wide text-slate-500" id="time-remaining">
+            Time remaining
+          </div>
+          {/*
+            Announced politely, and only when it matters. A timer that spoke
+            every second would make the paper unusable with a screen reader, so
+            the live region turns on for the last five minutes.
+          */}
+          <div
+            className={'font-mono text-2xl tabular-nums ' + (low ? 'text-rose-700' : '')}
+            aria-labelledby="time-remaining"
+            aria-live={low ? 'polite' : 'off'}
+            aria-atomic="true"
+          >
             {formatClock(remaining)}
           </div>
         </div>

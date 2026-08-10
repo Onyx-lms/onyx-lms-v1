@@ -51,11 +51,20 @@ does not extend the port's 61 tables. See `ONYX_SPRINT_PLAN.csv` and
 | --- | --- | --- | --- |
 | **O01** Foundation: tenancy, roles, audit | 7/7 | 2/2 | **done, live** |
 | **O02** Onyx Learn: catalog, content, attendance, assignments | 10/10 | 7/7 | **done, live** |
-| **O03** Code Lab: IDE, queue, evaluator, bank, workspaces | 6/6 | 4/4 | **done** (sandbox adapter unverified -- no Judge0 endpoint) |
+| **O03** Code Lab: IDE, queue, evaluator, bank, workspaces | 6/6 | 4/4 | **done, live** |
 | **O04** Assess: banks, timed engine, proctoring, marking, analytics | 9/9 | 7/7 | **done, live** |
 | **O05** Career: certificates, passport, placement, contests, interviews | 8/8 | 10/10 | **done, live** |
 | O06 Learn engagement (LRN-05, LRN-06) | | | next |
 | O07--O08 | Campus operations, hardening | | not started |
+| *(pulled forward from O08)* SEC-03 accessibility, DR-01 backups | -- | 6 e2e | **done** |
+
+The last row is two O08 tasks done early. The proposal's non-functional
+commitments -- WCAG 2.2 AA, and "backups and recovery procedures protect
+academic records" -- belong to no feature, and a task that belongs to no feature
+tends to stay nobody's until launch. Both are built and tested:
+`tests/e2e/o06-accessibility.e2e.ts` and `tools/db/backup.mjs`. The rest of O08
+(SEC-01/02 audits, SCL-01--03, DOC-01) is not started; SCL-01's queue exists
+already because O03 needed it.
 
 **Onyx Learn is six requirements, not four.** O02 delivered LRN-01 to LRN-04.
 **LRN-05** (progress dashboard) and **LRN-06** (discussion and doubt resolution)
@@ -80,9 +89,10 @@ one-per-person. A counter would let a single account click forever.
 npm run verify:all      # everything below, in order
 
 npm run verify:parity   # generated SQL vs the Laravel schema
-npm test                # 478 unit tests, no database needed
+npm test                # 578 unit tests, no database needed
 npm run db:audit        # live types, RLS, sequences, seed, storage
-npm run e2e             # 204 tests against a running api + web + Supabase
+npm run e2e             # 292 tests against a running api + web + Supabase
+npm run db:backup       # per-tenant export, --verify, --restore --into <slug>
 python tools/grading-differential.py        # quiz scoring vs the PHP algorithm
 ```
 
@@ -548,10 +558,20 @@ now resolved once, before any pool exists. And `/problems/:id/attempts` answered
 but confirms the id is real -- "no data leaked" is not the same as "nothing was
 learned".
 
-**Not verified:** the Judge0 adapter has no endpoint here, so it is unit-tested
-against a fake `fetch` and never run against a real sandbox. Everything
-downstream of it -- queue, evaluator, partial scoring, hidden-case handling --
-is exercised for real.
+**The sandbox now runs in the gate.** `tools/judge0-stub.mjs` speaks the Judge0
+protocol -- submit, poll, statuses, base64 bodies -- so `o03-sandbox.e2e.ts`
+drives submit to score through the real queue, the real worker and the real HTTP
+adapter rather than a fake `fetch`. It also records every request body, which is
+how the suite asserts the things that would otherwise only be true by intention:
+that no submission is sent with `enable_network` true, that a CPU limit is
+always set, and that the wall limit exceeds it, so a program blocked on input is
+killed rather than left running.
+
+What that still does not prove is **isolation**. The stub honours the flags; a
+real container is what enforces them. Whether a submission can reach the network
+or escape its cgroup is a property of the deployed Judge0, and is a deployment
+check against a real endpoint, not something any test in this repository can
+answer.
 
 ## O02: the everyday learning loop
 

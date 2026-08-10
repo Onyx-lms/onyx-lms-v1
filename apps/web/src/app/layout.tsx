@@ -25,7 +25,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     return (
       <html lang="en">
         <body className="flex min-h-screen flex-col">
-          <main className="flex-1">{children}</main>
+          {/* WCAG 2.4.1: the Onyx shell repeats the same sidebar on every
+              page, so a keyboard user gets a way past it. */}
+          <a href="#main" className="skip-link">Skip to the main content</a>
+          <main id="main" className="flex-1">{children}</main>
         </body>
       </html>
     );
@@ -40,8 +43,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en">
       <body className="flex min-h-screen flex-col">
+        <a href="#main" className="skip-link">Skip to the main content</a>
         <SiteHeader settings={settings} categories={categories ?? []} />
-        <main className="flex-1">{children}</main>
+        <main id="main" className="flex-1">{children}</main>
         <SiteFooter settings={settings} />
       </body>
     </html>
