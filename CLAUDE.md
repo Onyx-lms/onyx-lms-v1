@@ -77,6 +77,29 @@ Onyx table is ordinary work; adding a 62nd *ported* table is not.
 - **A hidden test case is the answer key**: its stdin, its expected output, and
   the actual output it produced. None is ever in a learner response, and the
   last is not stored at all. Enforced in `codelab.service.ts`, not in routes.
+- **Roles are six now:** student, faculty, exams, placement, **employer**,
+  admin. `employer` is an OUTSIDER — scoped to their own company by
+  `assertEmployerOwns`, never given a roster or a cohort. Every staff check
+  names the roles it allows; never write `!== 'student'`.
+- **`/api/onyx/verify/:credentialId` is the one public Onyx route.** No token,
+  not tenant-scoped, and it must stay that way — a verifier has no account.
+  What it returns is an allow-list (`PUBLIC_DETAIL_KEYS`), not a filter.
+- **Eligibility and readiness are computed, never stored as a verdict.** The
+  breakdown and the rule-by-rule checks are part of the response.
+- **A sat paper is immutable.** `onyx_question_versions` keeps every version;
+  an attempt stores the version it saw AND the wording, and grading reads the
+  key from that version. Editing a question must never change a sat paper.
+- **Assessment time is the server's.** `expires_at` is written at start and
+  every check reads it. Never trust a client timestamp for anything but a
+  recorded `client_at` beside the server's.
+- **A score is invisible until the assessment's `results_published_at` is set**
+  AND the attempt is `published`. Both, not either.
+- **Anonymous marking omits `user_id` from the payload** rather than hiding it.
+- **Proctoring stores events, never recordings**, and no flag auto-fails
+  anybody. A human decision is not overwritten by the flag score.
+- **A tenant-scoped query is not enough on its own.** A foreign id must 404, not
+  answer 200 with an empty list -- an empty list confirms the id exists. Load
+  the parent row first. This has now been the same bug in O03 and twice in O04.
 - **A workspace snapshot is jsonb, not copied rows**, and restore deletes files
   added since. Anything else quietly breaks LAB-05's one promise.
 - **The QR secret never leaves the server.** `SESSION_COLUMNS` omits it *and*

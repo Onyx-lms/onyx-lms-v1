@@ -6,7 +6,15 @@
  * Keep it in step with supabase/onyx/migrations/.
  */
 
-export type Role = 'student' | 'faculty' | 'exams' | 'placement' | 'admin';
+/**
+ * A role WITHIN one institution, held on the membership.
+ *
+ * `employer` arrived with O05: the placement portal needs an outsider with an
+ * account, scoped to their own company and nothing else. It is deliberately not
+ * a kind of staff -- every staff check names the roles it allows rather than
+ * excluding the ones it does not.
+ */
+export type Role = 'student' | 'faculty' | 'exams' | 'placement' | 'employer' | 'admin';
 
 export interface TenantRow {
   id: number;
@@ -100,6 +108,29 @@ export interface OnyxDatabase {
       onyx_workspace_files: Table<WorkspaceFileRow>;
       onyx_workspace_snapshots: Table<WorkspaceSnapshotRow>;
       onyx_workspace_comments: Table<WorkspaceCommentRow>;
+      onyx_question_banks: Table<QuestionBankRow>;
+      onyx_questions: Table<QuestionRow>;
+      onyx_question_versions: Table<QuestionVersionRow>;
+      onyx_assessments: Table<AssessmentRow>;
+      onyx_assessment_attempts: Table<AttemptRow>;
+      onyx_assessment_answers: Table<AssessmentAnswerRow>;
+      onyx_proctor_events: Table<ProctorEventRow>;
+      onyx_assessment_grades: Table<AssessmentGradeRow>;
+      onyx_certificates: Table<CertificateRow>;
+      onyx_skills: Table<SkillRow>;
+      onyx_learner_skills: Table<LearnerSkillRow>;
+      onyx_readiness_scores: Table<ReadinessScoreRow>;
+      onyx_employers: Table<EmployerRow>;
+      onyx_jobs_posted: Table<JobPostRow>;
+      onyx_job_applications: Table<JobApplicationRow>;
+      onyx_drives: Table<DriveRow>;
+      onyx_drive_rounds: Table<DriveRoundRow>;
+      onyx_drive_results: Table<DriveResultRow>;
+      onyx_contests: Table<ContestRow>;
+      onyx_contest_teams: Table<ContestTeamRow>;
+      onyx_contest_members: Table<ContestMemberRow>;
+      onyx_contest_submissions: Table<ContestSubmissionRow>;
+      onyx_mock_interviews: Table<MockInterviewRow>;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -298,4 +329,182 @@ export interface WorkspaceCommentRow {
   snapshot_id: number | null; file_path: string | null; line: number | null;
   body: string; author_id: number | null;
   resolved_at: string | null; created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// O04 -- Onyx Assess
+// ---------------------------------------------------------------------------
+
+export type AttemptStatus =
+  | 'in_progress' | 'submitted' | 'expired' | 'graded' | 'moderated' | 'published';
+export type IntegrityStatus = 'clean' | 'review' | 'flagged' | 'cleared' | 'upheld';
+
+export interface QuestionBankRow {
+  id: number; tenant_id: number; course_id: number | null;
+  name: string; description: string | null;
+  created_by: number | null; created_at: string; updated_at: string;
+}
+
+export interface QuestionRow {
+  id: number; tenant_id: number; bank_id: number; type: string; prompt: string;
+  options: unknown; answer: unknown; explanation: string | null;
+  points: number; difficulty: string; tags: unknown;
+  version: number; status: string; created_by: number | null;
+  created_at: string; updated_at: string;
+}
+
+export interface QuestionVersionRow {
+  id: number; tenant_id: number; question_id: number; version: number;
+  type: string; prompt: string; options: unknown; answer: unknown;
+  explanation: string | null; points: number; created_at: string;
+}
+
+export interface AssessmentRow {
+  id: number; tenant_id: number; course_id: number | null;
+  title: string; instructions: string | null;
+  opens_at: string | null; closes_at: string | null;
+  duration_minutes: number; attempts_allowed: number; sections: unknown;
+  shuffle_questions: number; shuffle_options: number;
+  proctoring: number; require_camera: number; require_screen: number;
+  anonymous_marking: number; moderation_required: number;
+  pass_mark: number | null; status: string;
+  results_published_at: string | null; created_by: number | null;
+  created_at: string; updated_at: string;
+}
+
+export interface AttemptRow {
+  id: number; tenant_id: number; assessment_id: number; user_id: number;
+  attempt: number; paper: unknown; status: AttemptStatus;
+  started_at: string; expires_at: string; submitted_at: string | null;
+  auto_score: number | null; manual_score: number | null;
+  score: number | null; max_score: number;
+  consented_at: string | null;
+  integrity_flags: number; integrity_status: IntegrityStatus;
+  created_at: string; updated_at: string;
+}
+
+export interface AssessmentAnswerRow {
+  id: number; tenant_id: number; attempt_id: number; question_id: number;
+  version: number; response: unknown;
+  auto_points: number | null; manual_points: number | null;
+  marker_comment: string | null; flagged_for_review: number;
+  answered_at: string; updated_at: string;
+}
+
+export interface ProctorEventRow {
+  id: number; tenant_id: number; attempt_id: number; kind: string;
+  weight: number; detail: unknown; media_path: string | null;
+  at: string; client_at: string | null;
+  review: string; reviewed_by: number | null;
+  reviewed_at: string | null; review_note: string | null;
+}
+
+export interface AssessmentGradeRow {
+  id: number; tenant_id: number; attempt_id: number; role: string;
+  marker_id: number | null; manual_score: number; comment: string | null;
+  created_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// O05 -- Onyx Career
+// ---------------------------------------------------------------------------
+
+export interface CertificateRow {
+  id: number; tenant_id: number; user_id: number; kind: string;
+  course_id: number | null; assessment_id: number | null;
+  title: string; credential_id: string;
+  issued_at: string; expires_at: string | null;
+  revoked_at: string | null; revoked_reason: string | null;
+  issued_by: number | null; detail: unknown; created_at: string;
+}
+
+export interface SkillRow {
+  id: number; tenant_id: number; name: string; slug: string;
+  category: string | null; created_at: string;
+}
+
+export interface LearnerSkillRow {
+  id: number; tenant_id: number; user_id: number; skill_id: number;
+  source_type: string; source_id: number | null;
+  strength: number; evidence: unknown; earned_at: string;
+}
+
+export interface ReadinessScoreRow {
+  id: number; tenant_id: number; user_id: number; score: number;
+  breakdown: unknown; formula: unknown; computed_at: string;
+}
+
+export interface EmployerRow {
+  id: number; tenant_id: number; name: string;
+  website: string | null; about: string | null;
+  contact_name: string | null; contact_email: string | null;
+  user_id: number | null; status: number;
+  created_by: number | null; created_at: string; updated_at: string;
+}
+
+export interface JobPostRow {
+  id: number; tenant_id: number; employer_id: number;
+  title: string; description: string | null; location: string | null;
+  compensation: string | null; openings: number;
+  min_readiness: number | null; min_attendance: number | null;
+  required_skills: unknown; program_ids: unknown; batch_ids: unknown;
+  closes_at: string | null; status: string;
+  created_by: number | null; created_at: string; updated_at: string;
+}
+
+export interface JobApplicationRow {
+  id: number; tenant_id: number; job_id: number; user_id: number;
+  status: string; note: string | null; readiness_at_apply: number | null;
+  decided_by: number | null; decided_at: string | null;
+  created_at: string; updated_at: string;
+}
+
+export interface DriveRow {
+  id: number; tenant_id: number; employer_id: number; job_id: number | null;
+  title: string; scheduled_at: string | null; venue: string | null;
+  status: string; created_by: number | null; created_at: string; updated_at: string;
+}
+
+export interface DriveRoundRow {
+  id: number; tenant_id: number; drive_id: number; name: string;
+  sort: number; scheduled_at: string | null; created_at: string;
+}
+
+export interface DriveResultRow {
+  id: number; tenant_id: number; round_id: number; drive_id: number;
+  user_id: number; outcome: string; note: string | null;
+  recorded_by: number | null; recorded_at: string;
+}
+
+export interface ContestRow {
+  id: number; tenant_id: number; title: string; description: string | null;
+  starts_at: string; ends_at: string; problems: unknown;
+  team_size: number; penalty_minutes: number; status: string;
+  freeze_minutes: number; created_by: number | null;
+  created_at: string; updated_at: string;
+}
+
+export interface ContestTeamRow {
+  id: number; tenant_id: number; contest_id: number; name: string;
+  created_by: number | null; created_at: string;
+}
+
+export interface ContestMemberRow {
+  id: number; tenant_id: number; team_id: number; contest_id: number;
+  user_id: number; created_at: string;
+}
+
+export interface ContestSubmissionRow {
+  id: number; tenant_id: number; contest_id: number; team_id: number;
+  user_id: number; problem_id: number; submission_id: number | null;
+  solved: number; points: number; at_minute: number; created_at: string;
+}
+
+export interface MockInterviewRow {
+  id: number; tenant_id: number; user_id: number; interviewer_id: number | null;
+  title: string; scheduled_at: string; duration_minutes: number;
+  join_url: string | null; status: string;
+  feedback: unknown; overall: number | null; notes: string | null;
+  recording_path: string | null; recording_consented_at: string | null;
+  released_at: string | null; created_at: string; updated_at: string;
 }

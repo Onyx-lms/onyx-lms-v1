@@ -1,0 +1,73 @@
+import Link from 'next/link';
+import type { Metadata } from 'next';
+import { OnyxShell } from '@/components/onyx-shell';
+import { OnyxReadiness, OnyxSkills } from '@/components/onyx-career';
+import { navFor } from '@/lib/onyx-nav';
+import { requireOnyxSession, onyxApi, type Me } from '@/lib/onyx-session';
+import type { Profile } from '@/lib/onyx-career';
+
+export const metadata: Metadata = { title: 'Employability profile' };
+
+/** CAR-05 -- the skills passport, the readiness score and the credentials. */
+export default async function OnyxProfilePage() {
+  await requireOnyxSession();
+  const [me, profile] = await Promise.all([
+    onyxApi<Me>('/api/onyx/me'),
+    onyxApi<Profile>('/api/onyx/my/profile'),
+  ]);
+
+  return (
+    <OnyxShell
+      me={me}
+      nav={navFor(me.role)}
+      title="Your profile"
+      subtitle="What you have done here, and what it adds up to."
+    >
+      <div className="grid gap-8 lg:grid-cols-[320px_1fr]">
+        <div className="space-y-6">
+          <OnyxReadiness readiness={profile.readiness} />
+
+          <section>
+            <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+              Credentials
+            </h2>
+            {profile.certificates.length ? (
+              <ul className="mt-3 space-y-2 text-sm">
+                {profile.certificates.map((c) => (
+                  <li key={c.credential_id} className="rounded-xl border border-slate-200 p-3">
+                    <div className="font-medium">{c.title}</div>
+                    <div className="text-xs text-slate-500">
+                      {new Date(c.issued_at).toLocaleDateString()}
+                    </div>
+                    {/* The share link is the whole feature: it works for
+                        somebody with no account here. */}
+                    <Link href={'/onyx/verify/' + c.credential_id}
+                      className="mt-1 block break-all font-mono text-xs text-brand-600
+                                 hover:underline">
+                      {c.credential_id}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-2 text-sm text-slate-600">Nothing issued yet.</p>
+            )}
+          </section>
+        </div>
+
+        <section>
+          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+            Skills passport
+          </h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Each skill opens onto the evidence that produced it. Nothing here is typed in
+            by hand.
+          </p>
+          <div className="mt-3">
+            <OnyxSkills skills={profile.skills} />
+          </div>
+        </section>
+      </div>
+    </OnyxShell>
+  );
+}

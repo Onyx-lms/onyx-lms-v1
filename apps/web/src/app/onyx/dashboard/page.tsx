@@ -63,7 +63,7 @@ export default async function OnyxDashboard() {
           <section>
             <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">People</h2>
             <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {(['student', 'faculty', 'exams', 'placement', 'admin'] as const).map((role) => (
+              {(['student', 'faculty', 'exams', 'placement', 'employer', 'admin'] as const).map((role) => (
                 <div key={role} className="rounded-xl border border-slate-200 p-4">
                   <div className="text-xs uppercase tracking-wide text-slate-500">
                     {ROLE_LABELS[role]}

@@ -10,6 +10,8 @@ import {
   SettingsService, I18nService, StorageService, AuthService,
   AcademicsService, ContentService, AttendanceService, AssignmentsService,
   QueueService, CodeLabService, WorkspaceService, onyxSql,
+  AssessService, ProctorService, AssessAnalyticsService,
+  CareerService, PlacementService, ContestService,
   executionProviderFromEnv, runCodeLabWorker,
   type ExecutionProvider, type CodeLabWorkerOptions,
   RegistrationService, VerificationService, PasswordResetService,
@@ -98,6 +100,12 @@ export interface AppContext {
   onyxExecution: ExecutionProvider;
   onyxCodeLab: CodeLabService;
   onyxWorkspaces: WorkspaceService;
+  onyxAssess: AssessService;
+  onyxProctor: ProctorService;
+  onyxAssessAnalytics: AssessAnalyticsService;
+  onyxCareer: CareerService;
+  onyxPlacement: PlacementService;
+  onyxContests: ContestService;
   /** One pass of the Code Lab worker. Also driven by an interval in server.ts. */
   onyxRunWorker: (opts?: CodeLabWorkerOptions) =>
     Promise<{ done: number; retried: number; failed: number }>;
@@ -123,6 +131,10 @@ export function createContext(): AppContext {
   const mail = new MailService(settings);
   const onyxDb = onyxServiceClient();
   const onyxAcademics = new AcademicsService(onyxDb);
+  // Hoisted because the proctoring service records invigilator decisions
+  // through it; a second instance would work but would be a second thing to
+  // configure identically.
+  const onyxAudit = new AuditService(onyxDb, (m) => console.error('[onyx] ' + m));
   // LAB-02b. The queue is the one part of Onyx that talks to Postgres directly:
   // claiming work is a single FOR UPDATE SKIP LOCKED statement, and PostgREST
   // cannot express it.
@@ -131,6 +143,10 @@ export function createContext(): AppContext {
   // the queue all work without a sandbox; only running code does not.
   const onyxExecution = executionProviderFromEnv();
   const onyxCodeLab = new CodeLabService(onyxDb, onyxAcademics, onyxQueue, onyxExecution);
+  const onyxAttendance = new AttendanceService(onyxDb, onyxAcademics);
+  // Career reads across everything before it -- attendance, assessment,
+  // practice, projects -- which is what makes a readiness score mean anything.
+  const onyxCareer = new CareerService(onyxDb, onyxAcademics, onyxAttendance);
   const bootcampPurchases = new BootcampPurchaseService(db, settings);
   const teamMembers = new TeamMemberService(db, settings);
   const revenue = new RevenueService(db);
@@ -195,17 +211,23 @@ export function createContext(): AppContext {
     platformAdmin: new PlatformAdminService(db),
     campaigns: new CampaignService(db, settings, mail),
     onyxTenancy: new TenancyService(onyxDb),
-    onyxAudit: new AuditService(onyxDb, (m) => console.error('[onyx] ' + m)),
+    onyxAudit,
     onyxAcademics,
     // Onyx shares the port's bucket -- storage is per project, not per schema --
     // and namespaces its own files under onyx/<tenant>/.
     onyxContent: new ContentService(onyxDb, onyxAcademics, storage),
-    onyxAttendance: new AttendanceService(onyxDb, onyxAcademics),
+    onyxAttendance,
     onyxAssignments: new AssignmentsService(onyxDb, onyxAcademics),
     onyxQueue,
     onyxExecution,
     onyxCodeLab,
     onyxWorkspaces: new WorkspaceService(onyxDb, onyxAcademics),
+    onyxAssess: new AssessService(onyxDb, onyxAcademics),
+    onyxProctor: new ProctorService(onyxDb, onyxAudit),
+    onyxAssessAnalytics: new AssessAnalyticsService(onyxDb),
+    onyxCareer,
+    onyxPlacement: new PlacementService(onyxDb, onyxCareer, onyxAttendance),
+    onyxContests: new ContestService(onyxDb),
     onyxRunWorker: (opts) => runCodeLabWorker(onyxQueue, onyxCodeLab, {
       ...opts, onError: (m) => console.error('[onyx] ' + m),
     }),

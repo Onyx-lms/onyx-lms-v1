@@ -16,7 +16,7 @@ const TENANT_COLUMNS = 'id, name, slug, status, plan, created_at, updated_at';
 const USER_COLUMNS = 'id, email, name, phone, photo, status, email_verified_at, created_at';
 const MEMBERSHIP_COLUMNS = 'id, tenant_id, user_id, role, status, created_at';
 
-export const ROLES: Role[] = ['student', 'faculty', 'exams', 'placement', 'admin'];
+export const ROLES: Role[] = ['student', 'faculty', 'exams', 'placement', 'employer', 'admin'];
 
 export class TenancyService {
   #db: OnyxDb;

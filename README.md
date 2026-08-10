@@ -52,8 +52,10 @@ does not extend the port's 61 tables. See `ONYX_SPRINT_PLAN.csv` and
 | **O01** Foundation: tenancy, roles, audit | 7/7 | 2/2 | **done, live** |
 | **O02** Onyx Learn: catalog, content, attendance, assignments | 10/10 | 7/7 | **done, live** |
 | **O03** Code Lab: IDE, queue, evaluator, bank, workspaces | 6/6 | 4/4 | **done** (sandbox adapter unverified -- no Judge0 endpoint) |
-| O04 Onyx Assess | | | next |
-| O05--O08 | Career, Campus, hardening | | not started |
+| **O04** Assess: banks, timed engine, proctoring, marking, analytics | 9/9 | 7/7 | **done, live** |
+| **O05** Career: certificates, passport, placement, contests, interviews | 8/8 | 10/10 | **done, live** |
+| O06 Learn engagement (LRN-05, LRN-06) | | | next |
+| O07--O08 | Campus operations, hardening | | not started |
 
 **Onyx Learn is six requirements, not four.** O02 delivered LRN-01 to LRN-04.
 **LRN-05** (progress dashboard) and **LRN-06** (discussion and doubt resolution)
@@ -172,9 +174,17 @@ admin       /admin/dashboard  /admin/users  /admin/courses  /admin/approvals
             /onyx/assignments/[id]  /onyx/submissions/[id]  /onyx/programs
             /onyx/practice  /onyx/practice/[id]
             /onyx/workspaces  /onyx/workspaces/[id]
+            /onyx/assessments  /onyx/assessments/[id]
+            /onyx/assessments/[id]/marking  /onyx/assessments/[id]/results
+            /onyx/attempts/[id]  /onyx/attempts/[id]/mark
+            /onyx/attempts/[id]/integrity  /onyx/invigilate
+            /onyx/profile  /onyx/jobs  /onyx/jobs/[id]  /onyx/placement
+            /onyx/drives/[id]  /onyx/contests  /onyx/contests/[id]
+            /onyx/interviews  /onyx/interviews/[id]
+            /onyx/verify/[credentialId]        <-- public, no session
 ```
 
-107 routes. Everything server-rendered; the catalog and blog pages carry full
+125 routes. Everything server-rendered; the catalog and blog pages carry full
 metadata, and blog posts resolve `seo_fields` before falling back to the post.
 The two message screens opt out of caching entirely -- a conversation must never
 be served from a cache shared between users.
@@ -363,6 +373,116 @@ inconvenience, losing the ability to type code would make Code Lab unusable.
 Third-party APIs arrive with the features that need them (Judge0 for the code
 IDE, Zoom, OpenAI, the payment providers). They are already called by the Laravel
 app today, so nothing new enters the system.
+
+## O05: claims made to strangers
+
+Career is the first sprint where the platform says something about a person to
+somebody outside the institution, and that changes what has to be true.
+
+**A credential id is a capability, not a serial number.** The verification page
+takes no token at all -- the employer checking it has no account here and never
+will -- so the id is 32 random hex characters and the response carries the
+holder's name, what it was for, who issued it, and nothing else. `detail` is
+filtered through an allow-list, so a caller passing `{ email }` publishes
+nothing. A revoked credential says *revoked* rather than *not found*: somebody
+is holding it and is entitled to know which.
+
+**A sixth role.** `employer` is an outsider with an account, scoped to their own
+company by `assertEmployerOwns` on every route they can reach. They do not get
+the roster, a cohort, or another employer's pipeline. They *do* get the names of
+people who applied to their post -- applying is sharing that -- and those names
+come with the applicants rather than from the roster endpoint, which stays shut.
+
+**Eligibility is computed, never typed.** A post carries thresholds; whether
+somebody meets them is worked out from their own record, and every rule comes
+back with what was required and what they have, whether it passed or not. A
+learner who cannot apply is told exactly what is missing instead of being shown
+a greyed-out button.
+
+**The readiness formula is published.** Five weighted components summing to 100,
+stored *with* each score so an old one still makes sense after the weights
+change, and returned with the counts behind every component. A score nobody can
+explain is a score nobody should act on.
+
+**A skill is one row per piece of evidence**, and the level is the mean rather
+than the best: one excellent piece of work does not make somebody good at
+something, and a passport that claims otherwise is a claim an employer will
+check.
+
+**The leaderboard is computed from submissions every time.** A running total on
+the team row is one increment away from a lost update, and this is the screen
+everybody watches. Ties break on penalty, then last solve, then team id -- total,
+so the same data always gives the same board. Wrong attempts on a problem never
+solved cost nothing; penalising them would punish trying.
+
+**A drive reports whether it reconciles rather than pretending it does.** Cleared
+the last round but no offer, or offered without clearing, are both named. Neither
+is necessarily wrong, and the platform's job is to make it a decision rather than
+a surprise.
+
+Two bugs the cross-tenant test caught, and one gap. `onyx_readiness_scores` was
+keyed `UNIQUE (user_id)` -- wrong for the same reason everything else is keyed by
+tenant, since a person can be a candidate at two institutions; fixed in migration
+`0006`. `profile()` did not check the subject was a member, so an administrator
+could compute *and store* a score for anybody in the platform. And the employer's
+applicant list showed "User 387", because listing the roster is correctly
+forbidden -- the names now travel with the applications.
+
+## O04: assessment, where being wrong is expensive
+
+A score decides something, so four rules shape everything in Assess.
+
+**A sat paper is immutable.** Selection happens once, at start, and the
+questions are snapshotted into the attempt. Editing a question afterwards writes
+a **new version** -- `onyx_question_versions` keeps every version that has ever
+existed -- and grading reads the key from the version that was actually sat.
+Keeping only a version *number* on the attempt would prove nothing; the content
+has to survive too. Both the end-to-end and unit tests edit a question after an
+answer is given and assert the paper, the key and the mark are all unchanged.
+
+**Time is the server's.** `started_at`, `expires_at` and `submitted_at` are all
+written server-side, and `seconds_remaining` is computed there on every request.
+The browser counts down locally so it does not need a request per second, but
+corrects itself from the server on every save and every thirty seconds. A save
+past the deadline is refused and the attempt is expired on the spot. The
+end-to-end test sits a one-minute paper, waits, and asserts the answer is
+refused and the attempt expired.
+
+**A grade is a record of who decided what.** First marking, second marking and
+moderation are three rows, not one column. Moderation beats a second mark, which
+beats the first -- and because they are separate rows, "the moderator changed
+it" can be answered a year later. Where an assessment requires moderation,
+publishing is refused until every paper has it: a second opinion that can be
+skipped is not a moderation workflow.
+
+**Anonymous marking removes the candidate, it does not hide them.** The marking
+queue and the paper carry no `user_id` at all when the assessment says so, and
+the test asserts against the wire rather than the screen. Objective questions
+arrive already scored and are not editable: they were marked against the key as
+it stood, and letting a marker nudge them would make marks irreproducible.
+
+**Proctoring records events, not a video archive.** Tab focus, paste, copy,
+camera state, full-screen exit -- each timestamped by the server, with the
+client's own claimed time kept alongside so a divergence is itself visible.
+Consent is per attempt and taken before the paper is dealt. Nothing auto-fails
+anybody: flags are weighted, an attempt over the threshold goes to a queue, and
+an invigilator decides. Dismissing a flag lowers the score; a decision a person
+has already taken is never overwritten by arithmetic. Storing hours of footage
+of somebody's home is a decision the proposal does not ask for and this does not
+make.
+
+**The statistics are the classical ones**, because an exams office can already
+read them and because both are checkable by hand: facility (proportion correct)
+and the upper/lower-27% discrimination index. A negative discrimination is
+flagged as a probably-wrong key rather than a hard question, an item everybody
+or nobody got right is flagged as having measured nothing, and a cohort too
+small to split reports `null` instead of a number that looks like a finding.
+
+Two bugs the tests caught, both the same shape as O03's: `/banks/:id/questions`
+and `/assessments/:id/items` answered 200 with an empty list for another
+institution's id. Nothing leaked, but an empty list confirms the id is real --
+"no data leaked" is not the same as "nothing was learned". Both now load the
+parent row first and 404.
 
 ## O03: the queue, and the code that must not run here
 

@@ -499,7 +499,7 @@ test('nothing added in O03 crosses between institutions', async () => {
   }
 
   // Beta's own queue view shows Beta's jobs only.
-  const stats = await api<{ count: number }[]>('/api/onyx/jobs', { token: w.beta.admin });
+  const stats = await api<{ count: number }[]>('/api/onyx/queue', { token: w.beta.admin });
   assert.equal(stats.ok, true, stats.message);
   assert.equal(stats.data.reduce((t, s) => t + s.count, 0), 0,
     'beta saw another institution\'s queue');

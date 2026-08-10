@@ -19,7 +19,7 @@ export interface Member {
   user: { id: number; name: string; email: string } | null;
 }
 
-const ROLES: Role[] = ['student', 'faculty', 'exams', 'placement', 'admin'];
+const ROLES: Role[] = ['student', 'faculty', 'exams', 'placement', 'employer', 'admin'];
 
 const field = 'rounded-lg border border-slate-300 px-3 py-2 text-sm '
   + 'focus:border-slate-900 focus:outline-none';

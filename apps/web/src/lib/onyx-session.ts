@@ -14,7 +14,7 @@ import { redirect } from 'next/navigation';
  */
 export const ONYX_COOKIE = 'onyx_tenant_session';
 
-export type Role = 'student' | 'faculty' | 'exams' | 'placement' | 'admin';
+export type Role = 'student' | 'faculty' | 'exams' | 'placement' | 'employer' | 'admin';
 
 export interface OnyxClaims {
   user_id: number;

@@ -180,7 +180,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
    * push it, and so the end-to-end tests can drain deterministically instead of
    * sleeping and hoping.
    */
-  app.post('/api/onyx/jobs/drain', async (req) => {
+  app.post('/api/onyx/queue/drain', async (req) => {
     requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
     const body = validate(z.object({
       concurrency: z.number().int().min(1).max(32).optional(),
@@ -188,7 +188,13 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
     return ok(await ctx.onyxRunWorker({ concurrency: body.concurrency ?? 8 }));
   });
 
-  app.get('/api/onyx/jobs', async (req) => {
+  /**
+   * The work queue, for an operator.
+   *
+   * Named `/queue` rather than `/jobs`: O05 added a placement job board, and in
+   * a product for institutions "jobs" means the ones people apply for.
+   */
+  app.get('/api/onyx/queue', async (req) => {
     const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
     return ok(await ctx.onyxQueue.stats(claims.tenant_id));
   });
