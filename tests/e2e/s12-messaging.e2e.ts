@@ -169,11 +169,18 @@ test('M-02 a message reaches the recipient over Realtime without a refresh', asy
     void channel;
   });
 
-  assert.equal(await delivered, body);
-  // Removing the channel is not enough -- the underlying socket stays open and
-  // node --test will not exit while a handle is alive. Disconnect it too.
-  await client.removeAllChannels();
-  client.realtime.disconnect();
+  try {
+    assert.equal(await delivered, body);
+  } finally {
+    // In a finally, not after the assertion: `delivered` rejecting (a real
+    // regression, or just a slow socket on the run) skipped straight past the
+    // disconnect below, leaving the handle open. node --test then never exits
+    // -- not a failure this test reports, but a hang the *next* file pays for,
+    // silently, with nothing in the log to say why. Removing the channel is
+    // not enough on its own; the underlying socket has to be disconnected too.
+    await client.removeAllChannels();
+    client.realtime.disconnect();
+  }
 });
 
 test('M-04 you may delete your own message; nobody else may', async () => {

@@ -1,9 +1,29 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
 import { navFor, ROLE_LABELS } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import { isStaff, type Assignment, type Course } from '@/lib/onyx-learn';
+import { OnyxNudges, OnyxProgress } from '@/components/onyx-engage';
+import type { ProgressSummary } from '@/lib/onyx-campus';
+
+/**
+ * Every role this page has ever been built for is either staff (a shape of
+ * the institution) or a student (their own progress). `employer` and
+ * `guardian` are neither -- outsiders whose account is a view derived from
+ * links other people control, with no course, no progress and no roster of
+ * their own. Before this redirect, both fell through to the student branch
+ * and were told "you are not enrolled in any course yet" on a dashboard they
+ * have no reason to see; a guardian in particular got the *learner's* nudges
+ * and streak, not their family's. Each has exactly one real page, and the
+ * nav (onyx-nav.ts) already sends them there -- this makes landing on
+ * /onyx/dashboard directly do the same.
+ */
+const REDIRECT: Partial<Record<string, string>> = {
+  employer: '/onyx/jobs',
+  guardian: '/onyx/family',
+};
 
 export const metadata: Metadata = { title: 'Dashboard' };
 
@@ -24,12 +44,18 @@ interface AttendanceLine {
 export default async function OnyxDashboard() {
   await requireOnyxSession();
   const me = await onyxApi<Me>('/api/onyx/me');
+  if (REDIRECT[me.role]) redirect(REDIRECT[me.role]!);
   const staff = isStaff(me.role);
+  // Only a student has personal progress; an examinations/placement account
+  // is staff already, and the two outsider roles never reach this line.
+  const isLearner = me.role === 'student';
 
-  const [courses, attendance, roster] = await Promise.all([
+  const [courses, attendance, roster, progress] = await Promise.all([
     onyxApiSafe<Course[]>('/api/onyx/my/courses'),
     staff ? null : onyxApiSafe<AttendanceLine[]>('/api/onyx/my/attendance'),
     staff ? onyxApiSafe<{ role: string }[]>('/api/onyx/members') : null,
+    // LRN-05. Only a learner has a streak to show.
+    isLearner ? onyxApiSafe<ProgressSummary>('/api/onyx/progress') : null,
   ]);
   const mine = courses ?? [];
 
@@ -59,6 +85,20 @@ export default async function OnyxDashboard() {
       subtitle={'Signed in as ' + ROLE_LABELS[me.role].toLowerCase() + '.'}
     >
       <div className="space-y-8">
+        {progress ? (
+          <section>
+            <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+              What to do next
+            </h2>
+            <div className="mt-3">
+              <OnyxNudges nudges={progress.nudges} />
+            </div>
+            <div className="mt-4">
+              <OnyxProgress progress={progress} />
+            </div>
+          </section>
+        ) : null}
+
         {staff ? (
           <section>
             <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">People</h2>

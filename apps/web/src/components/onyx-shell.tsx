@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import type { Me, Role, Tenant } from '@/lib/onyx-session';
 import { ROLE_LABELS } from '@/lib/onyx-nav';
+import { OnyxBrand } from '@/components/onyx-brand';
 
 /**
  * F-07 -- the Onyx shell, with the institution switcher built in.
@@ -28,6 +29,9 @@ export function OnyxShell({ me, nav, title, subtitle, children }: {
   return (
     <div className="container-page grid gap-8 py-8 lg:grid-cols-[240px_1fr]">
       <aside>
+        <Link href="/onyx/dashboard" className="inline-block rounded-lg focus-visible:outline-none">
+          <OnyxBrand className="mb-4" />
+        </Link>
         <TenantSwitcher tenant={me.tenant} role={me.role} memberships={me.memberships} />
 
         <nav className="mt-4 space-y-1">

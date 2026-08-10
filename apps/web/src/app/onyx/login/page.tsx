@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { AuthCard } from '@/components/auth-card';
 import { OnyxLoginForm } from '@/components/onyx-auth-forms';
+import { OnyxBrand } from '@/components/onyx-brand';
 import { getOnyxSession } from '@/lib/onyx-session';
 
 export const metadata: Metadata = { title: 'Sign in' };
@@ -12,6 +13,7 @@ export default async function OnyxLoginPage() {
 
   return (
     <AuthCard
+      logo={<OnyxBrand className="mb-6" />}
       title="Sign in to Onyx"
       subtitle="Your account works across every institution you belong to."
       footer={

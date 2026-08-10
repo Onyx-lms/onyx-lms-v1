@@ -103,8 +103,10 @@ export class ExaminationsService {
    * intersect are, for exactly the people in the intersection.
    */
   async #candidates(tenantId: number, courseId: number): Promise<Set<number>> {
+    // `status` is a smallint (1 = active), same as everywhere else in Onyx
+    // Learn -- see academics.service.ts. It is not the string 'active'.
     const { data } = await this.#db.from('onyx_enrollments').select('user_id')
-      .eq('tenant_id', tenantId).eq('course_id', courseId).eq('status', 'active');
+      .eq('tenant_id', tenantId).eq('course_id', courseId).eq('status', 1);
     return new Set((data ?? []).map((e) => Number(e.user_id)));
   }
 

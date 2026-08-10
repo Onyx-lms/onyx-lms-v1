@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { AuthCard } from '@/components/auth-card';
 import { OnyxSignupForm } from '@/components/onyx-auth-forms';
+import { OnyxBrand } from '@/components/onyx-brand';
 import { getOnyxSession } from '@/lib/onyx-session';
 
 export const metadata: Metadata = { title: 'Create an institution' };
@@ -12,6 +13,7 @@ export default async function OnyxSignupPage() {
 
   return (
     <AuthCard
+      logo={<OnyxBrand className="mb-6" />}
       title="Create an institution"
       subtitle="An institution and its first administrator are set up together."
       footer={

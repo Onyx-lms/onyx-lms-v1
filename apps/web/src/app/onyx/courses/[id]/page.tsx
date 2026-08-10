@@ -2,12 +2,14 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
 import { ResourceLink } from '@/components/onyx-player';
+import { OnyxAskForm } from '@/components/onyx-engage';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import {
   formatDuration, isStaff,
   type Assignment, type AttendanceSession, type Outline, type Resource,
 } from '@/lib/onyx-learn';
+import type { Discussion } from '@/lib/onyx-campus';
 
 export const metadata: Metadata = { title: 'Course' };
 
@@ -30,13 +32,14 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
   // A learner who is not enrolled sees the catalog view: the shape of the
   // course, and nothing that belongs to the people taking it.
   const visible = outline.enrolled || isStaff(me.role);
-  const [assignments, sessions, resources] = visible
+  const [assignments, sessions, resources, discussions] = visible
     ? await Promise.all([
       onyxApiSafe<Assignment[]>('/api/onyx/courses/' + id + '/assignments'),
       onyxApiSafe<AttendanceSession[]>('/api/onyx/courses/' + id + '/attendance'),
       onyxApiSafe<Resource[]>('/api/onyx/courses/' + id + '/resources'),
+      onyxApiSafe<Discussion[]>('/api/onyx/courses/' + id + '/discussions'),
     ])
-    : [null, null, null];
+    : [null, null, null, null];
 
   const due = (assignments ?? [])
     .filter((a) => a.status === 'published' && a.due_at)
@@ -114,6 +117,34 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
 
           {outline.modules.length === 0 ? (
             <p className="text-sm text-slate-500">This course has no content yet.</p>
+          ) : null}
+
+          {visible ? (
+            <section>
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+                  Questions
+                </h2>
+                <OnyxAskForm courseId={Number(id)} />
+              </div>
+              <ul className="mt-3 space-y-2">
+                {(discussions ?? []).map((d) => (
+                  <li key={d.id} className="rounded-xl border border-slate-200 p-3">
+                    <Link href={'/onyx/discussions/' + d.id}
+                      className="text-sm font-medium hover:underline">
+                      {d.title}
+                    </Link>
+                    <div className="mt-0.5 text-xs text-slate-500">
+                      {d.status === 'resolved' ? 'resolved' : d.status} · {d.reply_count}
+                      {' '}{d.reply_count === 1 ? 'reply' : 'replies'}
+                    </div>
+                  </li>
+                ))}
+                {(discussions ?? []).length === 0 ? (
+                  <li className="text-sm text-slate-500">Nobody has asked anything yet.</li>
+                ) : null}
+              </ul>
+            </section>
           ) : null}
         </div>
 
