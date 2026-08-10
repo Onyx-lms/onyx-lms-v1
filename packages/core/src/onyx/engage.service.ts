@@ -32,6 +32,26 @@ const POST_COLUMNS = 'id, tenant_id, discussion_id, parent_id, author_id, body, 
 const DAY_MS = 86_400_000;
 const dayKey = (iso: string) => iso.slice(0, 10);
 
+/**
+ * The date part of a "because" line, in the words a person would use.
+ *
+ * These strings are shown verbatim under each nudge, so an ISO timestamp --
+ * which is what this used to interpolate -- put
+ * "due 2026-08-08T22:35:56.508+00:00" on the dashboard of every learner with
+ * an assignment outstanding.
+ */
+function dueInWords(due: string | null | undefined, now: number): string {
+  if (!due) return 'no due date';
+  const t = Date.parse(due);
+  if (!Number.isFinite(t)) return 'no due date';
+  const startOf = (ms: number) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  const days = Math.round((startOf(t) - startOf(now)) / 86_400_000);
+  if (days < 0) return Math.abs(days) === 1 ? 'due yesterday' : `due ${Math.abs(days)} days ago`;
+  if (days === 0) return 'due today';
+  if (days === 1) return 'due tomorrow';
+  return `due in ${days} days`;
+}
+
 export interface Nudge {
   /** Stable across renders so the UI can key on it; not stored anywhere. */
   kind: string;
@@ -241,7 +261,7 @@ export class EngageService {
         message: '"' + a.title + '" is past its due date. Submitting late is better than not.',
         href: '/onyx/assignments/' + a.id,
         urgency: 'high',
-        because: 'assignment ' + a.id + ' due ' + (a.due_at ?? 'unknown'),
+        because: '"' + a.title + '", ' + dueInWords(a.due_at, this.#now()),
       });
     }
 
@@ -251,7 +271,7 @@ export class EngageService {
         message: '"' + ctx.nextDue.title + '" is your next deadline.',
         href: '/onyx/assignments/' + ctx.nextDue.id,
         urgency: 'normal',
-        because: 'assignment ' + ctx.nextDue.id + ' due ' + (ctx.nextDue.due_at ?? 'unknown'),
+        because: '"' + ctx.nextDue.title + '", ' + dueInWords(ctx.nextDue.due_at, this.#now()),
       });
     }
 

@@ -4,7 +4,7 @@ import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
 import { ROLE_LABELS } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
-import { isStaff, type Assignment, type Course } from '@/lib/onyx-learn';
+import { isStaff, type Assignment, type Course, type Outline } from '@/lib/onyx-learn';
 import { OnyxNudges } from '@/components/onyx-engage';
 import {
   Card, SectionHead, StatTile, Pill, Ring, Meter, Icon, Empty, relativeDue,
@@ -55,6 +55,21 @@ export default async function OnyxDashboard() {
     onyxApiSafe<Assignment[]>('/api/onyx/courses/' + c.id + '/assignments')
       .then((list) => (list ?? []).map((a) => ({ ...a, course: c })))));
 
+  // Per-course progress, from each course's own outline.
+  //
+  // `/api/onyx/my/courses` returns bare course rows with no progress on them,
+  // so an earlier version of this page painted the learner's PLATFORM-WIDE
+  // percentage onto every course card -- two different courses both showing
+  // "50%" because that was the overall figure. These are the real numbers,
+  // and they are what the resume card picks its target from.
+  const outlines = await Promise.all(mine.map((c) =>
+    onyxApiSafe<Outline>('/api/onyx/courses/' + c.id + '/outline')));
+  const progressFor = new Map<number, Outline['progress']>();
+  mine.forEach((c, i) => {
+    const o = outlines[i];
+    if (o) progressFor.set(c.id, o.progress);
+  });
+
   // Everything still outstanding, soonest first -- including what is already
   // late, which the old version dropped entirely by filtering to due_at > now.
   // A missed deadline is the most important row on this page, not the one to
@@ -84,7 +99,7 @@ export default async function OnyxDashboard() {
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.62fr)_minmax(290px,.92fr)] xl:items-start">
         {/* ---------------- main column ---------------- */}
         <div className="min-w-0">
-          {isLearner ? <ResumeCard courses={mine} progress={progress} /> : null}
+          {isLearner ? <ResumeCard courses={mine} outlines={outlines} /> : null}
 
           {staff ? (
             <section className="mb-5">
@@ -141,7 +156,7 @@ export default async function OnyxDashboard() {
                   <Card key={c.id}>
                     <Link href={'/onyx/courses/' + c.id}
                       className="flex items-center gap-3.5 p-3.5">
-                      <Ring percent={percentFor(c, progress)} />
+                      <Ring percent={progressFor.get(c.id)?.percent ?? 0} />
                       <span className="min-w-0">
                         <span className="block truncate text-[14.5px] font-bold">{c.title}</span>
                         <span className="block truncate text-[12.5px] text-muted">
@@ -266,12 +281,6 @@ function progressLine(p: ProgressSummary | null): string {
   return 'Welcome back.';
 }
 
-/** Percent for a course card. The summary is platform-wide, so this is the
- *  learner's overall figure until a per-course number is on the payload. */
-function percentFor(_c: Course, p: ProgressSummary | null): number {
-  return p?.lessons.percent ?? 0;
-}
-
 /**
  * The single most important control on the page: get back to work.
  *
@@ -279,12 +288,30 @@ function percentFor(_c: Course, p: ProgressSummary | null): number {
  * and Mindvalley all lead with a resume card. Onyx previously had no resume
  * affordance at all, so a student landed on counters and went hunting.
  */
-function ResumeCard({ courses, progress }: {
-  courses: Course[]; progress: ProgressSummary | null;
+function ResumeCard({ courses, outlines }: {
+  courses: Course[]; outlines: (Outline | null)[];
 }) {
-  const course = courses[0];
-  if (!course) return null;
-  const percent = progress?.lessons.percent ?? 0;
+  if (!courses.length) return null;
+
+  // The course to resume is the one actually part-finished. Falling back to
+  // whichever course happened to sort first would send a learner who is 90%
+  // through one course into a different one they have not started.
+  let index = outlines.findIndex((o) => o && o.progress.percent > 0 && o.progress.percent < 100);
+  if (index === -1) index = outlines.findIndex((o) => o && o.progress.percent < 100);
+  if (index === -1) index = 0;
+
+  const course = courses[index]!;
+  const outline = outlines[index] ?? null;
+  const percent = outline?.progress.percent ?? 0;
+
+  // Deep-link to the first lesson they have not finished, so "Resume" resumes
+  // rather than dropping them at the top of the syllabus to find their place.
+  const nextLesson = outline?.modules
+    .flatMap((m) => m.lessons)
+    .find((l) => !l.completed_at && !l.locked) ?? null;
+  const href = nextLesson
+    ? `/onyx/courses/${course.id}/lessons/${nextLesson.id}`
+    : `/onyx/courses/${course.id}`;
 
   return (
     <section
@@ -299,7 +326,8 @@ function ResumeCard({ courses, progress }: {
       </span>
       <h2 id="resume-h" className="mt-3 text-xl font-extrabold sm:text-2xl">{course.title}</h2>
       <p className="mt-1 text-sm text-white/80">
-        {course.code}{course.credits ? ` · ${course.credits} credits` : ''}
+        {nextLesson ? nextLesson.title : course.code}
+        {nextLesson ? '' : course.credits ? ` · ${course.credits} credits` : ''}
       </p>
 
       <div className="mt-4">
@@ -307,18 +335,18 @@ function ResumeCard({ courses, progress }: {
         <div className="mt-2 flex items-center justify-between text-[12.5px] text-white/85">
           <span>{percent}% complete</span>
           <span>
-            {progress ? `${progress.lessons.completed} of ${progress.lessons.total} lessons` : ''}
+            {outline ? `${outline.progress.completed} of ${outline.progress.total} lessons` : ''}
           </span>
         </div>
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2.5">
-        <Link href={'/onyx/courses/' + course.id}
+        <Link href={href}
           className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5
                      text-[14.5px] font-bold text-brand-700 hover:bg-brand-50
                      focus-visible:outline-white">
           <Icon name="play" className="h-4 w-4" />
-          {percent > 0 ? 'Resume course' : 'Start course'}
+          {percent > 0 ? 'Resume lesson' : 'Start course'}
         </Link>
         <Link href="/onyx/courses"
           className="inline-flex items-center rounded-xl border border-white/30 bg-white/10

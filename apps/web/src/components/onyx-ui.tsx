@@ -148,8 +148,11 @@ export function StatTile({ label, value, note, delta }: {
   label: string; value: string | number; note?: string; delta?: number;
 }) {
   return (
+    // The label renders in sentence case and is uppercased by CSS, so a test
+    // matching on "LESSONS" finds nothing. The testid is the stable handle.
     <Card className="p-3.5">
-      <div className="text-[10.5px] font-bold uppercase tracking-[.08em] text-muted">{label}</div>
+      <div data-testid={'stat-' + label.toLowerCase().replace(/\s+/g, '-')}
+        className="text-[10.5px] font-bold uppercase tracking-[.08em] text-muted">{label}</div>
       <div className="mt-1.5 text-[26px] font-extrabold leading-none tabular-nums">{value}</div>
       {note || delta !== undefined ? (
         <div className="mt-1.5 text-xs text-muted">
