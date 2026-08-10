@@ -34,7 +34,7 @@ export default async function OnyxSupportTicketPage({ params }: { params: Promis
       subtitle={ticket.priority + ' priority · raised by ' + (ticket.raised_by_name ?? 'someone')}
     >
       <div className="space-y-6">
-        <div className="rounded-xl border border-slate-200 p-4">
+        <div className="rounded-2xl border border-line p-4">
           <div className="flex items-baseline justify-between gap-3">
             <span className="text-sm font-medium">
               {ticket.owner_name ? 'Owned by ' + ticket.owner_name : 'Not yet owned'}
@@ -45,11 +45,11 @@ export default async function OnyxSupportTicketPage({ params }: { params: Promis
         </div>
 
         <section>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">History</h2>
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">History</h2>
           <ul className="mt-2 space-y-2">
             {ticket.events.map((e) => (
-              <li key={e.id} className="rounded-lg border border-slate-200 p-3 text-sm">
-                <div className="flex items-baseline justify-between text-xs text-slate-500">
+              <li key={e.id} className="rounded-lg border border-line p-3 text-sm">
+                <div className="flex items-baseline justify-between text-xs text-muted">
                   <span>{e.kind}</span>
                   <span>{new Date(e.created_at).toLocaleString()}</span>
                 </div>

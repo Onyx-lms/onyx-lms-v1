@@ -50,12 +50,12 @@ export function OnyxSessionCode({ sessionId }: { sessionId: number }) {
   if (error) return <p className="text-sm text-rose-600">{error}</p>;
 
   return (
-    <div className="rounded-xl border border-slate-200 p-6 text-center">
-      <div className="text-xs uppercase tracking-wide text-slate-500">Check-in code</div>
+    <div className="rounded-2xl border border-line p-6 text-center">
+      <div className="text-xs uppercase tracking-wide text-muted">Check-in code</div>
       <div className="mt-2 font-mono text-5xl font-semibold tracking-[0.2em]">
         {code ?? '········'}
       </div>
-      <div className="mt-2 text-xs text-slate-500">
+      <div className="mt-2 text-xs text-muted">
         Changes in {seconds}s. Only the code on screen right now will be accepted.
       </div>
     </div>
@@ -95,8 +95,8 @@ export function OnyxCheckIn({ sessionId }: { sessionId: number }) {
         className={field + ' w-40 font-mono uppercase tracking-widest'}
       />
       <button type="submit" disabled={pending}
-        className="rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-medium text-white
-                   hover:bg-slate-800 disabled:opacity-50">
+        className="rounded-lg bg-brand-600 px-4 py-1.5 text-sm font-medium text-white
+                   hover:bg-brand-700 disabled:opacity-50">
         {pending ? 'Checking in…' : 'Check in'}
       </button>
       {notice ? (
@@ -135,9 +135,9 @@ export function OnyxRosterMarking({ session, roster }: {
         ))}
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200">
+      <div className="overflow-x-auto rounded-2xl border border-line">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
             <tr>
               <th className="px-4 py-3">Learner</th>
               <th className="px-4 py-3">Status</th>
@@ -146,10 +146,10 @@ export function OnyxRosterMarking({ session, roster }: {
           </thead>
           <tbody>
             {roster.map((r) => (
-              <tr key={r.user_id} className="border-t border-slate-100">
+              <tr key={r.user_id} className="border-t border-line">
                 <td className="px-4 py-2">
                   <div>{r.name}</div>
-                  <div className="text-xs text-slate-500">{r.email}</div>
+                  <div className="text-xs text-muted">{r.email}</div>
                 </td>
                 <td className="px-4 py-2">
                   <select
@@ -163,7 +163,7 @@ export function OnyxRosterMarking({ session, roster }: {
                     ))}
                   </select>
                 </td>
-                <td className="px-4 py-2 text-xs text-slate-500">
+                <td className="px-4 py-2 text-xs text-muted">
                   {r.record
                     ? (r.record.method === 'qr' ? 'Checked in' : 'Marked')
                     : 'Not yet marked'}
@@ -192,15 +192,15 @@ export function OnyxRosterMarking({ session, roster }: {
             setNotice(body.ok ? 'Attendance recorded.' : (body.message ?? 'That did not work.'));
             if (body.ok) router.refresh();
           })}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white
-                     hover:bg-slate-800 disabled:opacity-50"
+          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white
+                     hover:bg-brand-700 disabled:opacity-50"
         >
           {pending ? 'Saving…' : 'Save attendance'}
         </button>
         {session.status !== 'open'
-          ? <span className="text-sm text-slate-500">This session is closed.</span>
+          ? <span className="text-sm text-muted">This session is closed.</span>
           : null}
-        {notice ? <span className="text-sm text-slate-600">{notice}</span> : null}
+        {notice ? <span className="text-sm text-muted">{notice}</span> : null}
       </div>
     </div>
   );

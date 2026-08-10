@@ -35,7 +35,7 @@ export default async function OnyxDiscussionPage({ params }: { params: Promise<{
         + (thread.status === 'resolved' ? 'resolved' : thread.status)}
     >
       <div className="space-y-6">
-        <div className="rounded-xl border border-slate-200 p-4">
+        <div className="rounded-2xl border border-line p-4">
           <p className="whitespace-pre-wrap text-sm text-slate-700">{thread.body}</p>
           {thread.status === 'open' && (mine || staff) ? (
             <div className="mt-3">
@@ -45,17 +45,17 @@ export default async function OnyxDiscussionPage({ params }: { params: Promise<{
         </div>
 
         <section>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
             {thread.reply_count} {thread.reply_count === 1 ? 'reply' : 'replies'}
           </h2>
           <ul className="mt-3 space-y-3">
             {thread.posts.map((p) => (
               <li key={p.id}
                 className={'rounded-xl border p-4 ' + (p.is_answer
-                  ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200')}>
+                  ? 'border-emerald-300 bg-emerald-50' : 'border-line')}>
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="text-sm font-medium">{p.author?.name ?? 'Someone'}</span>
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs text-muted">
                     {new Date(p.created_at).toLocaleString()}
                   </span>
                 </div>
@@ -75,7 +75,7 @@ export default async function OnyxDiscussionPage({ params }: { params: Promise<{
               </li>
             ))}
             {thread.posts.length === 0 ? (
-              <li className="text-sm text-slate-500">No replies yet.</li>
+              <li className="text-sm text-muted">No replies yet.</li>
             ) : null}
           </ul>
         </section>

@@ -62,7 +62,7 @@ export function OnyxEditor({ value, language, onChange, height = 420, readOnly =
     return (
       <div className="space-y-1">
         {fallback}
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted">
           The syntax highlighter could not be loaded, so this is a plain editor.
           Your code still runs exactly the same.
         </p>

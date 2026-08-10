@@ -30,55 +30,55 @@ export default async function OnyxProgramsPage() {
       subtitle="What this institution teaches, and the cohorts taking it."
     >
       {programs.length === 0 ? (
-        <p className="text-sm text-slate-500">No programmes yet.</p>
+        <p className="text-sm text-muted">No programmes yet.</p>
       ) : (
         <ul className="space-y-6">
           {programs.map((p) => {
             const theirs = semesters.filter((s) => s.program_id === p.id);
             const cohorts = batches.filter((b) => b.program_id === p.id);
             return (
-              <li key={p.id} className="rounded-xl border border-slate-200 p-4">
+              <li key={p.id} className="rounded-2xl border border-line p-4">
                 <div className="flex items-baseline justify-between gap-3">
                   <h2 className="font-medium">{p.name}</h2>
-                  <span className="font-mono text-xs text-slate-500">{p.code}</span>
+                  <span className="font-mono text-xs text-muted">{p.code}</span>
                 </div>
                 {p.description ? (
-                  <p className="mt-1 text-sm text-slate-600">{p.description}</p>
+                  <p className="mt-1 text-sm text-muted">{p.description}</p>
                 ) : null}
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-muted">
                   {p.duration_semesters} semester{p.duration_semesters === 1 ? '' : 's'}
                 </p>
 
                 <div className="mt-3 grid gap-4 sm:grid-cols-2">
                   <div>
-                    <div className="text-xs uppercase tracking-wide text-slate-500">Semesters</div>
+                    <div className="text-xs uppercase tracking-wide text-muted">Semesters</div>
                     <ul className="mt-1 space-y-1 text-sm">
                       {theirs.map((s) => (
                         <li key={s.id}>
                           {s.number}. {s.name}
                           {s.starts_on ? (
-                            <span className="ml-2 text-xs text-slate-500">
+                            <span className="ml-2 text-xs text-muted">
                               from {s.starts_on}
                             </span>
                           ) : null}
                         </li>
                       ))}
                       {theirs.length === 0
-                        ? <li className="text-slate-500">None defined.</li>
+                        ? <li className="text-muted">None defined.</li>
                         : null}
                     </ul>
                   </div>
                   <div>
-                    <div className="text-xs uppercase tracking-wide text-slate-500">Batches</div>
+                    <div className="text-xs uppercase tracking-wide text-muted">Batches</div>
                     <ul className="mt-1 space-y-1 text-sm">
                       {cohorts.map((b) => (
                         <li key={b.id}>
                           {b.name}
-                          <span className="ml-2 font-mono text-xs text-slate-500">{b.code}</span>
+                          <span className="ml-2 font-mono text-xs text-muted">{b.code}</span>
                         </li>
                       ))}
                       {cohorts.length === 0
-                        ? <li className="text-slate-500">None yet.</li>
+                        ? <li className="text-muted">None yet.</li>
                         : null}
                     </ul>
                   </div>

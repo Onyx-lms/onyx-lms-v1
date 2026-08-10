@@ -25,24 +25,24 @@ export default async function OnyxInterviewsPage() {
 
   const list = (title: string, items: Interview[], hint: string) => (
     <section className="mt-6">
-      <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">{title}</h2>
+      <h2 className="text-sm font-medium uppercase tracking-wide text-muted">{title}</h2>
       <ul className="mt-3 space-y-2 text-sm">
         {items.map((i) => (
           <li key={i.id} className="flex flex-wrap items-center gap-3 rounded-lg border
-                                    border-slate-200 px-3 py-2">
+                                    border-line px-3 py-2">
             <Link href={'/onyx/interviews/' + i.id} className="flex-1 hover:underline">
               {i.title}
             </Link>
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-muted">
               {new Date(i.scheduled_at).toLocaleString()}
             </span>
-            <span className="text-xs capitalize text-slate-600">{i.status}</span>
+            <span className="text-xs capitalize text-muted">{i.status}</span>
             {i.feedback_released
               ? <span className="text-xs text-emerald-700">feedback ready</span>
               : null}
           </li>
         ))}
-        {items.length === 0 ? <li className="text-slate-500">{hint}</li> : null}
+        {items.length === 0 ? <li className="text-muted">{hint}</li> : null}
       </ul>
     </section>
   );

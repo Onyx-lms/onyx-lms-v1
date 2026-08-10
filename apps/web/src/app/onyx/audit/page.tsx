@@ -44,9 +44,13 @@ export default async function OnyxAuditPage() {
       title="Audit log"
       subtitle="Sensitive actions across this institution, newest first."
     >
-      <div className="overflow-x-auto rounded-xl border border-slate-200">
+      {/* tabIndex makes the horizontal scroll reachable by keyboard: a region
+          that only scrolls with a mouse wheel or a trackpad swipe strands
+          anyone navigating with a keyboard at whatever columns happen to fit. */}
+      <div className="overflow-x-auto rounded-2xl border border-line"
+        tabIndex={0} role="region" aria-label="Audit log entries">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
             <tr>
               <th className="px-4 py-3">When</th>
               <th className="px-4 py-3">Who</th>
@@ -57,21 +61,21 @@ export default async function OnyxAuditPage() {
           </thead>
           <tbody>
             {entries.map((e) => (
-              <tr key={e.id} className="border-t border-slate-100 align-top">
-                <td className="whitespace-nowrap px-4 py-3 text-slate-600">
+              <tr key={e.id} className="border-t border-line align-top">
+                <td className="whitespace-nowrap px-4 py-3 text-muted">
                   {new Date(e.created_at).toLocaleString()}
                 </td>
                 <td className="px-4 py-3">{e.actor?.name ?? 'System'}</td>
                 <td className="px-4 py-3 font-mono text-xs">{e.action}</td>
-                <td className="px-4 py-3 text-slate-600">
+                <td className="px-4 py-3 text-muted">
                   {e.entity_type}{e.entity_id ? ' #' + e.entity_id : ''}
                 </td>
-                <td className="px-4 py-3 font-mono text-xs text-slate-600">{summarise(e)}</td>
+                <td className="px-4 py-3 font-mono text-xs text-muted">{summarise(e)}</td>
               </tr>
             ))}
             {entries.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={5} className="px-4 py-8 text-center text-muted">
                   Nothing recorded yet.
                 </td>
               </tr>

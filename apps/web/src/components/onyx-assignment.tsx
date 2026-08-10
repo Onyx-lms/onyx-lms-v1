@@ -85,7 +85,7 @@ export function OnyxSubmissionForm({ assignment, submission }: {
 
   if (locked) {
     return (
-      <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+      <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-muted">
         You have submitted this and it cannot be resubmitted.
       </p>
     );
@@ -126,8 +126,8 @@ export function OnyxSubmissionForm({ assignment, submission }: {
       {error ? <p role="alert" className="text-sm text-rose-600">{error}</p> : null}
       <div className="flex items-center gap-3">
         <button type="submit" disabled={pending || !body.trim()}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white
-                     hover:bg-slate-800 disabled:opacity-50">
+          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white
+                     hover:bg-brand-700 disabled:opacity-50">
           {submission && submission.status !== 'draft' ? 'Resubmit' : 'Submit'}
         </button>
         <button type="button" onClick={() => { void saveDraft(body); }}
@@ -135,10 +135,10 @@ export function OnyxSubmissionForm({ assignment, submission }: {
                      hover:bg-slate-50">
           Save draft
         </button>
-        <span aria-live="polite" className="text-xs text-slate-500">{status}</span>
+        <span aria-live="polite" className="text-xs text-muted">{status}</span>
       </div>
       {assignment.due_at ? (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted">
           Due {new Date(assignment.due_at).toLocaleString()}
           {assignment.late_policy === 'reject' ? '. Nothing is accepted after this.' : null}
           {assignment.late_policy === 'penalty'
@@ -159,11 +159,11 @@ export function OnyxReturnedWork({ assignment, submission }: {
   const byId = new Map((assignment.rubric ?? []).map((c) => [c.id, c]));
 
   return (
-    <div className="space-y-4 rounded-xl border border-slate-200 p-4">
+    <div className="space-y-4 rounded-2xl border border-line p-4">
       <div>
-        <div className="text-xs uppercase tracking-wide text-slate-500">Result</div>
+        <div className="text-xs uppercase tracking-wide text-muted">Result</div>
         <div className="text-2xl font-semibold">
-          {submission.score} <span className="text-base text-slate-500">/ {assignment.total_points}</span>
+          {submission.score} <span className="text-base text-muted">/ {assignment.total_points}</span>
         </div>
         {submission.is_late ? (
           <p className="text-xs text-amber-700">
@@ -181,12 +181,12 @@ export function OnyxReturnedWork({ assignment, submission }: {
             {submission.rubric_scores.map((s) => {
               const criterion = byId.get(s.criterion_id);
               return (
-                <tr key={s.criterion_id} className="border-t border-slate-100">
+                <tr key={s.criterion_id} className="border-t border-line">
                   <td className="py-2">{criterion?.title ?? 'Criterion'}</td>
                   <td className="py-2 text-right tabular-nums">
                     {s.points} / {criterion?.points ?? '—'}
                   </td>
-                  <td className="py-2 pl-4 text-slate-600">{s.comment}</td>
+                  <td className="py-2 pl-4 text-muted">{s.comment}</td>
                 </tr>
               );
             })}
@@ -196,7 +196,7 @@ export function OnyxReturnedWork({ assignment, submission }: {
 
       {submission.feedback ? (
         <div>
-          <div className="text-xs uppercase tracking-wide text-slate-500">Feedback</div>
+          <div className="text-xs uppercase tracking-wide text-muted">Feedback</div>
           <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{submission.feedback}</p>
         </div>
       ) : null}
@@ -244,15 +244,15 @@ export function OnyxGrader({ submission, rubric, totalPoints }: {
     <div className="space-y-4">
       {rubric.length ? (
         <table className="w-full text-sm">
-          <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="text-left text-xs uppercase tracking-wide text-muted">
             <tr><th className="py-2">Criterion</th><th className="py-2">Points</th><th className="py-2 pl-4">Comment</th></tr>
           </thead>
           <tbody>
             {rubric.map((c) => (
-              <tr key={c.id} className="border-t border-slate-100">
+              <tr key={c.id} className="border-t border-line">
                 <td className="py-2">
                   <div>{c.title}</div>
-                  {c.description ? <div className="text-xs text-slate-500">{c.description}</div> : null}
+                  {c.description ? <div className="text-xs text-muted">{c.description}</div> : null}
                 </td>
                 <td className="py-2">
                   <input
@@ -262,7 +262,7 @@ export function OnyxGrader({ submission, rubric, totalPoints }: {
                     onChange={(e) => setPoints((p) => ({ ...p, [c.id]: e.target.value }))}
                     className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm"
                   />
-                  <span className="ml-1 text-xs text-slate-500">/ {c.points}</span>
+                  <span className="ml-1 text-xs text-muted">/ {c.points}</span>
                 </td>
                 <td className="py-2 pl-4">
                   <input
@@ -276,7 +276,7 @@ export function OnyxGrader({ submission, rubric, totalPoints }: {
             ))}
           </tbody>
           <tfoot>
-            <tr className="border-t border-slate-200">
+            <tr className="border-t border-line">
               <td className="py-2 font-medium">Total</td>
               <td className="py-2 font-medium tabular-nums">{running} / {totalPoints}</td>
               <td />
@@ -314,8 +314,8 @@ export function OnyxGrader({ submission, rubric, totalPoints }: {
               })),
             }
             : { feedback, score: Number(score) })}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white
-                     hover:bg-slate-800 disabled:opacity-50"
+          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white
+                     hover:bg-brand-700 disabled:opacity-50"
         >
           Save grade
         </button>
@@ -328,7 +328,7 @@ export function OnyxGrader({ submission, rubric, totalPoints }: {
         >
           Return to learner
         </button>
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-muted">
           {submission.returned_at
             ? 'Returned — the learner can see this.'
             : 'Nothing is visible to the learner until it is returned.'}

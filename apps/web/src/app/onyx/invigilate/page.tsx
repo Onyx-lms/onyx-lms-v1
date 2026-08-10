@@ -26,9 +26,9 @@ export default async function OnyxInvigilatePage() {
       title="Invigilation"
       subtitle="Attempts with something worth a look, most flagged first."
     >
-      <div className="overflow-x-auto rounded-xl border border-slate-200">
+      <div className="overflow-x-auto rounded-2xl border border-line">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
             <tr>
               <th className="px-4 py-3">Attempt</th>
               <th className="px-4 py-3">Score</th>
@@ -38,7 +38,7 @@ export default async function OnyxInvigilatePage() {
           </thead>
           <tbody>
             {queue.map((r) => (
-              <tr key={r.attempt_id} className="border-t border-slate-100">
+              <tr key={r.attempt_id} className="border-t border-line">
                 <td className="px-4 py-3">
                   <Link href={'/onyx/attempts/' + r.attempt_id + '/integrity'}
                     className="hover:underline">
@@ -47,12 +47,12 @@ export default async function OnyxInvigilatePage() {
                 </td>
                 <td className="px-4 py-3 tabular-nums">{r.integrity_flags}</td>
                 <td className="px-4 py-3 tabular-nums">{r.open_events}</td>
-                <td className="px-4 py-3 capitalize text-slate-600">{r.integrity_status}</td>
+                <td className="px-4 py-3 capitalize text-muted">{r.integrity_status}</td>
               </tr>
             ))}
             {queue.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={4} className="px-4 py-8 text-center text-muted">
                   Nothing to review.
                 </td>
               </tr>

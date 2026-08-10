@@ -24,12 +24,12 @@ export default async function OnyxPlatformAdminsPage() {
       <div className="space-y-6">
         <GrantAdminForm />
 
-        <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
+        <ul className="divide-y divide-line rounded-2xl border border-line">
           {admins.map((a) => (
             <li key={a.id} className="flex items-center justify-between px-4 py-3">
               <div>
                 <div className="text-sm font-medium">{a.user?.name ?? 'User #' + a.user_id}</div>
-                <div className="text-xs text-slate-500">
+                <div className="text-xs text-muted">
                   {a.user?.email} · granted {new Date(a.created_at).toLocaleDateString()}
                 </div>
               </div>
@@ -37,7 +37,7 @@ export default async function OnyxPlatformAdminsPage() {
             </li>
           ))}
           {admins.length === 0 ? (
-            <li className="px-4 py-6 text-center text-sm text-slate-500">None yet.</li>
+            <li className="px-4 py-6 text-center text-sm text-muted">None yet.</li>
           ) : null}
         </ul>
       </div>

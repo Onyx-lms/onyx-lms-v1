@@ -75,15 +75,17 @@ test.describe('every role can sign in through the real form', () => {
 
       // The tenant switcher card names the institution and, right under it,
       // this person's role in it: proof the token's role claim reached the
-      // page, not just that login succeeded. Scoped to that specific card
-      // (p-4, not the nav's p-2 links or the email box's p-3) -- "Examinations"
-      // and "Placement" are, confusingly, also the exact label of that role's
-      // own nav link, so a looser locator resolves to two elements.
-      const card = page.locator('aside > div.rounded-xl.border.border-slate-200.p-4');
+      // page, not just that login succeeded. Located by data-testid rather
+      // than by its Tailwind classes -- the previous locator pinned
+      // `.rounded-xl.border-slate-200.p-4`, so restyling the shell failed six
+      // tests that had found nothing wrong with the product.
+      const card = page.getByTestId('tenant-card').first();
       await expect(card.getByText(T.name)).toBeVisible();
       await expect(card.getByText(ROLE_LABEL[role], { exact: true })).toBeVisible();
 
-      const nav = page.getByRole('navigation');
+      // The desktop sidebar specifically: below `lg` the shell also renders a
+      // bottom tab bar, so `getByRole('navigation')` can match more than one.
+      const nav = page.locator('aside nav');
       const expect_ = NAV_EXPECT[role];
       await expect(nav.getByRole('link', { name: expect_.has })).toBeVisible();
       await expect(nav.getByRole('link', { name: expect_.lacks })).toHaveCount(0);

@@ -28,15 +28,15 @@ export default async function OnyxProfilePage() {
           <OnyxReadiness readiness={profile.readiness} />
 
           <section>
-            <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+            <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
               Credentials
             </h2>
             {profile.certificates.length ? (
               <ul className="mt-3 space-y-2 text-sm">
                 {profile.certificates.map((c) => (
-                  <li key={c.credential_id} className="rounded-xl border border-slate-200 p-3">
+                  <li key={c.credential_id} className="rounded-2xl border border-line p-3">
                     <div className="font-medium">{c.title}</div>
-                    <div className="text-xs text-slate-500">
+                    <div className="text-xs text-muted">
                       {new Date(c.issued_at).toLocaleDateString()}
                     </div>
                     {/* The share link is the whole feature: it works for
@@ -50,16 +50,16 @@ export default async function OnyxProfilePage() {
                 ))}
               </ul>
             ) : (
-              <p className="mt-2 text-sm text-slate-600">Nothing issued yet.</p>
+              <p className="mt-2 text-sm text-muted">Nothing issued yet.</p>
             )}
           </section>
         </div>
 
         <section>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
             Skills passport
           </h2>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="mt-1 text-xs text-muted">
             Each skill opens onto the evidence that produced it. Nothing here is typed in
             by hand.
           </p>

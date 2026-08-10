@@ -32,12 +32,12 @@ export default async function OnyxSubmissionPage({ params }: { params: Promise<{
         + (submission.is_late ? ', submitted late' : '')}
     >
       <Link href={'/onyx/assignments/' + submission.assignment_id}
-        className="text-sm text-slate-600 hover:underline">
+        className="text-sm text-muted hover:underline">
         &larr; Back to the assignment
       </Link>
 
       <div className="mt-6 grid gap-8 lg:grid-cols-[1fr_380px]">
-        <article className="whitespace-pre-wrap rounded-xl border border-slate-200 p-4
+        <article className="whitespace-pre-wrap rounded-2xl border border-line p-4
                             font-mono text-sm text-slate-700">
           {submission.body || 'Nothing was written.'}
         </article>

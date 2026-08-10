@@ -21,14 +21,14 @@ export default async function OnyxLessonPage(
 
   return (
     <OnyxShell me={me} nav={navFor(me.role)} title={lesson.title}>
-      <Link href={'/onyx/courses/' + id} className="text-sm text-slate-600 hover:underline">
+      <Link href={'/onyx/courses/' + id} className="text-sm text-muted hover:underline">
         &larr; Back to the course
       </Link>
       <div className="mt-4 space-y-6">
         <OnyxPlayer lesson={lesson} />
         {lesson.resources.length ? (
           <section>
-            <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+            <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
               For this lesson
             </h2>
             <ul className="mt-2 space-y-1 text-sm">

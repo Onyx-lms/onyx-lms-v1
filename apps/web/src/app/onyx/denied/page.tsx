@@ -7,7 +7,7 @@ export default function OnyxDenied() {
   return (
     <div className="container-page py-16 text-center">
       <h1 className="text-2xl font-semibold">That is not part of your role here</h1>
-      <p className="mt-2 text-sm text-slate-600">
+      <p className="mt-2 text-sm text-muted">
         Your role in this institution does not include that page. If you also belong to
         another institution, switching may change what you can reach.
       </p>

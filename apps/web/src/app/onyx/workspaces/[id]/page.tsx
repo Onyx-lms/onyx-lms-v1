@@ -24,7 +24,7 @@ export default async function OnyxWorkspacePage({ params }: { params: Promise<{ 
       title={workspace.title}
       subtitle={workspace.language + ', entry ' + workspace.entry_path}
     >
-      <Link href="/onyx/workspaces" className="text-sm text-slate-600 hover:underline">
+      <Link href="/onyx/workspaces" className="text-sm text-muted hover:underline">
         &larr; All workspaces
       </Link>
       <div className="mt-4">

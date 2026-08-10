@@ -28,7 +28,7 @@ export default async function OnyxPlatformPage() {
         <table className="w-full text-sm">
           <caption className="sr-only">Every institution on the platform</caption>
           <thead>
-            <tr className="text-left text-xs text-slate-500">
+            <tr className="text-left text-xs text-muted">
               <th scope="col" className="py-1 pr-3">Name</th>
               <th scope="col" className="py-1 pr-3">Address</th>
               <th scope="col" className="py-1 pr-3">Members</th>
@@ -36,7 +36,7 @@ export default async function OnyxPlatformPage() {
               <th scope="col" className="py-1">Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="divide-y divide-line">
             {tenants.map((t) => (
               <tr key={t.id}>
                 <td className="py-2 pr-3">
@@ -44,9 +44,9 @@ export default async function OnyxPlatformPage() {
                     {t.name}
                   </Link>
                 </td>
-                <td className="py-2 pr-3 text-slate-500">{t.slug}</td>
+                <td className="py-2 pr-3 text-muted">{t.slug}</td>
                 <td className="py-2 pr-3 tabular-nums">{t.member_count}</td>
-                <td className="py-2 pr-3 text-slate-500">
+                <td className="py-2 pr-3 text-muted">
                   {new Date(t.created_at).toLocaleDateString()}
                 </td>
                 <td className="py-2">
@@ -57,7 +57,7 @@ export default async function OnyxPlatformPage() {
               </tr>
             ))}
             {tenants.length === 0 ? (
-              <tr><td colSpan={5} className="py-4 text-center text-slate-500">
+              <tr><td colSpan={5} className="py-4 text-center text-muted">
                 No institutions yet.
               </td></tr>
             ) : null}

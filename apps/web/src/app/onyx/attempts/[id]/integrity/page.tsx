@@ -30,7 +30,7 @@ export default async function OnyxIntegrityPage({ params }: { params: Promise<{ 
       title="Integrity review"
       subtitle="A flag is evidence, not a verdict. Nothing here fails anybody on its own."
     >
-      <Link href="/onyx/invigilate" className="text-sm text-slate-600 hover:underline">
+      <Link href="/onyx/invigilate" className="text-sm text-muted hover:underline">
         &larr; Review queue
       </Link>
       <div className="mt-4"><OnyxIntegrityTimeline timeline={timeline} /></div>

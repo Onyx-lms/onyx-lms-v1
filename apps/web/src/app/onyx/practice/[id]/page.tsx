@@ -36,7 +36,7 @@ export default async function OnyxProblemPage({ params }: { params: Promise<{ id
         + (problem.topic ? ', ' + problem.topic : '')
         + ', ' + problem.time_limit_ms + 'ms per case'}
     >
-      <Link href="/onyx/practice" className="text-sm text-slate-600 hover:underline">
+      <Link href="/onyx/practice" className="text-sm text-muted hover:underline">
         &larr; Back to practice
       </Link>
 
@@ -49,13 +49,13 @@ export default async function OnyxProblemPage({ params }: { params: Promise<{ id
           ) : null}
 
           <section>
-            <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+            <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
               Examples
             </h2>
             <ul className="mt-2 space-y-3">
               {visible.map((t) => (
                 <li key={t.id}>
-                  <div className="text-xs text-slate-500">{t.name}</div>
+                  <div className="text-xs text-muted">{t.name}</div>
                   {t.stdin ? (
                     <pre className="mt-1 overflow-x-auto rounded-lg bg-slate-100 p-2 text-xs">
                       {t.stdin}
@@ -68,7 +68,7 @@ export default async function OnyxProblemPage({ params }: { params: Promise<{ id
               ))}
             </ul>
             {hidden ? (
-              <p className="mt-3 text-xs text-slate-500">
+              <p className="mt-3 text-xs text-muted">
                 {hidden} further case{hidden === 1 ? ' is' : 's are'} hidden. Submitting
                 checks those too.
               </p>
@@ -76,7 +76,7 @@ export default async function OnyxProblemPage({ params }: { params: Promise<{ id
           </section>
 
           {problem.attempts ? (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted">
               {problem.attempts} attempt{problem.attempts === 1 ? '' : 's'} so far
               {problem.solved ? ', solved' : ''}.
             </p>

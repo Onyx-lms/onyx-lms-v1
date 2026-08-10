@@ -28,14 +28,14 @@ export default async function OnyxFeesPage() {
       <table className="w-full text-sm">
         <caption className="sr-only">Your invoices</caption>
         <thead>
-          <tr className="text-left text-xs text-slate-500">
+          <tr className="text-left text-xs text-muted">
             <th scope="col" className="py-1 pr-3">Invoice</th>
             <th scope="col" className="py-1 pr-3">Total</th>
             <th scope="col" className="py-1 pr-3">Paid</th>
             <th scope="col" className="py-1">Status</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-line">
           {invoices.map((i) => (
             <tr key={i.id}>
               <td className="py-2 pr-3">{i.number}</td>
@@ -45,7 +45,7 @@ export default async function OnyxFeesPage() {
             </tr>
           ))}
           {invoices.length === 0 ? (
-            <tr><td colSpan={4} className="py-4 text-center text-slate-500">
+            <tr><td colSpan={4} className="py-4 text-center text-muted">
               No invoices have been raised yet.
             </td></tr>
           ) : null}

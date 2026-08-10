@@ -22,7 +22,7 @@ export function OnyxPlatformShell({ email, title, subtitle, children }: {
         <Link href="/onyx/platform" className="inline-block rounded-lg focus-visible:outline-none">
           <OnyxBrand className="mb-1" />
         </Link>
-        <p className="mb-4 text-xs uppercase tracking-wide text-slate-500">Platform console</p>
+        <p className="mb-4 text-xs uppercase tracking-wide text-muted">Platform console</p>
         <nav className="space-y-1">
           <Link href="/onyx/platform"
             className="block rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-100">
@@ -33,14 +33,14 @@ export function OnyxPlatformShell({ email, title, subtitle, children }: {
             Platform admins
           </Link>
         </nav>
-        <div className="mt-4 rounded-xl border border-slate-200 p-3">
-          <div className="truncate text-xs text-slate-500" title={email}>{email}</div>
+        <div className="mt-4 rounded-2xl border border-line p-3">
+          <div className="truncate text-xs text-muted" title={email}>{email}</div>
           <PlatformSignOut />
         </div>
       </aside>
       <section>
         <h1 className="text-2xl font-semibold">{title}</h1>
-        {subtitle ? <p className="mt-1 text-sm text-slate-600">{subtitle}</p> : null}
+        {subtitle ? <p className="mt-1 text-sm text-muted">{subtitle}</p> : null}
         <div className="mt-6">{children}</div>
       </section>
     </div>

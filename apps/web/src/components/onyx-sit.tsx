@@ -150,9 +150,9 @@ export function OnyxSitPaper({ assessment, attempt }: {
   return (
     <div className="space-y-6">
       <div className={'sticky top-0 z-10 flex flex-wrap items-center gap-4 rounded-xl border p-3 '
-        + (low ? 'border-rose-300 bg-rose-50' : 'border-slate-200 bg-white')}>
+        + (low ? 'border-rose-300 bg-rose-50' : 'border-line bg-white')}>
         <div>
-          <div className="text-xs uppercase tracking-wide text-slate-500" id="time-remaining">
+          <div className="text-xs uppercase tracking-wide text-muted" id="time-remaining">
             Time remaining
           </div>
           {/*
@@ -169,7 +169,7 @@ export function OnyxSitPaper({ assessment, attempt }: {
             {formatClock(remaining)}
           </div>
         </div>
-        <div className="text-sm text-slate-600">
+        <div className="text-sm text-muted">
           {answered} of {attempt.questions.length} answered
         </div>
         {assessment.proctoring ? (
@@ -185,8 +185,8 @@ export function OnyxSitPaper({ assessment, attempt }: {
               submit();
             }
           }}
-          className="ml-auto rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white
-                     hover:bg-slate-800 disabled:opacity-50"
+          className="ml-auto rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white
+                     hover:bg-brand-700 disabled:opacity-50"
         >
           Hand in
         </button>
@@ -198,15 +198,15 @@ export function OnyxSitPaper({ assessment, attempt }: {
 
       <ol className="space-y-6">
         {attempt.questions.map((q, i) => (
-          <li key={q.question_id} className="rounded-xl border border-slate-200 p-4">
+          <li key={q.question_id} className="rounded-2xl border border-line p-4">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-xs uppercase tracking-wide text-slate-500">
+              <span className="text-xs uppercase tracking-wide text-muted">
                 Question {i + 1}
               </span>
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-muted">
                 {q.points} mark{q.points === 1 ? '' : 's'}
                 {saved[q.question_id]
-                  ? <span className="ml-2 text-slate-400">{saved[q.question_id]}</span>
+                  ? <span className="ml-2 text-muted">{saved[q.question_id]}</span>
                   : null}
               </span>
             </div>
@@ -275,7 +275,7 @@ function QuestionInput({ question, value, onChange }: {
             {o.text}
           </label>
         ))}
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted">
           Select every correct option. Partial credit is not given.
         </p>
       </fieldset>
@@ -312,7 +312,7 @@ export function OnyxStartAssessment({ assessment }: { assessment: Assessment }) 
   const [pending, start] = useTransition();
 
   return (
-    <div className="space-y-4 rounded-xl border border-slate-200 p-4">
+    <div className="space-y-4 rounded-2xl border border-line p-4">
       <div className="text-sm text-slate-700">
         <p>
           {assessment.duration_minutes} minutes once you start. The timer runs on the server,
@@ -357,8 +357,8 @@ export function OnyxStartAssessment({ assessment }: { assessment: Assessment }) 
           router.push('/onyx/attempts/' + body.data.id);
           router.refresh();
         })}
-        className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white
-                   hover:bg-slate-800 disabled:opacity-50"
+        className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white
+                   hover:bg-brand-700 disabled:opacity-50"
       >
         Start
       </button>

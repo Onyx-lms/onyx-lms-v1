@@ -24,7 +24,7 @@ export default async function OnyxMarkPaperPage({ params }: { params: Promise<{ 
       title="Mark a paper"
       subtitle={paper.anonymous ? 'Anonymous' : 'Candidate ' + paper.user_id}
     >
-      <Link href="/onyx/assessments" className="text-sm text-slate-600 hover:underline">
+      <Link href="/onyx/assessments" className="text-sm text-muted hover:underline">
         &larr; Assessments
       </Link>
       <div className="mt-4"><OnyxMarker paper={paper} /></div>

@@ -25,35 +25,35 @@ export default async function OnyxFamilyPage() {
       subtitle="Only what each learner has chosen to share.">
       <div className="space-y-8">
         {family.children.map((c) => (
-          <section key={c.link_id} className="rounded-xl border border-slate-200 p-4">
+          <section key={c.link_id} className="rounded-2xl border border-line p-4">
             <h2 className="text-lg font-semibold">{c.name ?? 'Learner #' + c.student_user_id}</h2>
-            <p className="text-xs text-slate-500">{c.relationship}</p>
+            <p className="text-xs text-muted">{c.relationship}</p>
 
             <div className="mt-4 grid gap-4 sm:grid-cols-3">
               <div>
-                <div className="text-xs uppercase tracking-wide text-slate-500">Attendance</div>
+                <div className="text-xs uppercase tracking-wide text-muted">Attendance</div>
                 {c.shares.attendance && c.attendance ? (
                   <div className="mt-1 text-sm">
                     {c.attendance.percent}% ({c.attendance.attended} of {c.attendance.total})
                   </div>
                 ) : (
-                  <div className="mt-1 text-sm text-slate-400">Not shared</div>
+                  <div className="mt-1 text-sm text-muted">Not shared</div>
                 )}
               </div>
 
               <div>
-                <div className="text-xs uppercase tracking-wide text-slate-500">Results</div>
+                <div className="text-xs uppercase tracking-wide text-muted">Results</div>
                 {c.shares.results && c.results ? (
                   <div className="mt-1 text-sm">
                     {c.results.results.length} published
                   </div>
                 ) : (
-                  <div className="mt-1 text-sm text-slate-400">Not shared</div>
+                  <div className="mt-1 text-sm text-muted">Not shared</div>
                 )}
               </div>
 
               <div>
-                <div className="text-xs uppercase tracking-wide text-slate-500">Fees</div>
+                <div className="text-xs uppercase tracking-wide text-muted">Fees</div>
                 {c.shares.fees && c.fees ? (
                   <div className="mt-1 text-sm">
                     {c.fees.outstanding_minor > 0
@@ -61,7 +61,7 @@ export default async function OnyxFamilyPage() {
                       : 'Nothing outstanding'}
                   </div>
                 ) : (
-                  <div className="mt-1 text-sm text-slate-400">Not shared</div>
+                  <div className="mt-1 text-sm text-muted">Not shared</div>
                 )}
               </div>
             </div>
@@ -70,13 +70,13 @@ export default async function OnyxFamilyPage() {
               <table className="mt-4 w-full text-sm">
                 <caption className="sr-only">{(c.name ?? 'This learner') + '’s results'}</caption>
                 <thead>
-                  <tr className="text-left text-xs text-slate-500">
+                  <tr className="text-left text-xs text-muted">
                     <th scope="col" className="py-1 pr-3">Exam</th>
                     <th scope="col" className="py-1 pr-3">Mark</th>
                     <th scope="col" className="py-1">Grade</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-line">
                   {c.results.results.map((r) => (
                     <tr key={r.exam_id}>
                       <td className="py-1.5 pr-3">{r.title}</td>
@@ -90,7 +90,7 @@ export default async function OnyxFamilyPage() {
           </section>
         ))}
         {family.children.length === 0 ? (
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted">
             No learner has linked you as a guardian yet.
           </p>
         ) : null}

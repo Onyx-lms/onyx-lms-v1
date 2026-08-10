@@ -20,7 +20,7 @@ export function OnyxNewWorkspace({ courses }: { courses: Course[] }) {
 
   return (
     <form
-      className="grid gap-3 rounded-xl border border-slate-200 p-4 sm:grid-cols-4"
+      className="grid gap-3 rounded-2xl border border-line p-4 sm:grid-cols-4"
       onSubmit={(e) => {
         e.preventDefault();
         const data = new FormData(e.currentTarget);
@@ -53,12 +53,12 @@ export function OnyxNewWorkspace({ courses }: { courses: Course[] }) {
         {courses.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
       </select>
       <button type="submit" disabled={pending}
-        className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white
-                   hover:bg-slate-800 disabled:opacity-50">
+        className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white
+                   hover:bg-brand-700 disabled:opacity-50">
         Start a project
       </button>
       {error ? <p role="alert" className="text-sm text-rose-600 sm:col-span-4">{error}</p> : null}
-      <p className="text-xs text-slate-500 sm:col-span-4">
+      <p className="text-xs text-muted sm:col-span-4">
         Attaching a project to a course lets the people teaching it review your work.
         A project with no course stays private to you.
       </p>

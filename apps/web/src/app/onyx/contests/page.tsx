@@ -28,17 +28,17 @@ export default async function OnyxContestsPage() {
           const started = Date.parse(c.starts_at) <= now;
           const ended = Date.parse(c.ends_at) <= now;
           return (
-            <li key={c.id} className="rounded-xl border border-slate-200 p-4">
+            <li key={c.id} className="rounded-2xl border border-line p-4">
               <div className="flex items-baseline justify-between gap-3">
                 <Link href={'/onyx/contests/' + c.id} className="font-medium hover:underline">
                   {c.title}
                 </Link>
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-muted">
                   {ended ? 'finished' : started ? 'running' : 'not started'}
                   {c.status === 'draft' ? ' · draft' : ''}
                 </span>
               </div>
-              <div className="mt-1 text-xs text-slate-500">
+              <div className="mt-1 text-xs text-muted">
                 {new Date(c.starts_at).toLocaleString()} &ndash;{' '}
                 {new Date(c.ends_at).toLocaleString()}
                 {c.team_size > 1 ? ' · teams of up to ' + c.team_size : ' · individual'}
@@ -50,7 +50,7 @@ export default async function OnyxContestsPage() {
           );
         })}
         {contests.length === 0 ? (
-          <li className="text-sm text-slate-500">Nothing scheduled.</li>
+          <li className="text-sm text-muted">Nothing scheduled.</li>
         ) : null}
       </ul>
     </OnyxShell>

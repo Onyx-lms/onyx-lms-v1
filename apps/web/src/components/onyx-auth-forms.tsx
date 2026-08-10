@@ -13,8 +13,8 @@ import { useState, useTransition } from 'react';
 const field = 'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm '
   + 'focus:border-slate-900 focus:outline-none';
 const label = 'block text-sm font-medium text-slate-700';
-const button = 'w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white '
-  + 'hover:bg-slate-800 disabled:opacity-50';
+const button = 'w-full rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white '
+  + 'hover:bg-brand-700 disabled:opacity-50';
 
 function Error_({ message }: { message: string | null }) {
   if (!message) return null;
@@ -116,7 +116,7 @@ export function OnyxSignupForm() {
         <input id="slug" name="slug" maxLength={255} className={field}
           placeholder="Left blank, this is taken from the name" />
       </div>
-      <hr className="border-slate-200" />
+      <hr className="border-line" />
       <div>
         <label className={label} htmlFor="admin_name">Your name</label>
         <input id="admin_name" name="admin_name" required maxLength={255} className={field} />
@@ -130,7 +130,7 @@ export function OnyxSignupForm() {
         <label className={label} htmlFor="signup_password">Password</label>
         <input id="signup_password" name="password" type="password" required minLength={8}
           autoComplete="new-password" className={field} />
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-muted">
           At least 8 characters. You will be this institution&rsquo;s first administrator.
         </p>
       </div>

@@ -41,35 +41,35 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
       <div className="space-y-6">
         <dl className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
           <div>
-            <dt className="text-xs uppercase tracking-wide text-slate-500">Status</dt>
+            <dt className="text-xs uppercase tracking-wide text-muted">Status</dt>
             <dd className="mt-0.5">{exam.status}</dd>
           </div>
           <div>
-            <dt className="text-xs uppercase tracking-wide text-slate-500">Maximum</dt>
+            <dt className="text-xs uppercase tracking-wide text-muted">Maximum</dt>
             <dd className="mt-0.5 tabular-nums">{exam.max_marks}</dd>
           </div>
           <div>
-            <dt className="text-xs uppercase tracking-wide text-slate-500">Pass mark</dt>
+            <dt className="text-xs uppercase tracking-wide text-muted">Pass mark</dt>
             <dd className="mt-0.5 tabular-nums">{exam.pass_marks}</dd>
           </div>
         </dl>
 
         {!staff ? (
           seat ? (
-            <div className="rounded-xl border border-slate-200 p-4">
-              <div className="text-xs uppercase tracking-wide text-slate-500">Your seat</div>
+            <div className="rounded-2xl border border-line p-4">
+              <div className="text-xs uppercase tracking-wide text-muted">Your seat</div>
               <div className="mt-1 text-lg font-semibold">
                 Hall #{seat.hall_id} · {seat.seat_label}
               </div>
             </div>
           ) : (
-            <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+            <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-muted">
               Seating has not been published yet.
             </p>
           )
         ) : plan && plan.total > 0 ? (
           <section>
-            <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+            <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
               Seating &mdash; {plan.total} seated
             </h2>
             {plan.halls.map((h) => (
@@ -78,12 +78,12 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
                 <table className="mt-2 w-full text-sm">
                   <caption className="sr-only">Seating for {h.hall}</caption>
                   <thead>
-                    <tr className="text-left text-xs text-slate-500">
+                    <tr className="text-left text-xs text-muted">
                       <th scope="col" className="py-1 pr-3">Seat</th>
                       <th scope="col" className="py-1">Candidate</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-line">
                     {h.seats.map((s) => (
                       <tr key={s.seat_label}>
                         <td className="py-1.5 pr-3 tabular-nums">{s.seat_label}</td>
@@ -96,7 +96,7 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
             ))}
           </section>
         ) : (
-          <p className="text-sm text-slate-500">No seating has been allocated yet.</p>
+          <p className="text-sm text-muted">No seating has been allocated yet.</p>
         )}
       </div>
     </OnyxShell>

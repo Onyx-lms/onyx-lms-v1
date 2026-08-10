@@ -41,7 +41,7 @@ export default async function OnyxAssignmentPage({ params }: { params: Promise<{
         + (assignment.due_at ? ', due ' + new Date(assignment.due_at).toLocaleString() : '')}
     >
       <Link href={'/onyx/courses/' + assignment.course_id}
-        className="text-sm text-slate-600 hover:underline">
+        className="text-sm text-muted hover:underline">
         &larr; Back to the course
       </Link>
 
@@ -55,12 +55,12 @@ export default async function OnyxAssignmentPage({ params }: { params: Promise<{
 
           {staff ? (
             <section>
-              <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+              <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
                 Submissions
               </h2>
-              <div className="mt-2 overflow-x-auto rounded-xl border border-slate-200">
+              <div className="mt-2 overflow-x-auto rounded-2xl border border-line">
                 <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
                     <tr>
                       <th className="px-4 py-3">Learner</th>
                       <th className="px-4 py-3">Handed in</th>
@@ -70,13 +70,13 @@ export default async function OnyxAssignmentPage({ params }: { params: Promise<{
                   </thead>
                   <tbody>
                     {(assignment.submissions ?? []).map((s) => (
-                      <tr key={s.id} className="border-t border-slate-100">
+                      <tr key={s.id} className="border-t border-line">
                         <td className="px-4 py-3">
                           <Link href={'/onyx/submissions/' + s.id} className="hover:underline">
                             {names.get(s.user_id)?.name ?? ('User ' + s.user_id)}
                           </Link>
                         </td>
-                        <td className="px-4 py-3 text-slate-600">
+                        <td className="px-4 py-3 text-muted">
                           {s.submitted_at ? new Date(s.submitted_at).toLocaleString() : '-'}
                           {s.is_late
                             ? <span className="ml-2 text-xs text-amber-700">late</span>
@@ -88,7 +88,7 @@ export default async function OnyxAssignmentPage({ params }: { params: Promise<{
                     ))}
                     {(assignment.submissions ?? []).length === 0 ? (
                       <tr>
-                        <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                        <td colSpan={4} className="px-4 py-8 text-center text-muted">
                           Nothing handed in yet.
                         </td>
                       </tr>
@@ -110,7 +110,7 @@ export default async function OnyxAssignmentPage({ params }: { params: Promise<{
         <aside>
           {assignment.rubric?.length ? (
             <section>
-              <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+              <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
                 How this is marked
               </h2>
               <ul className="mt-2 space-y-2 text-sm">
@@ -119,14 +119,14 @@ export default async function OnyxAssignmentPage({ params }: { params: Promise<{
                     <span>
                       {c.title}
                       {c.description
-                        ? <span className="block text-xs text-slate-500">{c.description}</span>
+                        ? <span className="block text-xs text-muted">{c.description}</span>
                         : null}
                     </span>
-                    <span className="tabular-nums text-slate-600">{c.points}</span>
+                    <span className="tabular-nums text-muted">{c.points}</span>
                   </li>
                 ))}
               </ul>
-              <p className="mt-3 text-xs text-slate-500">
+              <p className="mt-3 text-xs text-muted">
                 The criteria add up to the marks for the whole assignment.
               </p>
             </section>

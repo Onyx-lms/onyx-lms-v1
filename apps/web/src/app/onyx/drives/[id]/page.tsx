@@ -34,15 +34,15 @@ export default async function OnyxDrivePage({ params }: { params: Promise<{ id: 
         ? new Date(summary.drive.scheduled_at).toLocaleString()
         : 'Not scheduled'}
     >
-      <Link href="/onyx/placement" className="text-sm text-slate-600 hover:underline">
+      <Link href="/onyx/placement" className="text-sm text-muted hover:underline">
         &larr; Placement
       </Link>
 
       <section className="mt-6">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Rounds</h2>
-        <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Rounds</h2>
+        <div className="mt-3 overflow-x-auto rounded-2xl border border-line">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th className="px-4 py-3">Round</th>
                 <th className="px-4 py-3">Attended</th>
@@ -53,7 +53,7 @@ export default async function OnyxDrivePage({ params }: { params: Promise<{ id: 
             </thead>
             <tbody>
               {summary.rounds.map((r) => (
-                <tr key={r.round_id} className="border-t border-slate-100">
+                <tr key={r.round_id} className="border-t border-line">
                   <td className="px-4 py-3">{r.name}</td>
                   <td className="px-4 py-3 tabular-nums">{r.attended}</td>
                   <td className="px-4 py-3 tabular-nums">{r.absent}</td>
@@ -63,7 +63,7 @@ export default async function OnyxDrivePage({ params }: { params: Promise<{ id: 
               ))}
               {summary.rounds.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={5} className="px-4 py-8 text-center text-muted">
                     No rounds defined.
                   </td>
                 </tr>
@@ -74,7 +74,7 @@ export default async function OnyxDrivePage({ params }: { params: Promise<{ id: 
       </section>
 
       <section className="mt-8">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
           Rounds against offers
         </h2>
         <div className={'mt-3 rounded-xl border p-4 text-sm '

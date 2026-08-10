@@ -15,8 +15,8 @@ import { useState, useTransition } from 'react';
 const field = 'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm '
   + 'focus:border-slate-900 focus:outline-none';
 const label = 'block text-sm font-medium text-slate-700';
-const button = 'rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white '
-  + 'hover:bg-slate-800 disabled:opacity-50';
+const button = 'rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white '
+  + 'hover:bg-brand-700 disabled:opacity-50';
 
 function Error_({ message }: { message: string | null }) {
   if (!message) return null;
@@ -117,7 +117,7 @@ export function CreateTenantForm() {
 
   return (
     <form
-      className="space-y-3 rounded-xl border border-slate-200 p-4"
+      className="space-y-3 rounded-2xl border border-line p-4"
       onSubmit={(e) => {
         e.preventDefault();
         const data = new FormData(e.currentTarget);
@@ -137,7 +137,7 @@ export function CreateTenantForm() {
         });
       }}
     >
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-muted">
         Provisioned directly, the way an operator sets one up on someone&rsquo;s
         behalf -- distinct from the self-service form at /onyx/signup.
       </p>

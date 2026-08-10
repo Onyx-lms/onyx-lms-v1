@@ -33,7 +33,7 @@ export default async function OnyxSupportPage() {
         ? 'Unowned first. Every ticket has a deadline, whether or not it has an owner yet.'
         : 'Escalated questions and anything you have raised directly.'}
     >
-      <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
+      <ul className="divide-y divide-line rounded-2xl border border-line">
         {tickets.map((t) => (
           <li key={t.id} className="px-4 py-3">
             <div className="flex items-start justify-between gap-3">
@@ -41,7 +41,7 @@ export default async function OnyxSupportPage() {
                 <Link href={'/onyx/support/' + t.id} className="font-medium hover:underline">
                   {t.subject}
                 </Link>
-                <div className="mt-0.5 text-xs text-slate-500">
+                <div className="mt-0.5 text-xs text-muted">
                   {t.priority} · {t.status}
                   {t.owner_name ? ' · owned by ' + t.owner_name : ' · unowned'}
                   {!mentor && t.raised_by_name ? ' · raised by ' + t.raised_by_name : ''}
@@ -52,7 +52,7 @@ export default async function OnyxSupportPage() {
           </li>
         ))}
         {tickets.length === 0 ? (
-          <li className="px-4 py-6 text-center text-sm text-slate-500">
+          <li className="px-4 py-6 text-center text-sm text-muted">
             {mentor ? 'The queue is empty.' : 'You have no open tickets.'}
           </li>
         ) : null}

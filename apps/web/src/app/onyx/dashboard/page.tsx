@@ -2,28 +2,14 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
-import { navFor, ROLE_LABELS } from '@/lib/onyx-nav';
+import { ROLE_LABELS } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import { isStaff, type Assignment, type Course } from '@/lib/onyx-learn';
-import { OnyxNudges, OnyxProgress } from '@/components/onyx-engage';
+import { OnyxNudges } from '@/components/onyx-engage';
+import {
+  Card, SectionHead, StatTile, Pill, Ring, Meter, Icon, Empty, relativeDue,
+} from '@/components/onyx-ui';
 import type { ProgressSummary } from '@/lib/onyx-campus';
-
-/**
- * Every role this page has ever been built for is either staff (a shape of
- * the institution) or a student (their own progress). `employer` and
- * `guardian` are neither -- outsiders whose account is a view derived from
- * links other people control, with no course, no progress and no roster of
- * their own. Before this redirect, both fell through to the student branch
- * and were told "you are not enrolled in any course yet" on a dashboard they
- * have no reason to see; a guardian in particular got the *learner's* nudges
- * and streak, not their family's. Each has exactly one real page, and the
- * nav (onyx-nav.ts) already sends them there -- this makes landing on
- * /onyx/dashboard directly do the same.
- */
-const REDIRECT: Partial<Record<string, string>> = {
-  employer: '/onyx/jobs',
-  guardian: '/onyx/family',
-};
 
 export const metadata: Metadata = { title: 'Dashboard' };
 
@@ -32,44 +18,51 @@ interface AttendanceLine {
 }
 
 /**
- * F-07 / LRN-01b -- what someone sees when they arrive.
+ * LRN-01b / LRN-05 -- what someone sees when they arrive.
  *
- * The proposal's claim for Onyx Learn is that "every learner always knows what
- * to do next", so for a learner this page is that list: what is due, and where
- * attendance has slipped. For staff it is the shape of the institution.
+ * The proposal's claim for Onyx Learn is that "every learner always knows
+ * what to do next", so the page is ordered by that: the single action that
+ * resumes their work, then what is due, then everything else. The previous
+ * version opened on four counters -- which is what a person looks at *after*
+ * they know what to do, not instead of it.
  *
- * Everything comes from /api/onyx/*, which reads the tenant from the token.
- * There is no institution id in the URL to change.
+ * `employer` and `guardian` never render this page: they are outsiders whose
+ * whole account is a view derived from links other people control, with no
+ * course and no progress of their own.
  */
+const REDIRECT: Partial<Record<string, string>> = {
+  employer: '/onyx/jobs',
+  guardian: '/onyx/family',
+};
+
 export default async function OnyxDashboard() {
   await requireOnyxSession();
   const me = await onyxApi<Me>('/api/onyx/me');
   if (REDIRECT[me.role]) redirect(REDIRECT[me.role]!);
+
   const staff = isStaff(me.role);
-  // Only a student has personal progress; an examinations/placement account
-  // is staff already, and the two outsider roles never reach this line.
   const isLearner = me.role === 'student';
 
   const [courses, attendance, roster, progress] = await Promise.all([
     onyxApiSafe<Course[]>('/api/onyx/my/courses'),
     staff ? null : onyxApiSafe<AttendanceLine[]>('/api/onyx/my/attendance'),
     staff ? onyxApiSafe<{ role: string }[]>('/api/onyx/members') : null,
-    // LRN-05. Only a learner has a streak to show.
     isLearner ? onyxApiSafe<ProgressSummary>('/api/onyx/progress') : null,
   ]);
   const mine = courses ?? [];
 
-  // Only a learner's own courses are searched for deadlines, so this is the
-  // work they have actually been set rather than everything in the catalog.
   const assignmentLists = await Promise.all(mine.map((c) =>
     onyxApiSafe<Assignment[]>('/api/onyx/courses/' + c.id + '/assignments')
       .then((list) => (list ?? []).map((a) => ({ ...a, course: c })))));
 
-  const now = Date.now();
+  // Everything still outstanding, soonest first -- including what is already
+  // late, which the old version dropped entirely by filtering to due_at > now.
+  // A missed deadline is the most important row on this page, not the one to
+  // hide.
   const due = assignmentLists.flat()
-    .filter((a) => a.status === 'published' && a.due_at && Date.parse(a.due_at) > now)
+    .filter((a) => a.status === 'published' && a.due_at)
     .sort((a, b) => Date.parse(a.due_at!) - Date.parse(b.due_at!))
-    .slice(0, 6);
+    .slice(0, 5);
 
   const counts = (roster ?? []).reduce<Record<string, number>>((acc, m) => {
     acc[m.role] = (acc[m.role] ?? 0) + 1;
@@ -77,117 +70,331 @@ export default async function OnyxDashboard() {
   }, {});
   const shortfall = (attendance ?? []).filter((a) => a.below_threshold);
 
+  const firstName = (me.email ?? '').split('@')[0]!.split(/[._]/)[0]!;
+  const greeting = firstName.charAt(0).toUpperCase() + firstName.slice(1);
+
   return (
     <OnyxShell
       me={me}
-      nav={navFor(me.role)}
-      title={me.tenant.name}
-      subtitle={'Signed in as ' + ROLE_LABELS[me.role].toLowerCase() + '.'}
+      title={isLearner ? `Hi, ${greeting} 👋` : me.tenant.name}
+      subtitle={isLearner
+        ? progressLine(progress)
+        : 'Signed in as ' + ROLE_LABELS[me.role].toLowerCase() + '.'}
     >
-      <div className="space-y-8">
-        {progress ? (
-          <section>
-            <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
-              What to do next
-            </h2>
-            <div className="mt-3">
-              <OnyxNudges nudges={progress.nudges} />
-            </div>
-            <div className="mt-4">
-              <OnyxProgress progress={progress} />
-            </div>
-          </section>
-        ) : null}
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.62fr)_minmax(290px,.92fr)] xl:items-start">
+        {/* ---------------- main column ---------------- */}
+        <div className="min-w-0">
+          {isLearner ? <ResumeCard courses={mine} progress={progress} /> : null}
 
-        {staff ? (
-          <section>
-            <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">People</h2>
-            <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {(['student', 'faculty', 'exams', 'placement', 'employer', 'admin'] as const).map((role) => (
-                <div key={role} className="rounded-xl border border-slate-200 p-4">
-                  <div className="text-xs uppercase tracking-wide text-slate-500">
-                    {ROLE_LABELS[role]}
-                  </div>
-                  <div className="mt-1 text-2xl font-semibold">{counts[role] ?? 0}</div>
-                </div>
-              ))}
-            </div>
-          </section>
-        ) : null}
+          {staff ? (
+            <section className="mb-5">
+              <SectionHead title="People" />
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {(['student', 'faculty', 'exams', 'placement', 'employer', 'admin'] as const)
+                  .map((role) => (
+                    <StatTile key={role} label={ROLE_LABELS[role]} value={counts[role] ?? 0} />
+                  ))}
+              </div>
+            </section>
+          ) : null}
 
-        <section>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
-            {staff ? 'Your courses' : 'What you are taking'}
-          </h2>
-          {mine.length ? (
-            <ul className="mt-3 grid gap-3 sm:grid-cols-2">
-              {mine.map((c) => (
-                <li key={c.id} className="rounded-xl border border-slate-200 p-4">
-                  <Link href={'/onyx/courses/' + c.id} className="font-medium hover:underline">
-                    {c.title}
-                  </Link>
-                  <div className="text-xs text-slate-500">{c.code}</div>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-2 text-sm text-slate-600">
-              Nothing yet.{' '}
-              <Link href="/onyx/courses" className="text-brand-600 hover:underline">
-                Look at the catalog
-              </Link>.
-            </p>
-          )}
-        </section>
+          {due.length ? (
+            <section className="mb-5">
+              <SectionHead title="Due next" id="due-h"
+                action={{ href: '/onyx/courses', label: 'All courses' }} />
+              <Card>
+                <ul>
+                  {due.map((a, i) => {
+                    const when = relativeDue(a.due_at);
+                    return (
+                      <li key={a.id} className={i ? 'border-t border-line' : ''}>
+                        <Link href={'/onyx/assignments/' + a.id}
+                          className="flex items-center gap-3 px-4 py-3.5 hover:bg-brand-50/40">
+                          <span aria-hidden="true"
+                            className={'h-2.5 w-2.5 shrink-0 rounded-full '
+                              + (when.tone === 'late' ? 'bg-red-600'
+                                : when.tone === 'soon' ? 'bg-accent-500' : 'bg-faint')} />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[14.5px] font-semibold">
+                              {a.title}
+                            </span>
+                            <span className="block truncate text-[12.5px] text-muted">
+                              {a.course.code} · {a.course.title}
+                            </span>
+                          </span>
+                          <Pill tone={when.tone}>{when.text}</Pill>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </Card>
+            </section>
+          ) : null}
 
-        {due.length ? (
-          <section>
-            <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
-              What is due next
-            </h2>
-            <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-200">
-              {due.map((a) => (
-                <li key={a.id} className="flex items-center gap-3 px-4 py-3 text-sm">
-                  <span className="flex-1">
-                    <Link href={'/onyx/assignments/' + a.id} className="hover:underline">
-                      {a.title}
+          <section className="mb-5">
+            <SectionHead title={staff ? 'Your courses' : 'What you are taking'}
+              action={{ href: '/onyx/courses', label: 'Catalogue' }} />
+            {mine.length ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {mine.map((c) => (
+                  <Card key={c.id}>
+                    <Link href={'/onyx/courses/' + c.id}
+                      className="flex items-center gap-3.5 p-3.5">
+                      <Ring percent={percentFor(c, progress)} />
+                      <span className="min-w-0">
+                        <span className="block truncate text-[14.5px] font-bold">{c.title}</span>
+                        <span className="block truncate text-[12.5px] text-muted">
+                          {c.code}{c.credits ? ` · ${c.credits} credits` : ''}
+                        </span>
+                      </span>
                     </Link>
-                    <span className="block text-xs text-slate-500">{a.course.title}</span>
-                  </span>
-                  <span className="text-xs text-slate-600">
-                    {new Date(a.due_at!).toLocaleString()}
-                  </span>
-                </li>
-              ))}
-            </ul>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <Card>
+                <Empty icon="book">
+                  Nothing yet.{' '}
+                  <Link href="/onyx/courses" className="font-semibold text-brand-600 underline">
+                    Look at the catalogue
+                  </Link>.
+                </Empty>
+              </Card>
+            )}
           </section>
-        ) : null}
 
-        {shortfall.length ? (
-          <section>
-            <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
-              Attendance
-            </h2>
-            <ul className="mt-3 space-y-2 text-sm">
-              {shortfall.map((a) => {
-                const course = mine.find((c) => c.id === a.course_id);
-                return (
-                  <li key={a.course_id} className="rounded-lg bg-amber-50 px-3 py-2 text-amber-900">
-                    {course?.title ?? 'A course'}: {a.percent}% ({a.attended} of {a.held})
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        ) : null}
+          {shortfall.length ? (
+            <section className="mb-5">
+              <SectionHead title="Attendance needs attention" />
+              <div className="space-y-2">
+                {shortfall.map((a) => {
+                  const course = mine.find((c) => c.id === a.course_id);
+                  return (
+                    <div key={a.course_id}
+                      className="flex items-center gap-3 rounded-2xl border border-accent-100
+                                 bg-accent-50 px-4 py-3 text-sm text-accent-700">
+                      <Icon name="flag" className="h-5 w-5" />
+                      <span>
+                        <strong>{course?.title ?? 'A course'}</strong> — {a.percent}%
+                        ({a.attended} of {a.held} sessions)
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+        </div>
 
-        {me.memberships.length > 1 ? (
-          <p className="text-sm text-slate-600">
-            You belong to {me.memberships.length} institutions. Use the switcher to move
-            between them &mdash; each one shows only its own people and records.
-          </p>
-        ) : null}
+        {/* ---------------- right rail ---------------- */}
+        <div className="min-w-0 space-y-5">
+          {progress ? <StreakCard progress={progress} /> : null}
+
+          {progress ? (
+            <section>
+              <SectionHead title="This week" />
+              <div className="grid grid-cols-2 gap-3">
+                <StatTile label="Lessons" value={progress.lessons.completed}
+                  note={`of ${progress.lessons.total}`} />
+                <StatTile label="Attendance" value={progress.attendance.percent + '%'}
+                  note={`${progress.attendance.attended} of ${progress.attendance.sessions}`} />
+                <StatTile label="Solved" value={progress.practice.solved}
+                  note={`of ${progress.practice.attempted} tried`} />
+                <StatTile label="Submitted" value={progress.assignments.submitted}
+                  note={`${progress.assignments.due} outstanding`} />
+              </div>
+            </section>
+          ) : null}
+
+          {progress?.nudges.length ? (
+            <section>
+              <SectionHead title="What to do next" />
+              <OnyxNudges nudges={progress.nudges} />
+            </section>
+          ) : null}
+
+          {isLearner ? (
+            <section>
+              <SectionHead title="Quick links" />
+              <Card>
+                <ul>
+                  {([
+                    ['/onyx/timetable', 'Timetable', 'calendar'],
+                    ['/onyx/results', 'Results', 'award'],
+                    ['/onyx/fees', 'Fees', 'wallet'],
+                    ['/onyx/support', 'Ask for help', 'help'],
+                  ] as const).map(([href, label, icon], i) => (
+                    <li key={href} className={i ? 'border-t border-line' : ''}>
+                      <Link href={href}
+                        className="flex items-center gap-3 px-4 py-3 text-sm font-medium
+                                   hover:bg-brand-50/40 hover:text-brand-700">
+                        <span className="text-brand-600"><Icon name={icon} /></span>
+                        {label}
+                        <span className="ml-auto text-muted">
+                          <Icon name="chevron" className="h-4 w-4" />
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            </section>
+          ) : null}
+
+          {me.memberships.length > 1 ? (
+            <p className="text-sm text-muted">
+              You belong to {me.memberships.length} institutions. Use the switcher to move
+              between them &mdash; each shows only its own people and records.
+            </p>
+          ) : null}
+        </div>
       </div>
     </OnyxShell>
+  );
+}
+
+/* ------------------------------------------------------------------ parts */
+
+function progressLine(p: ProgressSummary | null): string {
+  if (!p) return 'Welcome back.';
+  const left = p.lessons.total - p.lessons.completed;
+  if (p.courses.enrolled === 0) return 'You are not enrolled in a course yet.';
+  if (left <= 0 && p.lessons.total > 0) return "You've finished every lesson. Nice.";
+  if (left === 1) return "You're 1 lesson from finishing your plan.";
+  if (left > 1) return `You're ${left} lessons from finishing your plan.`;
+  return 'Welcome back.';
+}
+
+/** Percent for a course card. The summary is platform-wide, so this is the
+ *  learner's overall figure until a per-course number is on the payload. */
+function percentFor(_c: Course, p: ProgressSummary | null): number {
+  return p?.lessons.percent ?? 0;
+}
+
+/**
+ * The single most important control on the page: get back to work.
+ *
+ * Every serious learning product opens on this -- Uxcel, Coursera, Codecademy
+ * and Mindvalley all lead with a resume card. Onyx previously had no resume
+ * affordance at all, so a student landed on counters and went hunting.
+ */
+function ResumeCard({ courses, progress }: {
+  courses: Course[]; progress: ProgressSummary | null;
+}) {
+  const course = courses[0];
+  if (!course) return null;
+  const percent = progress?.lessons.percent ?? 0;
+
+  return (
+    <section
+      className="mb-5 overflow-hidden rounded-[20px] bg-gradient-to-br from-brand-600
+                 to-brand-900 p-5 text-white shadow-lift sm:p-6"
+      aria-labelledby="resume-h"
+    >
+      <span className="inline-flex items-center rounded-full border border-white/25
+                       bg-white/15 px-2.5 py-1 text-[10.5px] font-bold uppercase
+                       tracking-[.1em]">
+        {percent > 0 ? 'Pick up where you left off' : 'Start here'}
+      </span>
+      <h2 id="resume-h" className="mt-3 text-xl font-extrabold sm:text-2xl">{course.title}</h2>
+      <p className="mt-1 text-sm text-white/80">
+        {course.code}{course.credits ? ` · ${course.credits} credits` : ''}
+      </p>
+
+      <div className="mt-4">
+        <Meter percent={percent} label="Course progress" tone="light" />
+        <div className="mt-2 flex items-center justify-between text-[12.5px] text-white/85">
+          <span>{percent}% complete</span>
+          <span>
+            {progress ? `${progress.lessons.completed} of ${progress.lessons.total} lessons` : ''}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2.5">
+        <Link href={'/onyx/courses/' + course.id}
+          className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5
+                     text-[14.5px] font-bold text-brand-700 hover:bg-brand-50
+                     focus-visible:outline-white">
+          <Icon name="play" className="h-4 w-4" />
+          {percent > 0 ? 'Resume course' : 'Start course'}
+        </Link>
+        <Link href="/onyx/courses"
+          className="inline-flex items-center rounded-xl border border-white/30 bg-white/10
+                     px-4 py-2.5 text-[14.5px] font-bold text-white hover:bg-white/20
+                     focus-visible:outline-white">
+          All courses
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * The one deliberately coloured card.
+ *
+ * Duolingo colours exactly one stat and leaves the rest white; that is what
+ * keeps a high-energy dashboard from turning into confetti. The day circles
+ * are the pattern every learning product converged on -- Nibble, Brilliant,
+ * Vocabulary and Coursera all draw the week the same way -- and they read at
+ * a glance in a way "longest 0 · nothing today" never did.
+ */
+function StreakCard({ progress }: { progress: ProgressSummary }) {
+  const today = new Date().getDay();          // 0 = Sunday
+  const monday = (today + 6) % 7;             // 0 = Monday, matching the labels
+  const labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  const current = progress.streak.current;
+
+  return (
+    <section aria-labelledby="streak-h"
+      className="rounded-[20px] border border-accent-100 bg-gradient-to-br from-[#FFF3E0]
+                 to-[#FCE3BE] p-4.5 p-[18px]">
+      <div className="flex items-center gap-3">
+        <span className="text-[40px] font-extrabold leading-none tabular-nums text-accent-700">
+          {current}
+        </span>
+        <span>
+          <span id="streak-h" className="block text-[13px] font-bold text-accent-700">
+            day streak
+          </span>
+          <span className="block text-[12.5px] text-[#8A5A22]">
+            {progress.streak.longest > current
+              ? `Best yet: ${progress.streak.longest} days`
+              : progress.streak.active_today ? 'Counted for today' : 'Nothing today yet'}
+          </span>
+        </span>
+      </div>
+
+      <div className="mt-4 flex justify-between gap-1.5">
+        {labels.map((l, i) => {
+          // Days before today in this week are "done" only as far back as the
+          // streak actually reaches -- an 11-day best does not fill Monday if
+          // the current run is 2.
+          const done = i <= monday && (monday - i) < current;
+          const isToday = i === monday;
+          return (
+            <div key={i} className="flex-1 text-center">
+              <span className="mb-1.5 block text-[10.5px] font-bold uppercase text-[#8A5A22]">
+                {l}
+              </span>
+              <span aria-hidden="true"
+                className={'mx-auto grid h-[30px] w-[30px] place-items-center rounded-full '
+                  + 'text-[13px] '
+                  + (done
+                    ? 'bg-accent-500 text-white'
+                    : 'border-[1.5px] border-accent-600/20 bg-white/70 text-accent-500')
+                  + (isToday ? ' ring-2 ring-accent-700 ring-offset-2 ring-offset-[#FCE3BE]' : '')}>
+                {done ? <Icon name="check" className="h-3.5 w-3.5" /> : null}
+              </span>
+              <span className="sr-only">
+                {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][i]}
+                {isToday ? ', today' : ''}{done ? ', done' : ''}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }

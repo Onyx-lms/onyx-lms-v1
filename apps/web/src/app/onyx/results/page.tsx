@@ -34,17 +34,17 @@ export default async function OnyxResultsPage() {
     >
       <div className="space-y-8">
         <section>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Marks</h2>
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Marks</h2>
           <table className="mt-2 w-full text-sm">
             <caption className="sr-only">Your published exam marks</caption>
             <thead>
-              <tr className="text-left text-xs text-slate-500">
+              <tr className="text-left text-xs text-muted">
                 <th scope="col" className="py-1 pr-3">Exam</th>
                 <th scope="col" className="py-1 pr-3">Mark</th>
                 <th scope="col" className="py-1">Grade</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-line">
               {marks.map((m) => (
                 <tr key={m.id}>
                   <td className="py-2 pr-3">Exam #{m.exam_id}</td>
@@ -53,7 +53,7 @@ export default async function OnyxResultsPage() {
                 </tr>
               ))}
               {marks.length === 0 ? (
-                <tr><td colSpan={3} className="py-4 text-center text-slate-500">
+                <tr><td colSpan={3} className="py-4 text-center text-muted">
                   No results have been published yet.
                 </td></tr>
               ) : null}
@@ -62,12 +62,12 @@ export default async function OnyxResultsPage() {
         </section>
 
         <section>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Transcripts</h2>
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Transcripts</h2>
           <ul className="mt-2 space-y-2">
             {transcripts.map((t) => (
-              <li key={t.id} className="rounded-lg border border-slate-200 p-3 text-sm">
+              <li key={t.id} className="rounded-lg border border-line p-3 text-sm">
                 <div className="font-medium">{t.serial}</div>
-                <div className="mt-0.5 text-xs text-slate-500">
+                <div className="mt-0.5 text-xs text-muted">
                   issued {new Date(t.issued_at).toLocaleDateString()}
                   {t.gpa !== null ? ' · GPA ' + t.gpa : ''}
                   {' · '}{t.credits_earned} results
@@ -76,7 +76,7 @@ export default async function OnyxResultsPage() {
               </li>
             ))}
             {transcripts.length === 0 ? (
-              <li className="text-sm text-slate-500">None issued yet.</li>
+              <li className="text-sm text-muted">None issued yet.</li>
             ) : null}
           </ul>
         </section>

@@ -35,17 +35,17 @@ export function OnyxMarker({ paper }: { paper: MarkerPaper }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-4 rounded-xl border border-slate-200 p-3 text-sm">
+      <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-line p-3 text-sm">
         <span>
-          <span className="text-xs uppercase tracking-wide text-slate-500">Auto</span>
+          <span className="text-xs uppercase tracking-wide text-muted">Auto</span>
           <span className="ml-2 tabular-nums">{auto}</span>
         </span>
         <span>
-          <span className="text-xs uppercase tracking-wide text-slate-500">By hand</span>
+          <span className="text-xs uppercase tracking-wide text-muted">By hand</span>
           <span className="ml-2 tabular-nums">{manual}</span>
         </span>
         <span className="font-medium">
-          <span className="text-xs uppercase tracking-wide text-slate-500">Total</span>
+          <span className="text-xs uppercase tracking-wide text-muted">Total</span>
           <span className="ml-2 tabular-nums">{auto + manual} / {paper.max_score}</span>
         </span>
         {paper.integrity_flags > 0 ? (
@@ -54,25 +54,25 @@ export function OnyxMarker({ paper }: { paper: MarkerPaper }) {
           </span>
         ) : null}
         {paper.anonymous ? (
-          <span className="ml-auto text-xs text-slate-500">Marking anonymously</span>
+          <span className="ml-auto text-xs text-muted">Marking anonymously</span>
         ) : null}
       </div>
 
       <ol className="space-y-4">
         {paper.questions.map((q, i) => (
-          <li key={q.question_id} className="rounded-xl border border-slate-200 p-4">
+          <li key={q.question_id} className="rounded-2xl border border-line p-4">
             <div className="flex items-baseline justify-between gap-3">
-              <span className="text-xs uppercase tracking-wide text-slate-500">
+              <span className="text-xs uppercase tracking-wide text-muted">
                 Question {i + 1} · v{q.version}
               </span>
-              <span className="text-xs text-slate-500">{q.points} marks</span>
+              <span className="text-xs text-muted">{q.points} marks</span>
             </div>
             <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">{q.prompt}</p>
 
             <div className="mt-3 rounded-lg bg-slate-50 p-3">
-              <div className="text-xs uppercase tracking-wide text-slate-500">Answer given</div>
+              <div className="text-xs uppercase tracking-wide text-muted">Answer given</div>
               <p className="mt-1 whitespace-pre-wrap text-sm">
-                {formatResponse(q.response, q.options) || <span className="text-slate-400">Nothing</span>}
+                {formatResponse(q.response, q.options) || <span className="text-muted">Nothing</span>}
               </p>
             </div>
 
@@ -81,12 +81,12 @@ export function OnyxMarker({ paper }: { paper: MarkerPaper }) {
                 <span className={Number(q.auto_points) >= q.points ? 'text-emerald-700' : 'text-rose-700'}>
                   {Number(q.auto_points ?? 0)} / {q.points}
                 </span>
-                <span className="text-xs text-slate-500">
+                <span className="text-xs text-muted">
                   Expected: {formatResponse(q.expected, q.options)}
                 </span>
                 {/* Scored against the key as it stood when the paper was sat.
                     Editing it here would make marks irreproducible. */}
-                <span className="text-xs text-slate-400">scored automatically</span>
+                <span className="text-xs text-muted">scored automatically</span>
               </div>
             ) : (
               <div className="mt-3 grid gap-2 sm:grid-cols-[120px_1fr]">
@@ -99,7 +99,7 @@ export function OnyxMarker({ paper }: { paper: MarkerPaper }) {
                     onChange={(e) => setMarks((m) => ({ ...m, [q.question_id]: e.target.value }))}
                     className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm"
                   />
-                  <span className="ml-1 text-xs text-slate-500">/ {q.points}</span>
+                  <span className="ml-1 text-xs text-muted">/ {q.points}</span>
                 </label>
                 <input
                   aria-label={'Comment on question ' + (i + 1)}
@@ -152,12 +152,12 @@ export function OnyxMarker({ paper }: { paper: MarkerPaper }) {
             setNotice('Saved as ' + role + ' marker.');
             router.refresh();
           })}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white
-                     hover:bg-slate-800 disabled:opacity-50"
+          className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white
+                     hover:bg-brand-700 disabled:opacity-50"
         >
           Save marks
         </button>
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-muted">
           {subjective.length === 0
             ? 'Everything on this paper was scored automatically.'
             : 'Marked so far: ' + ([...done].join(', ') || 'nobody')}
@@ -187,13 +187,13 @@ export function OnyxIntegrityTimeline({ timeline }: { timeline: ProctorTimeline 
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-4 rounded-xl border border-slate-200 p-3 text-sm">
+      <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-line p-3 text-sm">
         <span>
-          <span className="text-xs uppercase tracking-wide text-slate-500">Integrity score</span>
+          <span className="text-xs uppercase tracking-wide text-muted">Integrity score</span>
           <span className="ml-2 tabular-nums">{timeline.integrity_flags}</span>
         </span>
         <span className="capitalize">{timeline.integrity_status}</span>
-        <span className="text-xs text-slate-500">
+        <span className="text-xs text-muted">
           {timeline.consented_at
             ? 'Consented ' + new Date(timeline.consented_at).toLocaleString()
             : 'No consent recorded'}
@@ -218,15 +218,15 @@ export function OnyxIntegrityTimeline({ timeline }: { timeline: ProctorTimeline 
 
       {error ? <p role="alert" className="text-sm text-rose-600">{error}</p> : null}
 
-      <ol className="divide-y divide-slate-100 rounded-xl border border-slate-200">
+      <ol className="divide-y divide-line rounded-2xl border border-line">
         {timeline.events.map((e) => (
           <li key={e.id} className="flex flex-wrap items-center gap-3 px-4 py-2 text-sm">
-            <span className="w-16 shrink-0 font-mono text-xs tabular-nums text-slate-500">
+            <span className="w-16 shrink-0 font-mono text-xs tabular-nums text-muted">
               +{Math.floor(e.offset_seconds / 60)}m{e.offset_seconds % 60}s
             </span>
             <span className="flex-1">{EVENT_LABELS[e.kind] ?? e.kind}</span>
             {e.weight > 0 ? (
-              <span className="text-xs text-slate-500">weight {e.weight}</span>
+              <span className="text-xs text-muted">weight {e.weight}</span>
             ) : null}
             {/* A client clock well out of step is itself a signal. */}
             {e.clock_skew_seconds !== null && Math.abs(e.clock_skew_seconds) > 60 ? (
@@ -240,7 +240,7 @@ export function OnyxIntegrityTimeline({ timeline }: { timeline: ProctorTimeline 
                   <button type="button" disabled={pending}
                     onClick={() => decide('proctor/events/' + e.id + '/review',
                       { decision: 'dismissed' })}
-                    className="text-xs text-slate-600 hover:underline disabled:opacity-50">
+                    className="text-xs text-muted hover:underline disabled:opacity-50">
                     dismiss
                   </button>
                   <button type="button" disabled={pending}
@@ -250,12 +250,12 @@ export function OnyxIntegrityTimeline({ timeline }: { timeline: ProctorTimeline 
                     uphold
                   </button>
                 </span>
-              ) : <span className="text-xs capitalize text-slate-400">{e.review}</span>
+              ) : <span className="text-xs capitalize text-muted">{e.review}</span>
             ) : null}
           </li>
         ))}
         {timeline.events.length === 0 ? (
-          <li className="px-4 py-6 text-center text-sm text-slate-500">
+          <li className="px-4 py-6 text-center text-sm text-muted">
             Nothing was recorded for this attempt.
           </li>
         ) : null}
@@ -273,7 +273,7 @@ export function OnyxPublishResults({ assessmentId, published, moderationRequired
   const [pending, start] = useTransition();
 
   if (published) {
-    return <p className="text-sm text-slate-600">Results are published and cannot be re-marked.</p>;
+    return <p className="text-sm text-muted">Results are published and cannot be re-marked.</p>;
   }
 
   return (
@@ -296,12 +296,12 @@ export function OnyxPublishResults({ assessmentId, published, moderationRequired
             router.refresh();
           });
         }}
-        className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white
-                   hover:bg-slate-800 disabled:opacity-50"
+        className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white
+                   hover:bg-brand-700 disabled:opacity-50"
       >
         Publish results
       </button>
-      <p className="text-xs text-slate-500">
+      <p className="text-xs text-muted">
         Nothing is visible to candidates until this.
         {moderationRequired ? ' Every paper has to be moderated first.' : ''}
       </p>

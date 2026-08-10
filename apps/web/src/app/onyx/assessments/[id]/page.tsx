@@ -33,7 +33,7 @@ export default async function OnyxAssessmentPage({ params }: { params: Promise<{
       subtitle={assessment.duration_minutes + ' minutes'
         + (assessment.pass_mark !== null ? ', pass mark ' + assessment.pass_mark : '')}
     >
-      <Link href="/onyx/assessments" className="text-sm text-slate-600 hover:underline">
+      <Link href="/onyx/assessments" className="text-sm text-muted hover:underline">
         &larr; All assessments
       </Link>
 
@@ -65,19 +65,19 @@ export default async function OnyxAssessmentPage({ params }: { params: Promise<{
             </div>
           ) : live ? (
             <Link href={'/onyx/attempts/' + live.attempt_id}
-              className="inline-block rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium
-                         text-white hover:bg-slate-800">
+              className="inline-block rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium
+                         text-white hover:bg-brand-700">
               Carry on with your attempt
             </Link>
           ) : attempts.length >= assessment.attempts_allowed ? (
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-muted">
               You have used all your attempts.
               {attempts.some((a) => a.results_published)
                 ? ' Your result is on the assessments page.'
                 : ' Results will appear once they are published.'}
             </p>
           ) : !open ? (
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-muted">
               {assessment.opens_at && Date.parse(assessment.opens_at) > now
                 ? 'This opens ' + new Date(assessment.opens_at).toLocaleString() + '.'
                 : 'This assessment has closed.'}
@@ -88,8 +88,8 @@ export default async function OnyxAssessmentPage({ params }: { params: Promise<{
         </div>
 
         <aside className="space-y-4 text-sm">
-          <div className="rounded-xl border border-slate-200 p-4">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Rules</div>
+          <div className="rounded-2xl border border-line p-4">
+            <div className="text-xs uppercase tracking-wide text-muted">Rules</div>
             <ul className="mt-2 space-y-1 text-slate-700">
               <li>{assessment.duration_minutes} minutes, timed by the server.</li>
               <li>{assessment.attempts_allowed} attempt{assessment.attempts_allowed === 1 ? '' : 's'}.</li>

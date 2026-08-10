@@ -32,21 +32,21 @@ export default async function OnyxPlatformTenantPage({ params }: { params: Promi
         </div>
 
         <section>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">People</h2>
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">People</h2>
           <div className="mt-3 grid gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {Object.entries(tenant.members_by_role).map(([role, count]) => (
-              <div key={role} className="rounded-xl border border-slate-200 p-4">
-                <div className="text-xs uppercase tracking-wide text-slate-500">{role}</div>
+              <div key={role} className="rounded-2xl border border-line p-4">
+                <div className="text-xs uppercase tracking-wide text-muted">{role}</div>
                 <div className="mt-1 text-2xl font-semibold">{count}</div>
               </div>
             ))}
             {Object.keys(tenant.members_by_role).length === 0 ? (
-              <p className="text-sm text-slate-500">Nobody has joined yet.</p>
+              <p className="text-sm text-muted">Nobody has joined yet.</p>
             ) : null}
           </div>
         </section>
 
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted">
           Created {new Date(tenant.created_at).toLocaleString()}
         </p>
       </div>

@@ -26,13 +26,13 @@ export default async function OnyxMarkingPage({ params }: { params: Promise<{ id
         ? 'Candidates are not named on this paper.'
         : 'Candidates are named on this paper.'}
     >
-      <Link href={'/onyx/assessments/' + id} className="text-sm text-slate-600 hover:underline">
+      <Link href={'/onyx/assessments/' + id} className="text-sm text-muted hover:underline">
         &larr; Back to the assessment
       </Link>
 
-      <div className="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+      <div className="mt-4 overflow-x-auto rounded-2xl border border-line">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
             <tr>
               <th className="px-4 py-3">Candidate</th>
               <th className="px-4 py-3">Handed in</th>
@@ -43,13 +43,13 @@ export default async function OnyxMarkingPage({ params }: { params: Promise<{ id
           </thead>
           <tbody>
             {queue.map((a) => (
-              <tr key={a.id} className="border-t border-slate-100">
+              <tr key={a.id} className="border-t border-line">
                 <td className="px-4 py-3">
                   <Link href={'/onyx/attempts/' + a.id + '/mark'} className="hover:underline">
                     {a.candidate ?? ('User ' + a.user_id)}
                   </Link>
                 </td>
-                <td className="px-4 py-3 text-slate-600">
+                <td className="px-4 py-3 text-muted">
                   {a.submitted_at ? new Date(a.submitted_at).toLocaleString() : '-'}
                   {a.status === 'expired'
                     ? <span className="ml-2 text-xs text-amber-700">ran out of time</span>
@@ -65,13 +65,13 @@ export default async function OnyxMarkingPage({ params }: { params: Promise<{ id
                       className="text-amber-700 hover:underline">
                       {a.integrity_flags} &middot; {a.integrity_status}
                     </Link>
-                  ) : <span className="text-slate-400">clean</span>}
+                  ) : <span className="text-muted">clean</span>}
                 </td>
               </tr>
             ))}
             {queue.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={5} className="px-4 py-8 text-center text-muted">
                   Nothing handed in yet.
                 </td>
               </tr>

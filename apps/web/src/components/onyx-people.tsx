@@ -65,7 +65,7 @@ export function OnyxPeople({ members, canEdit }: { members: Member[]; canEdit: b
 
       {canEdit ? (
         <form
-          className="grid gap-3 rounded-xl border border-slate-200 p-4 sm:grid-cols-5"
+          className="grid gap-3 rounded-2xl border border-line p-4 sm:grid-cols-5"
           onSubmit={(e) => {
             e.preventDefault();
             const form = e.currentTarget;
@@ -91,11 +91,11 @@ export function OnyxPeople({ members, canEdit }: { members: Member[]; canEdit: b
           <input name="password" type="password" minLength={8}
             placeholder="Temporary password" className={field} />
           <button type="submit" disabled={pending}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white
-                       hover:bg-slate-800 disabled:opacity-50">
+            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white
+                       hover:bg-brand-700 disabled:opacity-50">
             Add
           </button>
-          <p className="text-xs text-slate-500 sm:col-span-5">
+          <p className="text-xs text-muted sm:col-span-5">
             Someone who already has an Onyx account keeps it &mdash; they are attached to this
             institution rather than given a second one.
           </p>
@@ -110,21 +110,38 @@ export function OnyxPeople({ members, canEdit }: { members: Member[]; canEdit: b
         className={field + ' w-full sm:max-w-xs'}
       />
 
-      <div className="overflow-x-auto rounded-xl border border-slate-200">
+      {/* On a phone the email column is dropped rather than scrolled. A
+          horizontally-scrolling table is a poor way to read a roster on a
+          390px screen, and the four columns together were 80px wider than
+          the viewport -- which scrolled the whole page sideways. The name
+          already identifies the person; the address is shown underneath it
+          instead, where it costs no width.
+          tabIndex/role keep the scroll reachable by keyboard on the widths
+          that still need it. */}
+      <div className="max-w-full overflow-x-auto rounded-2xl border border-line"
+        tabIndex={0} role="region" aria-label="Members of this institution">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
             <tr>
               <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Email</th>
+              <th className="hidden px-4 py-3 sm:table-cell">Email</th>
               <th className="px-4 py-3">Role</th>
               {canEdit ? <th className="px-4 py-3"><span className="sr-only">Actions</span></th> : null}
             </tr>
           </thead>
           <tbody>
             {shown.map((m) => (
-              <tr key={m.id} className="border-t border-slate-100">
-                <td className="px-4 py-3">{m.user?.name ?? '—'}</td>
-                <td className="px-4 py-3 text-slate-600">{m.user?.email ?? '—'}</td>
+              <tr key={m.id} className="border-t border-line">
+                <td className="px-4 py-3">
+                  {m.user?.name ?? '—'}
+                  {/* The address, folded under the name on a phone only. */}
+                  <span className="block truncate text-xs text-muted sm:hidden">
+                    {m.user?.email ?? ''}
+                  </span>
+                </td>
+                <td className="hidden px-4 py-3 text-muted sm:table-cell">
+                  {m.user?.email ?? '—'}
+                </td>
                 <td className="px-4 py-3">
                   {canEdit ? (
                     <select
@@ -148,7 +165,12 @@ export function OnyxPeople({ members, canEdit }: { members: Member[]; canEdit: b
                       type="button"
                       disabled={pending}
                       onClick={() => call('members/' + m.id, { method: 'DELETE' }, 'Removed.')}
-                      className="text-sm text-rose-600 hover:underline disabled:opacity-50"
+                      // rose-600 is 4.7:1 on white and would pass on its own,
+                      // but `disabled:opacity-50` halves it to ~2.4:1 while
+                      // the control is still rendered. A dimmed colour token
+                      // says "disabled" without taking the text below AA.
+                      className="text-sm font-medium text-rose-700 hover:underline
+                                 disabled:text-muted disabled:no-underline"
                     >
                       Remove
                     </button>
@@ -158,7 +180,7 @@ export function OnyxPeople({ members, canEdit }: { members: Member[]; canEdit: b
             ))}
             {shown.length === 0 ? (
               <tr>
-                <td colSpan={canEdit ? 4 : 3} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={canEdit ? 4 : 3} className="px-4 py-8 text-center text-muted">
                   {members.length === 0 ? 'Nobody here yet.' : 'Nobody matches that.'}
                 </td>
               </tr>

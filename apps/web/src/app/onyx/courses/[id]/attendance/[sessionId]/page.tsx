@@ -39,7 +39,7 @@ export default async function OnyxSessionPage(
   if (!session) {
     return (
       <OnyxShell me={me} nav={navFor(me.role)} title="Session">
-        <p className="text-sm text-slate-600">That session is not part of this course.</p>
+        <p className="text-sm text-muted">That session is not part of this course.</p>
       </OnyxShell>
     );
   }
@@ -59,7 +59,7 @@ export default async function OnyxSessionPage(
       title={session.title}
       subtitle={new Date(session.scheduled_at).toLocaleString()}
     >
-      <Link href={'/onyx/courses/' + id} className="text-sm text-slate-600 hover:underline">
+      <Link href={'/onyx/courses/' + id} className="text-sm text-muted hover:underline">
         &larr; Back to the course
       </Link>
 
@@ -75,13 +75,13 @@ export default async function OnyxSessionPage(
           <div className="space-y-3">
             {session.status === 'open' ? (
               <>
-                <p className="text-sm text-slate-600">
+                <p className="text-sm text-muted">
                   Enter the code on screen. It changes every {session.qr_window_seconds} seconds.
                 </p>
                 <OnyxCheckIn sessionId={session.id} />
               </>
             ) : (
-              <p className="text-sm text-slate-600">This session is closed.</p>
+              <p className="text-sm text-muted">This session is closed.</p>
             )}
           </div>
         )}

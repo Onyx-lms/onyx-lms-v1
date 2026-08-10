@@ -46,39 +46,39 @@ export default async function OnyxVerifyPage({ params }: {
     <div className="container-page flex min-h-[70vh] items-center justify-center py-12">
       <div className="w-full max-w-lg">
         <div className={'rounded-xl border p-8 '
-          + (result.valid ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200')}>
-          <div className="text-xs uppercase tracking-wide text-slate-500">Credential check</div>
+          + (result.valid ? 'border-emerald-300 bg-emerald-50' : 'border-line')}>
+          <div className="text-xs uppercase tracking-wide text-muted">Credential check</div>
           <h1 className={'mt-1 text-2xl font-semibold '
             + (result.valid ? 'text-emerald-900' : 'text-slate-900')}>
             {headline}
           </h1>
 
           {result.reason === 'not_found' ? (
-            <p className="mt-3 text-sm text-slate-600">
+            <p className="mt-3 text-sm text-muted">
               Nothing is registered under that credential id. Check it was copied in full.
             </p>
           ) : (
             <dl className="mt-4 space-y-3 text-sm">
               <div>
-                <dt className="text-xs uppercase tracking-wide text-slate-500">Awarded to</dt>
+                <dt className="text-xs uppercase tracking-wide text-muted">Awarded to</dt>
                 {/* The holder's name is the only thing about them on this page. */}
                 <dd className="font-medium">{result.holder ?? 'Unknown'}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase tracking-wide text-slate-500">For</dt>
+                <dt className="text-xs uppercase tracking-wide text-muted">For</dt>
                 <dd>{result.title}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase tracking-wide text-slate-500">Issued by</dt>
+                <dt className="text-xs uppercase tracking-wide text-muted">Issued by</dt>
                 <dd>{result.issuer ?? 'Unknown'}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase tracking-wide text-slate-500">Issued</dt>
+                <dt className="text-xs uppercase tracking-wide text-muted">Issued</dt>
                 <dd>{result.issued_at ? new Date(result.issued_at).toLocaleDateString() : '—'}</dd>
               </div>
               {result.revoked_at ? (
                 <div>
-                  <dt className="text-xs uppercase tracking-wide text-slate-500">Revoked</dt>
+                  <dt className="text-xs uppercase tracking-wide text-muted">Revoked</dt>
                   <dd className="text-rose-700">
                     {new Date(result.revoked_at).toLocaleDateString()}
                   </dd>
@@ -86,13 +86,13 @@ export default async function OnyxVerifyPage({ params }: {
               ) : null}
               {result.expires_at ? (
                 <div>
-                  <dt className="text-xs uppercase tracking-wide text-slate-500">Expires</dt>
+                  <dt className="text-xs uppercase tracking-wide text-muted">Expires</dt>
                   <dd>{new Date(result.expires_at).toLocaleDateString()}</dd>
                 </div>
               ) : null}
               {result.detail && Object.keys(result.detail).length ? (
                 <div>
-                  <dt className="text-xs uppercase tracking-wide text-slate-500">Result</dt>
+                  <dt className="text-xs uppercase tracking-wide text-muted">Result</dt>
                   <dd>
                     {Object.entries(result.detail)
                       .map(([k, v]) => k.replace(/_/g, ' ') + ': ' + String(v))
@@ -103,9 +103,9 @@ export default async function OnyxVerifyPage({ params }: {
             </dl>
           )}
 
-          <p className="mt-6 font-mono text-xs text-slate-500">{credentialId}</p>
+          <p className="mt-6 font-mono text-xs text-muted">{credentialId}</p>
         </div>
-        <p className="mt-4 text-center text-xs text-slate-500">
+        <p className="mt-4 text-center text-xs text-muted">
           This page shows only what the issuing institution chose to publish.
         </p>
       </div>

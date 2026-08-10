@@ -31,14 +31,14 @@ export default async function OnyxFinancePage() {
       <table className="w-full text-sm">
         <caption className="sr-only">Outstanding invoices</caption>
         <thead>
-          <tr className="text-left text-xs text-slate-500">
+          <tr className="text-left text-xs text-muted">
             <th scope="col" className="py-1 pr-3">Invoice</th>
             <th scope="col" className="py-1 pr-3">Learner</th>
             <th scope="col" className="py-1 pr-3">Balance</th>
             <th scope="col" className="py-1">Due</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-slate-100">
+        <tbody className="divide-y divide-line">
           {outstanding.invoices.map((i) => (
             <tr key={i.id}>
               <td className="py-2 pr-3">{i.number}</td>
@@ -51,7 +51,7 @@ export default async function OnyxFinancePage() {
             </tr>
           ))}
           {outstanding.invoices.length === 0 ? (
-            <tr><td colSpan={4} className="py-4 text-center text-slate-500">
+            <tr><td colSpan={4} className="py-4 text-center text-muted">
               Nothing outstanding.
             </td></tr>
           ) : null}

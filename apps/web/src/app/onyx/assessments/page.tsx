@@ -25,9 +25,9 @@ export default async function OnyxAssessmentsPage() {
       title="Assessments"
       subtitle={staff ? 'Papers set at this institution.' : 'Your tests, and your results.'}
     >
-      <div className="overflow-x-auto rounded-xl border border-slate-200">
+      <div className="overflow-x-auto rounded-2xl border border-line">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
             <tr>
               <th className="px-4 py-3">Assessment</th>
               <th className="px-4 py-3">Opens</th>
@@ -40,7 +40,7 @@ export default async function OnyxAssessmentsPage() {
               const open = (!a.opens_at || Date.parse(a.opens_at) <= now)
                 && (!a.closes_at || Date.parse(a.closes_at) >= now);
               return (
-                <tr key={a.id} className="border-t border-slate-100">
+                <tr key={a.id} className="border-t border-line">
                   <td className="px-4 py-3">
                     <Link href={'/onyx/assessments/' + a.id} className="hover:underline">
                       {a.title}
@@ -49,11 +49,11 @@ export default async function OnyxAssessmentsPage() {
                       <span className="ml-2 text-xs text-amber-700">monitored</span>
                     ) : null}
                   </td>
-                  <td className="px-4 py-3 text-slate-600">
+                  <td className="px-4 py-3 text-muted">
                     {a.opens_at ? new Date(a.opens_at).toLocaleString() : 'Any time'}
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{a.duration_minutes} min</td>
-                  <td className="px-4 py-3 text-slate-600">
+                  <td className="px-4 py-3 text-muted">{a.duration_minutes} min</td>
+                  <td className="px-4 py-3 text-muted">
                     {a.status === 'draft' ? 'Draft'
                       : a.results_published_at ? 'Results out'
                         : open ? 'Open' : 'Closed'}
@@ -63,7 +63,7 @@ export default async function OnyxAssessmentsPage() {
             })}
             {assessments.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={4} className="px-4 py-8 text-center text-muted">
                   Nothing scheduled.
                 </td>
               </tr>
@@ -74,13 +74,13 @@ export default async function OnyxAssessmentsPage() {
 
       {mine?.length ? (
         <section className="mt-8">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
             Your results
           </h2>
           <ul className="mt-3 space-y-2 text-sm">
             {mine.map((a) => (
               <li key={a.attempt_id} className="flex items-center gap-3 rounded-lg border
-                                                border-slate-200 px-3 py-2">
+                                                border-line px-3 py-2">
                 <span className="flex-1">{a.title}</span>
                 {a.results_published ? (
                   <>
@@ -92,7 +92,7 @@ export default async function OnyxAssessmentsPage() {
                     ) : null}
                   </>
                 ) : (
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs text-muted">
                     {a.status === 'in_progress' ? 'in progress' : 'awaiting results'}
                   </span>
                 )}

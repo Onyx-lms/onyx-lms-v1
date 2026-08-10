@@ -31,16 +31,16 @@ export default async function OnyxCoursesPage() {
     >
       {mine.length ? (
         <section className="mb-8">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
             Your courses
           </h2>
           <ul className="mt-3 grid gap-3 sm:grid-cols-2">
             {mine.map((c) => (
-              <li key={c.id} className="rounded-xl border border-slate-200 p-4">
+              <li key={c.id} className="rounded-2xl border border-line p-4">
                 <Link href={'/onyx/courses/' + c.id} className="font-medium hover:underline">
                   {c.title}
                 </Link>
-                <div className="text-xs text-slate-500">
+                <div className="text-xs text-muted">
                   {c.code}
                   {c.program_id ? ' · ' + (byProgram.get(c.program_id)?.name ?? '') : ''}
                 </div>
@@ -50,10 +50,10 @@ export default async function OnyxCoursesPage() {
         </section>
       ) : null}
 
-      <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Catalog</h2>
-      <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
+      <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Catalog</h2>
+      <div className="mt-3 overflow-x-auto rounded-2xl border border-line">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
             <tr>
               <th className="px-4 py-3">Code</th>
               <th className="px-4 py-3">Course</th>
@@ -63,7 +63,7 @@ export default async function OnyxCoursesPage() {
           </thead>
           <tbody>
             {courses.map((c) => (
-              <tr key={c.id} className="border-t border-slate-100">
+              <tr key={c.id} className="border-t border-line">
                 <td className="px-4 py-3 font-mono text-xs">{c.code}</td>
                 <td className="px-4 py-3">
                   <Link href={'/onyx/courses/' + c.id} className="hover:underline">{c.title}</Link>
@@ -71,10 +71,10 @@ export default async function OnyxCoursesPage() {
                     ? <span className="ml-2 text-xs text-emerald-700">enrolled</span>
                     : null}
                   {c.self_enroll && !enrolled.has(c.id)
-                    ? <span className="ml-2 text-xs text-slate-500">open to join</span>
+                    ? <span className="ml-2 text-xs text-muted">open to join</span>
                     : null}
                 </td>
-                <td className="px-4 py-3 text-slate-600">
+                <td className="px-4 py-3 text-muted">
                   {c.program_id ? byProgram.get(c.program_id)?.name ?? '—' : '—'}
                 </td>
                 <td className="px-4 py-3 tabular-nums">{c.credits}</td>
@@ -82,7 +82,7 @@ export default async function OnyxCoursesPage() {
             ))}
             {courses.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={4} className="px-4 py-8 text-center text-muted">
                   No courses are published yet.
                 </td>
               </tr>

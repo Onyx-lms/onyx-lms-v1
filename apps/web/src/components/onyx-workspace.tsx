@@ -62,7 +62,7 @@ export function OnyxWorkspace({ workspace, isOwner, canReview }: {
       <div className="grid gap-4 lg:grid-cols-[200px_1fr]">
         <aside className="space-y-3">
           <div>
-            <div className="text-xs uppercase tracking-wide text-slate-500">Files</div>
+            <div className="text-xs uppercase tracking-wide text-muted">Files</div>
             <ul className="mt-1 space-y-0.5 text-sm">
               {files.map((f) => (
                 <li key={f.path}>
@@ -70,7 +70,7 @@ export function OnyxWorkspace({ workspace, isOwner, canReview }: {
                     type="button"
                     onClick={() => setActive(f.path)}
                     className={'w-full truncate rounded px-2 py-1 text-left font-mono text-xs '
-                      + (f.path === active ? 'bg-slate-900 text-white' : 'hover:bg-slate-100')}
+                      + (f.path === active ? 'bg-brand-600 text-white' : 'hover:bg-slate-100')}
                   >
                     {f.path}
                   </button>
@@ -124,8 +124,8 @@ export function OnyxWorkspace({ workspace, isOwner, canReview }: {
                     files: files.map((f) => ({ path: f.path, content: f.content })),
                   }),
                 }, 'Saved.')}
-                className="rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-medium text-white
-                           hover:bg-slate-800 disabled:opacity-50"
+                className="rounded-lg bg-brand-600 px-4 py-1.5 text-sm font-medium text-white
+                           hover:bg-brand-700 disabled:opacity-50"
               >
                 Save
               </button>
@@ -147,7 +147,7 @@ export function OnyxWorkspace({ workspace, isOwner, canReview }: {
               </button>
             </div>
           ) : (
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted">
               You are reviewing this project. Leave a comment rather than editing it.
             </p>
           )}
@@ -156,13 +156,13 @@ export function OnyxWorkspace({ workspace, isOwner, canReview }: {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Snapshots</h2>
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Snapshots</h2>
           <ul className="mt-2 space-y-2 text-sm">
             {workspace.snapshots.map((s) => (
               <li key={s.id} className="flex items-center gap-3">
                 <span className="flex-1">
                   {s.label}
-                  <span className="block text-xs text-slate-500">
+                  <span className="block text-xs text-muted">
                     {new Date(s.created_at).toLocaleString()} · {s.file_count} files
                   </span>
                 </span>
@@ -186,18 +186,18 @@ export function OnyxWorkspace({ workspace, isOwner, canReview }: {
               </li>
             ))}
             {workspace.snapshots.length === 0
-              ? <li className="text-slate-500">No snapshots yet.</li>
+              ? <li className="text-muted">No snapshots yet.</li>
               : null}
           </ul>
         </section>
 
         <section>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Review</h2>
+          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Review</h2>
           <ul className="mt-2 space-y-2 text-sm">
             {workspace.comments.map((c) => (
-              <li key={c.id} className={c.resolved_at ? 'text-slate-400' : 'text-slate-700'}>
+              <li key={c.id} className={c.resolved_at ? 'text-muted' : 'text-slate-700'}>
                 {c.file_path ? (
-                  <span className="font-mono text-xs text-slate-500">
+                  <span className="font-mono text-xs text-muted">
                     {c.file_path}{c.line ? ':' + c.line : ''}{' '}
                   </span>
                 ) : null}
@@ -215,7 +215,7 @@ export function OnyxWorkspace({ workspace, isOwner, canReview }: {
               </li>
             ))}
             {workspace.comments.length === 0
-              ? <li className="text-slate-500">Nothing yet.</li>
+              ? <li className="text-muted">Nothing yet.</li>
               : null}
           </ul>
 

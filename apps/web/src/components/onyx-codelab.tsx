@@ -154,13 +154,13 @@ export function OnyxCodeLab({ problem }: {
         <button
           type="button" disabled={pending || Boolean(status)}
           onClick={() => send('submit')}
-          className="rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-medium text-white
-                     hover:bg-slate-800 disabled:opacity-50"
+          className="rounded-lg bg-brand-600 px-4 py-1.5 text-sm font-medium text-white
+                     hover:bg-brand-700 disabled:opacity-50"
         >
           Submit
         </button>
-        <span aria-live="polite" className="text-sm text-slate-500">{status}</span>
-        <span className="ml-auto text-xs text-slate-500">
+        <span aria-live="polite" className="text-sm text-muted">{status}</span>
+        <span className="ml-auto text-xs text-muted">
           Run checks the {visible.length} visible case{visible.length === 1 ? '' : 's'}.
           {hidden ? ' Submit also checks ' + hidden + ' hidden one' + (hidden === 1 ? '' : 's') + '.' : ''}
         </span>
@@ -175,14 +175,14 @@ export function OnyxCodeLab({ problem }: {
       <Hints problemId={problem.id} hints={problem.hints} />
 
       {problem.solution_released && problem.solution ? (
-        <details className="rounded-xl border border-slate-200 p-4">
+        <details className="rounded-2xl border border-line p-4">
           <summary className="cursor-pointer text-sm font-medium">Worked solution</summary>
           <pre className="mt-3 overflow-x-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100">
             {problem.solution}
           </pre>
         </details>
       ) : (
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted">
           {problem.solved
             ? 'The worked solution is not published for this problem.'
             : 'The worked solution unlocks once you have met this problem’s release rule.'}
@@ -195,23 +195,23 @@ export function OnyxCodeLab({ problem }: {
 function Console({ result }: { result: CodeSubmission }) {
   const failed = result.status === 'failed';
   return (
-    <section className="rounded-xl border border-slate-200">
-      <header className="flex flex-wrap items-baseline gap-3 border-b border-slate-100 px-4 py-3">
+    <section className="rounded-2xl border border-line">
+      <header className="flex flex-wrap items-baseline gap-3 border-b border-line px-4 py-3">
         <span className="text-sm font-medium">
           {failed ? 'Could not run' : result.passed + ' of ' + result.total + ' cases passed'}
         </span>
         {!failed && result.max_score > 0 ? (
-          <span className="text-sm tabular-nums text-slate-600">
+          <span className="text-sm tabular-nums text-muted">
             {result.score} / {result.max_score}
           </span>
         ) : null}
         {result.runtime_ms !== null && !failed ? (
-          <span className="text-xs text-slate-500">{result.runtime_ms}ms</span>
+          <span className="text-xs text-muted">{result.runtime_ms}ms</span>
         ) : null}
       </header>
 
       {result.compile_output ? (
-        <pre className="overflow-x-auto border-b border-slate-100 bg-amber-50 p-3 text-xs text-amber-900">
+        <pre className="overflow-x-auto border-b border-line bg-amber-50 p-3 text-xs text-amber-900">
           {result.compile_output}
         </pre>
       ) : null}
@@ -219,7 +219,7 @@ function Console({ result }: { result: CodeSubmission }) {
         <p className="px-4 py-3 text-sm text-rose-700">{result.error}</p>
       ) : null}
 
-      <ul className="divide-y divide-slate-100">
+      <ul className="divide-y divide-line">
         {(result.cases ?? []).map((c) => (
           <li key={c.id} className="px-4 py-3 text-sm">
             <div className="flex items-center gap-2">
@@ -227,9 +227,9 @@ function Console({ result }: { result: CodeSubmission }) {
                 {c.passed ? 'passed' : 'failed'}
               </span>
               <span className="text-slate-700">{c.name}</span>
-              {c.is_hidden ? <span className="text-xs text-slate-500">hidden</span> : null}
+              {c.is_hidden ? <span className="text-xs text-muted">hidden</span> : null}
               {c.runtime_ms !== null
-                ? <span className="ml-auto text-xs text-slate-500">{c.runtime_ms}ms</span>
+                ? <span className="ml-auto text-xs text-muted">{c.runtime_ms}ms</span>
                 : null}
             </div>
             {/* A hidden case arrives with no output at all -- there is nothing
@@ -265,8 +265,8 @@ function Hints({ problemId, hints }: {
   const next = revealed.find((h) => !h.revealed);
 
   return (
-    <section className="rounded-xl border border-slate-200 p-4">
-      <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Hints</h2>
+    <section className="rounded-2xl border border-line p-4">
+      <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Hints</h2>
       <ol className="mt-2 space-y-2 text-sm">
         {revealed.filter((h) => h.revealed).map((h) => (
           <li key={h.id} className="text-slate-700">{h.body}</li>
@@ -292,7 +292,7 @@ function Hints({ problemId, hints }: {
           {next.penalty_percent ? ' (costs ' + next.penalty_percent + '%)' : ''}
         </button>
       ) : (
-        <p className="mt-3 text-xs text-slate-500">You have seen every hint.</p>
+        <p className="mt-3 text-xs text-muted">You have seen every hint.</p>
       )}
       {error ? <p className="mt-2 text-xs text-rose-600">{error}</p> : null}
     </section>

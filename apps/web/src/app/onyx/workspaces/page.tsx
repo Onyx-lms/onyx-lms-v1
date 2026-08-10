@@ -29,17 +29,17 @@ export default async function OnyxWorkspacesPage() {
 
       <ul className="mt-6 grid gap-3 sm:grid-cols-2">
         {workspaces.map((w) => (
-          <li key={w.id} className="rounded-xl border border-slate-200 p-4">
+          <li key={w.id} className="rounded-2xl border border-line p-4">
             <Link href={'/onyx/workspaces/' + w.id} className="font-medium hover:underline">
               {w.title}
             </Link>
-            <div className="text-xs text-slate-500">
+            <div className="text-xs text-muted">
               {w.language} · updated {new Date(w.updated_at).toLocaleDateString()}
             </div>
           </li>
         ))}
         {workspaces.length === 0 ? (
-          <li className="text-sm text-slate-500">Nothing yet. Start a project above.</li>
+          <li className="text-sm text-muted">Nothing yet. Start a project above.</li>
         ) : null}
       </ul>
     </OnyxShell>

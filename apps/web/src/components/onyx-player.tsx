@@ -61,10 +61,10 @@ export function OnyxPlayer({ lesson }: { lesson: LessonDetail }) {
   if (lesson.type !== 'video') {
     return lesson.url ? (
       <a href={lesson.url} target="_blank" rel="noreferrer"
-        className="inline-block rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white">
+        className="inline-block rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white">
         Open {lesson.type === 'document' ? 'the document' : 'the link'}
       </a>
-    ) : <p className="text-sm text-slate-500">This lesson has nothing attached.</p>;
+    ) : <p className="text-sm text-muted">This lesson has nothing attached.</p>;
   }
 
   return (
@@ -94,7 +94,7 @@ export function OnyxPlayer({ lesson }: { lesson: LessonDetail }) {
             </button>
           )}
         {resumedFrom > 0 && !completed ? (
-          <span className="text-slate-500">
+          <span className="text-muted">
             Resumed from {Math.floor(resumedFrom / 60)}m {resumedFrom % 60}s
           </span>
         ) : null}

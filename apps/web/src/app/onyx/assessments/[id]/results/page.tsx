@@ -25,8 +25,8 @@ export default async function OnyxResultsPage({ params }: { params: Promise<{ id
   ]);
 
   const stat = (label: string, value: string | number) => (
-    <div className="rounded-xl border border-slate-200 p-4">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+    <div className="rounded-2xl border border-line p-4">
+      <div className="text-xs uppercase tracking-wide text-muted">{label}</div>
       <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
     </div>
   );
@@ -41,7 +41,7 @@ export default async function OnyxResultsPage({ params }: { params: Promise<{ id
         : 'Not published — candidates cannot see any of this yet.'}
     >
       <div className="flex flex-wrap items-center gap-3">
-        <Link href={'/onyx/assessments/' + id} className="text-sm text-slate-600 hover:underline">
+        <Link href={'/onyx/assessments/' + id} className="text-sm text-muted hover:underline">
           &larr; Back to the assessment
         </Link>
         <a
@@ -53,7 +53,7 @@ export default async function OnyxResultsPage({ params }: { params: Promise<{ id
       </div>
 
       <section className="mt-6">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Cohort</h2>
+        <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Cohort</h2>
         <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {stat('Sat', report.cohort.sat)}
           {stat('Mean', report.cohort.mean + ' / ' + report.cohort.max_score)}
@@ -67,17 +67,17 @@ export default async function OnyxResultsPage({ params }: { params: Promise<{ id
       </section>
 
       <section className="mt-8">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
           Item analysis
         </h2>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-muted">
           Facility is the proportion who got it right. Discrimination compares the strongest
           and weakest 27% &mdash; a negative value usually means the answer key is wrong,
           not that the question was hard.
         </p>
-        <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
+        <div className="mt-3 overflow-x-auto rounded-2xl border border-line">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th className="px-4 py-3">Question</th>
                 <th className="px-4 py-3">Answered</th>
@@ -88,7 +88,7 @@ export default async function OnyxResultsPage({ params }: { params: Promise<{ id
             </thead>
             <tbody>
               {items.items.map((i) => (
-                <tr key={i.question_id} className="border-t border-slate-100 align-top">
+                <tr key={i.question_id} className="border-t border-line align-top">
                   <td className="px-4 py-3">
                     <span className="line-clamp-2">{i.prompt}</span>
                     {i.suspect_key ? (
@@ -107,14 +107,14 @@ export default async function OnyxResultsPage({ params }: { params: Promise<{ id
                   <td className="px-4 py-3 tabular-nums">{i.facility}</td>
                   <td className="px-4 py-3 tabular-nums">
                     {i.discrimination === null
-                      ? <span className="text-slate-400">too few papers</span>
+                      ? <span className="text-muted">too few papers</span>
                       : i.discrimination}
                   </td>
                 </tr>
               ))}
               {items.items.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={5} className="px-4 py-8 text-center text-muted">
                     No objective questions have been answered yet.
                   </td>
                 </tr>
@@ -125,10 +125,10 @@ export default async function OnyxResultsPage({ params }: { params: Promise<{ id
       </section>
 
       <section className="mt-8">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Candidates</h2>
-        <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Candidates</h2>
+        <div className="mt-3 overflow-x-auto rounded-2xl border border-line">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
               <tr>
                 <th className="px-4 py-3">Attempt</th>
                 <th className="px-4 py-3">Score</th>
@@ -139,7 +139,7 @@ export default async function OnyxResultsPage({ params }: { params: Promise<{ id
             </thead>
             <tbody>
               {report.candidates.map((c) => (
-                <tr key={c.attempt_id} className="border-t border-slate-100">
+                <tr key={c.attempt_id} className="border-t border-line">
                   <td className="px-4 py-3">
                     <Link href={'/onyx/attempts/' + c.attempt_id + '/mark'}
                       className="hover:underline">
@@ -155,7 +155,7 @@ export default async function OnyxResultsPage({ params }: { params: Promise<{ id
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 capitalize text-slate-600">
+                  <td className="px-4 py-3 capitalize text-muted">
                     {c.integrity_flags > 0 ? c.integrity_status : 'clean'}
                   </td>
                 </tr>

@@ -45,18 +45,18 @@ export default async function OnyxTimetablePage() {
           if (!rows.length) return null;
           return (
             <section key={dayNum}>
-              <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">{day}</h2>
+              <h2 className="text-sm font-medium uppercase tracking-wide text-muted">{day}</h2>
               <table className="mt-2 w-full text-sm">
                 <caption className="sr-only">{day}&apos;s scheduled classes</caption>
                 <thead>
-                  <tr className="text-left text-xs text-slate-500">
+                  <tr className="text-left text-xs text-muted">
                     <th scope="col" className="py-1 pr-3">Time</th>
                     <th scope="col" className="py-1 pr-3">Course</th>
                     <th scope="col" className="py-1 pr-3">Room</th>
                     {registry ? <th scope="col" className="py-1">Status</th> : null}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-line">
                   {rows.map((s) => (
                     <tr key={s.id}>
                       <td className="py-2 pr-3 tabular-nums">
@@ -65,7 +65,7 @@ export default async function OnyxTimetablePage() {
                       <td className="py-2 pr-3">Course #{s.course_id}</td>
                       <td className="py-2 pr-3">Room #{s.room_id}</td>
                       {registry ? (
-                        <td className="py-2 text-xs text-slate-500">
+                        <td className="py-2 text-xs text-muted">
                           {s.status === 'draft' ? 'draft' : 'published'}
                         </td>
                       ) : null}
@@ -77,7 +77,7 @@ export default async function OnyxTimetablePage() {
           );
         })}
         {slots.length === 0 ? (
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted">
             {registry ? 'Nothing scheduled yet.' : 'No timetable has been published yet.'}
           </p>
         ) : null}

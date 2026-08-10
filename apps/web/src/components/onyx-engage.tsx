@@ -51,20 +51,23 @@ export function OnyxNudges({ nudges }: { nudges: Nudge[] }) {
       {sorted.map((n) => (
         <li
           key={n.kind + n.because}
-          className={'rounded-lg px-3 py-2 text-sm ' + (n.urgency === 'high'
-            ? 'bg-amber-50 text-amber-900'
+          className={'rounded-xl px-3.5 py-2.5 text-sm ' + (n.urgency === 'high'
+            ? 'border border-accent-100 bg-accent-50 text-accent-700'
             : n.urgency === 'normal'
-              ? 'bg-slate-50 text-slate-800'
-              : 'bg-white text-slate-600 border border-slate-200')}
+              ? 'border border-line bg-white text-slate-800'
+              : 'border border-line bg-white text-muted')}
         >
           <div>
             {n.href ? (
-              <Link href={n.href} className="font-medium hover:underline">{n.message}</Link>
+              <Link href={n.href} className="font-semibold hover:underline">{n.message}</Link>
             ) : (
-              <span className="font-medium">{n.message}</span>
+              <span className="font-semibold">{n.message}</span>
             )}
           </div>
-          <div className="mt-0.5 text-xs opacity-70">Because: {n.because}</div>
+          {/* Not opacity-70: dimming already-muted text pushed this under
+              4.5:1 and made the one line explaining *why* the nudge exists
+              the least readable thing in it. */}
+          <div className="mt-1 text-xs text-muted">Because: {n.because}</div>
         </li>
       ))}
     </ul>
@@ -87,27 +90,27 @@ export function OnyxProgress({ progress }: { progress: ProgressSummary }) {
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {tiles.map((t) => (
-          <div key={t.label} className="rounded-xl border border-slate-200 p-4">
-            <div className="text-xs uppercase tracking-wide text-slate-500">{t.label}</div>
+          <div key={t.label} className="rounded-2xl border border-line p-4">
+            <div className="text-xs uppercase tracking-wide text-muted">{t.label}</div>
             <div className="mt-1 text-2xl font-semibold tabular-nums">{t.value}</div>
-            <div className="text-xs text-slate-500">{t.note}</div>
+            <div className="text-xs text-muted">{t.note}</div>
           </div>
         ))}
       </div>
 
-      <div className="rounded-xl border border-slate-200 p-4">
+      <div className="rounded-2xl border border-line p-4">
         <div className="flex items-baseline justify-between text-sm">
           <span className="font-medium">
             {progress.streak.current > 0
               ? progress.streak.current + '-day streak'
               : 'No streak yet'}
           </span>
-          <span className="text-xs text-slate-500">
+          <span className="text-xs text-muted">
             longest {progress.streak.longest}
             {progress.streak.active_today ? ' · active today' : ' · nothing today'}
           </span>
         </div>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-muted">
           Counted from lessons finished, work submitted and code run &mdash; not from
           signing in.
         </p>
@@ -131,7 +134,7 @@ export function OnyxAskForm({ courseId }: { courseId: number }) {
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)}
-        className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white">
+        className="rounded-lg bg-brand-600 px-3 py-2 text-sm text-white">
         Ask a question
       </button>
     );
@@ -139,7 +142,7 @@ export function OnyxAskForm({ courseId }: { courseId: number }) {
 
   return (
     <form
-      className="space-y-3 rounded-xl border border-slate-200 p-4"
+      className="space-y-3 rounded-2xl border border-line p-4"
       onSubmit={(e) => {
         e.preventDefault();
         setError(null);
@@ -171,7 +174,7 @@ export function OnyxAskForm({ courseId }: { courseId: number }) {
       {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
       <div className="flex gap-2">
         <button type="submit" disabled={pending}
-          className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white disabled:opacity-60">
+          className="rounded-lg bg-brand-600 px-3 py-2 text-sm text-white disabled:opacity-60">
           {pending ? 'Posting...' : 'Post question'}
         </button>
         <button type="button" onClick={() => setOpen(false)}
@@ -216,7 +219,7 @@ export function OnyxReplyForm({ discussionId, parentId }: {
         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
       {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
       <button type="submit" disabled={pending}
-        className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-60">
+        className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm text-white disabled:opacity-60">
         {pending ? 'Posting...' : 'Reply'}
       </button>
     </form>
@@ -241,7 +244,7 @@ export function OnyxVote({ post: p }: { post: DiscussionPost }) {
       disabled={pending}
       aria-pressed={state.voted}
       className={'rounded-lg border px-2 py-1 text-xs tabular-nums disabled:opacity-60 '
-        + (state.voted ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300')}
+        + (state.voted ? 'border-slate-900 bg-brand-600 text-white' : 'border-slate-300')}
       onClick={() => start(async () => {
         const result = await post('onyx/posts/' + p.id + '/vote') as
           { votes: number; voted: boolean };
@@ -340,7 +343,7 @@ export function OnyxEscalate({ discussionId }: { discussionId: number }) {
 export function OnyxSla({ ticket }: { ticket: Ticket }) {
   if (ticket.resolved_at) {
     return (
-      <span className="text-xs text-slate-500">
+      <span className="text-xs text-muted">
         closed after {humanMinutes(ticket.age_minutes)}
         {ticket.breached ? ' · missed its deadline' : ''}
       </span>
@@ -348,7 +351,7 @@ export function OnyxSla({ ticket }: { ticket: Ticket }) {
   }
   const left = ticket.minutes_remaining ?? 0;
   return (
-    <span className={'text-xs tabular-nums ' + (left < 0 ? 'text-red-700' : 'text-slate-600')}>
+    <span className={'text-xs tabular-nums ' + (left < 0 ? 'text-red-700' : 'text-muted')}>
       {left < 0
         ? humanMinutes(left) + ' past its deadline'
         : humanMinutes(left) + ' left'}
@@ -377,7 +380,7 @@ export function OnyxTicketActions({ ticket, canMentor }: {
   });
 
   return (
-    <div className="space-y-3 rounded-xl border border-slate-200 p-4">
+    <div className="space-y-3 rounded-2xl border border-line p-4">
       <label htmlFor={'note-' + ticket.id} className="block text-sm font-medium">
         {canMentor ? 'Reply to this ticket' : 'Add to this ticket'}
       </label>
@@ -388,7 +391,7 @@ export function OnyxTicketActions({ ticket, canMentor }: {
       <div className="flex flex-wrap gap-2">
         <button type="button" disabled={pending || !note.trim()}
           onClick={() => act('/respond', { note })}
-          className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-60">
+          className="rounded-lg bg-brand-600 px-3 py-1.5 text-sm text-white disabled:opacity-60">
           Send
         </button>
         {canMentor && !ticket.owner_id ? (

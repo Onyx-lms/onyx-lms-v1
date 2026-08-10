@@ -41,7 +41,7 @@ export default async function OnyxJobPage({ params }: { params: Promise<{ id: st
       title={job.title}
       subtitle={[job.location, job.compensation].filter(Boolean).join(' · ') || undefined}
     >
-      <Link href="/onyx/jobs" className="text-sm text-slate-600 hover:underline">
+      <Link href="/onyx/jobs" className="text-sm text-muted hover:underline">
         &larr; All jobs
       </Link>
 
@@ -55,7 +55,7 @@ export default async function OnyxJobPage({ params }: { params: Promise<{ id: st
 
           {canSeePipeline ? (
             <section>
-              <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+              <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
                 Applicants
               </h2>
               <div className="mt-3">
@@ -74,8 +74,8 @@ export default async function OnyxJobPage({ params }: { params: Promise<{ id: st
 
         <aside className="space-y-4">
           {claims.tenant_role === 'student' ? (
-            <section className="rounded-xl border border-slate-200 p-4">
-              <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+            <section className="rounded-2xl border border-line p-4">
+              <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
                 Can you apply?
               </h2>
               <div className="mt-3">
@@ -84,8 +84,8 @@ export default async function OnyxJobPage({ params }: { params: Promise<{ id: st
             </section>
           ) : null}
 
-          <section className="rounded-xl border border-slate-200 p-4 text-sm">
-            <div className="text-xs uppercase tracking-wide text-slate-500">Requirements</div>
+          <section className="rounded-2xl border border-line p-4 text-sm">
+            <div className="text-xs uppercase tracking-wide text-muted">Requirements</div>
             <ul className="mt-2 space-y-1 text-slate-700">
               {job.min_readiness !== null
                 ? <li>Readiness at least {job.min_readiness}</li> : null}
