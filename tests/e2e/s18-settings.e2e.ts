@@ -232,8 +232,9 @@ test('SET-09 an application is submitted, approved, and promotes the applicant',
   assert.equal(queue.data.some((a) => a.id === made.data.id), true);
 
   const approved = await api<{ role: string }>(
-    '/api/admin/instructor-applications/' + made.data.id + '/approve', { token: adminToken });
-  assert.equal(approved.ok, true);
+    '/api/admin/instructor-applications/' + made.data.id + '/approve',
+    { token: adminToken, method: 'POST' });
+  assert.equal(approved.ok, true, 'approve failed: ' + (approved.message ?? approved.status));
   assert.equal(approved.data.role, 'instructor');
 
   const role = await withDb(async (c) => (await c.query(
@@ -241,7 +242,7 @@ test('SET-09 an application is submitted, approved, and promotes the applicant',
   assert.equal(role, 'instructor', 'approval promotes them for real');
 
   assert.equal((await api('/api/admin/instructor-applications/' + made.data.id + '/approve',
-    { token: adminToken })).status, 422, 'and never twice');
+    { token: adminToken, method: 'POST' })).status, 422, 'and never twice');
 });
 
 test('SET-01/SET-09 the admin screens render server-side', async () => {

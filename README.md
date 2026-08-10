@@ -38,7 +38,26 @@ its first argument. Nothing else in the app touches the Laravel code.
 | **S16** Tutor Booking | 7/7 | 6/6 | **done, live** |
 | **S17** Revenue, Payouts, Dashboards | 5/5 | 3/3 | **done, live** |
 | **S18** Admin Settings | 9/9 | 6/6 | **done, live** |
-| S19+ | code IDE, hardening and handover | | next |
+| S19+ | code IDE, hardening and handover | | not started |
+
+### Onyx -- the institutional platform
+
+A second product in this repository, built to the proposal at
+<https://onyx.proposal.ezil.work/>. It reuses `packages/core` and the gate; it
+does not extend the port's 61 tables. See `ONYX_SPRINT_PLAN.csv` and
+`docs/ADR-006-onyx-foundation.md`.
+
+| Sprint | Backend | Frontend | State |
+| --- | --- | --- | --- |
+| **O01** Foundation: tenancy, roles, audit | 7/7 | 2/2 | **done, live** |
+| **O02** Onyx Learn: catalog, content, attendance, assignments | 10/10 | 7/7 | **done, live** |
+| **O03** Code Lab: IDE, queue, evaluator, bank, workspaces | 6/6 | 4/4 | **done** (sandbox adapter unverified -- no Judge0 endpoint) |
+| O04 Onyx Assess | | | next |
+| O05--O08 | Career, Campus, hardening | | not started |
+
+**Onyx Learn is six requirements, not four.** O02 delivered LRN-01 to LRN-04.
+**LRN-05** (progress dashboard) and **LRN-06** (discussion and doubt resolution)
+are scheduled for O06 and are not built.
 
 ## Three schema inconsistencies preserved
 
@@ -59,9 +78,9 @@ one-per-person. A counter would let a single account click forever.
 npm run verify:all      # everything below, in order
 
 npm run verify:parity   # generated SQL vs the Laravel schema
-npm test                # 356 unit tests, no database needed
+npm test                # 478 unit tests, no database needed
 npm run db:audit        # live types, RLS, sequences, seed, storage
-npm run e2e             # 127 tests against a running api + web + Supabase
+npm run e2e             # 204 tests against a running api + web + Supabase
 python tools/grading-differential.py        # quiz scoring vs the PHP algorithm
 ```
 
@@ -145,9 +164,17 @@ admin       /admin/dashboard  /admin/users  /admin/courses  /admin/approvals
             /admin/team-packages  /admin/tutoring  /admin/revenue  /admin/payouts
             /admin/settings  /admin/languages  /admin/languages/[id]
             /admin/newsletters  /admin/applications
+
+  Onyx     /onyx/login  /onyx/signup  /onyx/dashboard  /onyx/people
+            /onyx/audit  /onyx/denied  /onyx/courses  /onyx/courses/[id]
+            /onyx/courses/[id]/lessons/[lessonId]
+            /onyx/courses/[id]/attendance/[sessionId]
+            /onyx/assignments/[id]  /onyx/submissions/[id]  /onyx/programs
+            /onyx/practice  /onyx/practice/[id]
+            /onyx/workspaces  /onyx/workspaces/[id]
 ```
 
-90 routes. Everything server-rendered; the catalog and blog pages carry full
+107 routes. Everything server-rendered; the catalog and blog pages carry full
 metadata, and blog posts resolve `seo_fields` before falling back to the post.
 The two message screens opt out of caching entirely -- a conversation must never
 be served from a cache shared between users.
@@ -158,6 +185,12 @@ The API sets its cookie on the API origin, which the browser will not send to
 the web origin. So the web app proxies auth through its own route handlers
 (`/api/auth/[action]`) and stores the token in a cookie **it** owns, marked
 `httpOnly`. Page scripts can never read it.
+
+Onyx does the same with its own cookie, `onyx_tenant_session`. Two products
+share this origin, so the cookies are deliberately distinct and the shared proxy
+picks one by path: an Onyx token is never offered to a port route, nor the
+reverse. The root layout also renders the storefront header and footer only
+outside `/onyx` -- an institutional platform must not wear the port's branding.
 
 Client components that need authenticated calls go through
 `/api/proxy/[...path]`, which attaches the bearer token server-side. The token
@@ -315,15 +348,194 @@ Runtime is Node + Supabase. Nothing else is required.
 S12 subscribes to Supabase Realtime in the browser. It is the same Supabase
 client already in use, not a new vendor.
 
+`@monaco-editor/react` arrived with O03 (LAB-01). It loads Monaco from a CDN,
+which an institution's network may block, so the editor renders a plain
+textarea first and upgrades only if Monaco arrives -- losing highlighting is an
+inconvenience, losing the ability to type code would make Code Lab unusable.
+
 | Optional | Used for | Needed? |
 | --- | --- | --- |
 | `REDIS_URL` | shared settings cache | No -- in-process cache is the default |
+| `ONYX_JUDGE0_URL` | Code Lab sandbox | **Yes, to run code.** Everything else in Code Lab works without it |
 | `SENTRY_DSN` | error reporting | No -- stdout logging works |
 | Vercel / Fly.io | hosting | No -- any Node host or container |
 
 Third-party APIs arrive with the features that need them (Judge0 for the code
 IDE, Zoom, OpenAI, the payment providers). They are already called by the Laravel
 app today, so nothing new enters the system.
+
+## O03: the queue, and the code that must not run here
+
+Code Lab is where two things arrive that nothing before it needed: a place to
+run untrusted code, and a queue.
+
+**Nothing in this repository executes learner code.** `ExecutionProvider` is a
+contract; `Judge0Provider` adapts one sandbox to it; `UnconfiguredProvider`
+refuses. There is deliberately no local fallback, because running learner code
+in the API process means a fork bomb takes down the institution, an infinite
+loop pins a core, and `fetch` reaches whatever the API can reach -- including
+the database. `enable_network: false` is on every submission and there is no
+caller-facing way to turn it on, and all four limits (CPU, wall-clock, memory,
+processes) are sent explicitly rather than left to the server's defaults: a
+misconfigured Judge0 with generous defaults looks exactly like a working one
+until somebody submits a fork bomb.
+
+**The queue is Postgres, not Redis.** The guarantee that matters is durability,
+and a row that survives a restart is worth more than one that is fast. It also
+means no new infrastructure, which is the difference between a queue that exists
+and a queue that is planned. Claiming is one statement:
+
+```sql
+UPDATE onyx_jobs SET status='running', attempts=attempts+1
+ WHERE id IN (SELECT id FROM onyx_jobs
+               WHERE status='queued' AND run_after <= now()
+               ORDER BY id FOR UPDATE SKIP LOCKED LIMIT $1)
+RETURNING ...
+```
+
+`SKIP LOCKED` is what makes "none are double-graded" true under concurrency
+rather than merely likely: two workers racing for the same row cannot both win,
+because the second does not wait for the lock. The end-to-end test puts 200 jobs
+through eight concurrent workers against the real database and asserts every one
+ends `done` with `attempts = 1` -- claimed exactly once. A worker killed
+mid-job leaves a row at `running` that `requeueStale()` sweeps back; a job that
+keeps failing retries with backoff and then stops at `failed` **with its error
+kept**, because a queue that empties itself on failure looks healthy while
+losing work.
+
+**A hidden test case is the answer key.** Its input, its expected output, and
+the actual output a submission produced for it all give the answer away, so none
+of the three ever appears in a learner-facing response -- and the actual output
+of a hidden case is not even stored. This is enforced in the service rather than
+the route, so a route added later cannot forget. Two tests check it against the
+wire: one on the API response, one on the rendered page *including* the RSC
+payload, which is where "pass the whole problem down as props" would put it.
+
+**A snapshot is one immutable document.** LAB-05's acceptance criterion is that
+restoring gives back the tree that was captured, so the snapshot is jsonb rather
+than a copy of the file rows -- rows can be edited afterwards, and a snapshot
+that drifts is worse than none because it is trusted. Restore deletes files
+added since; a restore that only overwrote would be a merge.
+
+**A mentor comments; a mentor does not edit.** Not even an admin writes to
+someone else's workspace. A project with no course attached is private outright.
+
+Two bugs the tests caught. The pool built itself on the IPv6-only direct host
+and swapped in a pooler-backed replacement on first failure -- leaving every
+caller holding a pool that had been ended, and their queries hung; the host is
+now resolved once, before any pool exists. And `/problems/:id/attempts` answered
+200 with an empty list for another institution's problem id, which leaks nothing
+but confirms the id is real -- "no data leaked" is not the same as "nothing was
+learned".
+
+**Not verified:** the Judge0 adapter has no endpoint here, so it is unit-tested
+against a fake `fetch` and never run against a real sandbox. Everything
+downstream of it -- queue, evaluator, partial scoring, hidden-case handling --
+is exercised for real.
+
+## O02: the everyday learning loop
+
+Onyx Learn is four requirements that only work as one flow, so the decisions
+that matter are the ones where two of them meet.
+
+**A course is not a product.** It sits in a semester of a programme, and a
+learner usually reaches it by belonging to a batch rather than by choosing it.
+Bulk enrolment is therefore the normal path and self-enrolment the exception --
+`self_enroll` is off by default and a course starts unpublished, because an
+empty course visible to a cohort is worse than no course at all.
+
+**"Faculty" means faculty of this course.** `assertCanTeach` is on every
+course-scoped route. Without it the role would be a tenant-wide key to every
+roster, grade and attendance record in the institution. Admins are exempt;
+nobody else is.
+
+**Locked content keeps its title and loses its source.** A learner who is not
+enrolled sees the shape of a course -- that is what a catalog is -- and preview
+lessons play. Everything else returns `path: null`, and the page does not render
+a link it would refuse on click.
+
+**Progress only moves forward.** Scrubbing back to check something and closing
+the tab must not cost the twenty minutes already watched, and completion is
+sticky, because rewatching has not un-finished anything.
+
+**The QR code is derived, never stored.** It is an HMAC of a per-session secret
+and the current 30-second window, so a leaked database yields no codes, and a
+photograph of the projector is worthless half a minute later. Only the current
+window is accepted -- a grace window would double the useful life of that
+photograph for no real benefit. The endpoint takes no learner id at all, so
+"a learner cannot mark another learner" is structural rather than checked. It is
+a deterrent with a 30-second half-life, not proof of presence, and it should not
+be described as more than that.
+
+**Attendance arithmetic, stated once.** Present and late count as attended;
+excused leaves the denominator; **a session with no record counts as absent**.
+That last clause is the one that matters -- treating unmarked as "no data" makes
+every percentage flattering and a shortfall report that never flags anyone.
+
+**A rubric must add up to the assignment total**, checked when it is saved and
+again at publish, and frozen once published: changing the weights under work
+already submitted regrades it silently. When a rubric exists the score is its
+sum, never a number typed alongside it, because two numbers meant to agree
+eventually will not.
+
+**Grading and returning are separate acts.** A cohort is marked over a week and
+released at once, so a graded-but-unreturned submission looks to the learner
+exactly like a submitted one -- not "graded, score hidden", which would tell
+them their mark exists and start the conversation early.
+
+**Autosave saves, and never submits.** The draft is a real row in the table the
+submission will become, plus a `localStorage` copy written on every keystroke
+that covers the five seconds between server saves. The newer of the two wins on
+return, and the page says so rather than silently replacing what they last saw.
+
+Two bugs the tests caught. `enrollBatch` compared the batch against the *active*
+roster, so a previously withdrawn learner looked absent and was inserted again --
+which against the real database violates the unique constraint and fails the
+entire batch; it now restores them. And content was gated on `role === 'student'`,
+which quietly let `exams` and `placement` read every lesson in the institution;
+the check now names the two staff roles instead of guessing at the rest.
+
+## O01: one institution can never see another
+
+Onyx's promise is not schema parity, it is isolation. That is a security
+property, so it is enforced in three places and tested against the real
+database rather than a fake.
+
+**The claim, not the request.** Every Onyx token carries `tenant_id`. Routes
+take the tenant from the token and never from a path or body -- there is no
+parameter to tamper with. A token without a usable `tenant_id` is refused
+outright (401) rather than treated as "no tenant yet": defaulting a missing
+tenant is exactly how a request ends up reading the wrong institution.
+
+**The database, not just the API.** `onyx.current_tenant_id()` reads the same
+claim inside every RLS policy. The one that matters most is on `onyx_users`:
+identities are shared across institutions, so a person is visible only through
+a membership of the caller's tenant. Without that join, one institution could
+enumerate another's people out of a table they both legitimately use.
+`onyx_audit_logs` has RLS and deliberately **no** select policy -- it records
+who changed a grade, so it is served through the API to admins only.
+
+**A guard, not a habit.** `onyx.assert_tenant_scoped()` fails the migration
+runner and the gate if any `onyx_` table lacks `tenant_id`. The rule is easy to
+state and easy to forget on the fortieth table.
+
+Roles live on `memberships`, not on `users`, so the same person can be faculty
+at one institution and a student at another -- which is also the case where a
+leak would be easiest, and so it is the case the tests use.
+
+Two smaller decisions worth naming:
+
+- **The last administrator cannot demote or remove themselves.** An institution
+  with no admin cannot be recovered from inside it.
+- **A member id from another institution is a 404, not a 403.** Whether that id
+  exists is not the caller's business.
+
+Two bugs the tests caught. `recordSystem` wrote `actor_id: 0` for
+tenant-creation entries; `actor_id` is a foreign key to a real person, so every
+one of those entries failed the constraint and was dropped -- silently, because
+an audit write must never throw and undo the change it describes. It now writes
+`null`. And a duplicate slug returned 500 when two signups raced past the
+existence check; the unique violation now reads as the same 422 the check gives.
 
 ## S18: settings with a declared surface, and secrets that stay server-side
 

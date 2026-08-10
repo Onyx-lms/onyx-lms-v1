@@ -1,0 +1,59 @@
+import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
+import { ONYX_COOKIE, getOnyxToken } from '@/lib/onyx-session';
+
+const API = process.env.API_URL ?? 'http://127.0.0.1:4000';
+
+/**
+ * Onyx auth, proxied so the token can be stored in a cookie this origin owns.
+ *
+ * An allow-list rather than a passthrough: `signup` and `login` are open by
+ * design, `switch` needs the caller's current session, and nothing else is
+ * reachable through here at all.
+ */
+const ROUTES: Record<string, { path: string; authed: boolean }> = {
+  login: { path: '/api/onyx/auth/login', authed: false },
+  signup: { path: '/api/onyx/tenants', authed: false },
+  switch: { path: '/api/onyx/auth/switch', authed: true },
+};
+
+export async function POST(request: Request, ctx: { params: Promise<{ action: string }> }) {
+  const { action } = await ctx.params;
+  const route = ROUTES[action];
+  if (!route) return NextResponse.json({ ok: false, message: 'Unknown action.' }, { status: 404 });
+
+  const token = route.authed ? await getOnyxToken() : null;
+  if (route.authed && !token) {
+    return NextResponse.json({ ok: false, message: 'Unauthenticated.' }, { status: 401 });
+  }
+
+  const res = await fetch(API + route.path, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: 'Bearer ' + token } : {}),
+    },
+    body: JSON.stringify(await request.json().catch(() => ({}))),
+  });
+  const payload = await res.json().catch(() => ({ ok: false, message: 'Bad response' }));
+
+  // The token carries the tenant, so switching institutions replaces the
+  // cookie. Anything less and the new tenant would be shown through the old
+  // token's scope.
+  if (res.ok && payload?.data?.token) {
+    (await cookies()).set(ONYX_COOKIE, payload.data.token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: Number(process.env.ACCESS_TOKEN_TTL ?? 3600),
+    });
+    delete payload.data.token;
+  }
+  return NextResponse.json(payload, { status: res.status });
+}
+
+export async function DELETE() {
+  (await cookies()).delete(ONYX_COOKIE);
+  return NextResponse.json({ ok: true, data: {} });
+}

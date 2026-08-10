@@ -2,12 +2,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { api, withDb, WEB, webPage } from './harness.ts';
 
+// Onyx shares `public` behind an `onyx_` prefix (ADR-006). It is a separate
+// product with its own gate, so the port's counts exclude it -- otherwise every
+// Onyx table would read here as a parity failure.
+const NOT_ONYX = "and table_name not like 'onyx\_%'";
+const NOT_ONYX_PG = "and c.relname not like 'onyx\_%'";
+
 test('S00 the live schema still matches Laravel, table for table', async () => {
   const counts = await withDb(async (c) => {
     const { rows: [t] } = await c.query(
-      "select count(*)::int n from information_schema.tables where table_schema='public' and table_type='BASE TABLE'");
+      "select count(*)::int n from information_schema.tables where table_schema='public' " +
+      "and table_type='BASE TABLE' " + NOT_ONYX);
     const { rows: [col] } = await c.query(
-      "select count(*)::int n from information_schema.columns where table_schema='public'");
+      "select count(*)::int n from information_schema.columns where table_schema='public' " + NOT_ONYX);
     return { tables: t.n, columns: col.n };
   });
   // 61 ported, plus six added by explicit decision because the Laravel models
@@ -22,10 +29,10 @@ test('S01 RLS is enabled and forced on every table', async () => {
   const { enabled, forced } = await withDb(async (c) => {
     const { rows: [r] } = await c.query(
       "select count(*)::int n from pg_class c join pg_namespace ns on ns.oid=c.relnamespace " +
-      "where ns.nspname='public' and c.relkind='r' and c.relrowsecurity");
+      "where ns.nspname='public' and c.relkind='r' and c.relrowsecurity " + NOT_ONYX_PG);
     const { rows: [f] } = await c.query(
       "select count(*)::int n from pg_class c join pg_namespace ns on ns.oid=c.relnamespace " +
-      "where ns.nspname='public' and c.relkind='r' and c.relforcerowsecurity");
+      "where ns.nspname='public' and c.relkind='r' and c.relforcerowsecurity " + NOT_ONYX_PG);
     return { enabled: r.n, forced: f.n };
   });
   assert.equal(enabled, 67);

@@ -8,6 +8,10 @@
  */
 import {
   SettingsService, I18nService, StorageService, AuthService,
+  AcademicsService, ContentService, AttendanceService, AssignmentsService,
+  QueueService, CodeLabService, WorkspaceService, onyxSql,
+  executionProviderFromEnv, runCodeLabWorker,
+  type ExecutionProvider, type CodeLabWorkerOptions,
   RegistrationService, VerificationService, PasswordResetService,
   PermissionsService, ProfileService, UsersService, DeviceIpService,
   CategoriesService, CoursesService, SeoService, InstructorsService,
@@ -26,6 +30,7 @@ import {
   TutorCatalogService, TutorScheduleService, TutorBookingService,
   RevenueService, PayoutService,
   SettingsAdminService, PlatformAdminService, CampaignService,
+  TenancyService, AuditService, onyxServiceClient,
   BlogService, BlogEngagementService, KnowledgeBaseService, TestimonialService,
   RateLimiter, serviceClient, anonClient, type Db,
 } from '@onyx/core';
@@ -82,6 +87,20 @@ export interface AppContext {
   settingsAdmin: SettingsAdminService;
   platformAdmin: PlatformAdminService;
   campaigns: CampaignService;
+  // Onyx (ADR-006): a separate product, on `onyx_`-prefixed tables.
+  onyxTenancy: TenancyService;
+  onyxAudit: AuditService;
+  onyxAcademics: AcademicsService;
+  onyxContent: ContentService;
+  onyxAttendance: AttendanceService;
+  onyxAssignments: AssignmentsService;
+  onyxQueue: QueueService;
+  onyxExecution: ExecutionProvider;
+  onyxCodeLab: CodeLabService;
+  onyxWorkspaces: WorkspaceService;
+  /** One pass of the Code Lab worker. Also driven by an interval in server.ts. */
+  onyxRunWorker: (opts?: CodeLabWorkerOptions) =>
+    Promise<{ done: number; retried: number; failed: number }>;
   zoom: ZoomService;
   payments: PaymentService;
   offline: OfflinePaymentService;
@@ -102,6 +121,16 @@ export function createContext(): AppContext {
   const db = serviceClient();
   const settings = new SettingsService(db);
   const mail = new MailService(settings);
+  const onyxDb = onyxServiceClient();
+  const onyxAcademics = new AcademicsService(onyxDb);
+  // LAB-02b. The queue is the one part of Onyx that talks to Postgres directly:
+  // claiming work is a single FOR UPDATE SKIP LOCKED statement, and PostgREST
+  // cannot express it.
+  const onyxQueue = new QueueService(onyxSql(), 'api-' + process.pid);
+  // LAB-02a. Unconfigured is a first-class outcome -- the bank, workspaces and
+  // the queue all work without a sandbox; only running code does not.
+  const onyxExecution = executionProviderFromEnv();
+  const onyxCodeLab = new CodeLabService(onyxDb, onyxAcademics, onyxQueue, onyxExecution);
   const bootcampPurchases = new BootcampPurchaseService(db, settings);
   const teamMembers = new TeamMemberService(db, settings);
   const revenue = new RevenueService(db);
@@ -165,6 +194,21 @@ export function createContext(): AppContext {
     settingsAdmin: new SettingsAdminService(db, settings),
     platformAdmin: new PlatformAdminService(db),
     campaigns: new CampaignService(db, settings, mail),
+    onyxTenancy: new TenancyService(onyxDb),
+    onyxAudit: new AuditService(onyxDb, (m) => console.error('[onyx] ' + m)),
+    onyxAcademics,
+    // Onyx shares the port's bucket -- storage is per project, not per schema --
+    // and namespaces its own files under onyx/<tenant>/.
+    onyxContent: new ContentService(onyxDb, onyxAcademics, storage),
+    onyxAttendance: new AttendanceService(onyxDb, onyxAcademics),
+    onyxAssignments: new AssignmentsService(onyxDb, onyxAcademics),
+    onyxQueue,
+    onyxExecution,
+    onyxCodeLab,
+    onyxWorkspaces: new WorkspaceService(onyxDb, onyxAcademics),
+    onyxRunWorker: (opts) => runCodeLabWorker(onyxQueue, onyxCodeLab, {
+      ...opts, onError: (m) => console.error('[onyx] ' + m),
+    }),
     zoom: new ZoomService(settings),
     payments,
     offline: new OfflinePaymentService(db, settings, cart, payments,

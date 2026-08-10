@@ -20,12 +20,14 @@ export class FakeDb {
     let orderBy: { col: string; asc: boolean } | null = null;
     let limitN: number | null = null;
     let range: [number, number] | null = null;
+    const neqs: [string, unknown][] = [];
     let pendingUpdate: Row | null = null;
     let pendingDelete = false;
     let inserted: Row[] | null = null;
 
     const matches = (r: Row) => {
       if (!eqs.every(([c, v]) => r[c] === v)) return false;
+      if (!neqs.every(([c, v]) => r[c] !== v)) return false;
       if (!ins.every(([c, vs]) => vs.includes(r[c]))) return false;
       if (likes.length && !likes.every((clause) => clauseMatches(r, clause))) return false;
       if (orTerm) return splitTop(orTerm).some((clause) => clauseMatches(r, clause));
@@ -76,6 +78,7 @@ export class FakeDb {
       },
       in: (col: string, vals: unknown[]) => { ins.push([col, vals]); return builder; },
       eq: (col: string, val: unknown) => { eqs.push([col, val]); return builder; },
+      neq: (col: string, val: unknown) => { neqs.push([col, val]); return builder; },
       or: (term: string) => { orTerm = term; return builder; },
       // Same clause grammar as or(), so one implementation covers both.
       ilike: (col: string, pattern: string) => {

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { TOKEN_COOKIE } from '@/lib/session';
+import { ONYX_COOKIE } from '@/lib/onyx-session';
 
 /**
  * Authenticated passthrough to the API for client components.
@@ -8,11 +9,16 @@ import { TOKEN_COOKIE } from '@/lib/session';
  * The session cookie is httpOnly, so the browser cannot attach the bearer token
  * itself. This handler does it server-side. Only /api/* on the API is reachable,
  * and the token is never exposed to page scripts.
+ *
+ * Two products share this origin (ADR-006) and each has its own cookie. The
+ * path decides which one is sent: an Onyx token must never be offered to the
+ * port's routes, nor the port's to Onyx's.
  */
 const API = process.env.API_URL ?? 'http://127.0.0.1:4000';
 
 async function forward(request: Request, path: string[], method: string) {
-  const token = (await cookies()).get(TOKEN_COOKIE)?.value;
+  const jar = await cookies();
+  const token = jar.get(path[0] === 'onyx' ? ONYX_COOKIE : TOKEN_COOKIE)?.value;
   const search = new URL(request.url).search;
   const body = ['GET', 'DELETE'].includes(method)
     ? undefined

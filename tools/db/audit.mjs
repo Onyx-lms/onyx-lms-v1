@@ -103,15 +103,28 @@ else pass.push('identity sequences: at or ahead of max(id) on every table');
 // QuizSubmission model requires it but no migration ever created it.
 const INTENTIONAL_ADDITIONS = ['quiz_submissions', 'blog_comments', 'blog_likes', 'user_reviews', 'bootcamp_resources', 'applications'];
 const tableCount = Object.keys(source.tables).length + INTENTIONAL_ADDITIONS.length;
-const { rows: [rls] } = await client.query(
+
+// Onyx shares `public` behind an `onyx_` prefix (ADR-006). It is a separate
+// product with its own gate, so it is counted separately here rather than
+// silently inflating the port's totals.
+const NOT_ONYX = "and c.relname not like 'onyx\_%'";
+const countWhere = async (extra) => (await client.query(
   "select count(*)::int c from pg_class c join pg_namespace n on n.oid=c.relnamespace " +
-  "where n.nspname='public' and c.relkind='r' and c.relrowsecurity");
-const { rows: [forced] } = await client.query(
-  "select count(*)::int c from pg_class c join pg_namespace n on n.oid=c.relnamespace " +
-  "where n.nspname='public' and c.relkind='r' and c.relforcerowsecurity");
-if (rls.c !== tableCount) fail.push('RLS enabled on only ' + rls.c + '/' + tableCount + ' tables');
-else pass.push('RLS: enabled on ' + rls.c + '/' + tableCount + ' tables (61 ported + '
-  + INTENTIONAL_ADDITIONS.length + ' added), FORCEd on ' + forced.c);
+  "where n.nspname='public' and c.relkind='r' " + extra)).rows[0].c;
+
+const rlsCount = await countWhere('and c.relrowsecurity ' + NOT_ONYX);
+const forcedCount = await countWhere('and c.relforcerowsecurity ' + NOT_ONYX);
+if (rlsCount !== tableCount) fail.push('RLS enabled on only ' + rlsCount + '/' + tableCount + ' tables');
+else pass.push('RLS: enabled on ' + rlsCount + '/' + tableCount + ' tables (61 ported + '
+  + INTENTIONAL_ADDITIONS.length + ' added), FORCEd on ' + forcedCount);
+
+const onyxTotal = await countWhere("and c.relname like 'onyx\_%'");
+if (onyxTotal) {
+  const onyxRls = await countWhere("and c.relrowsecurity and c.relname like 'onyx\_%'");
+  const onyxForced = await countWhere("and c.relforcerowsecurity and c.relname like 'onyx\_%'");
+  if (onyxRls !== onyxTotal) fail.push('Onyx: RLS on only ' + onyxRls + '/' + onyxTotal + ' tables');
+  else pass.push('Onyx: ' + onyxTotal + ' tables, RLS on all, FORCEd on ' + onyxForced);
+}
 
 const { rows: [fns] } = await client.query(
   "select count(*)::int c from pg_proc p join pg_namespace n on n.oid=p.pronamespace " +

@@ -27,6 +27,9 @@ import { registerTeamRoutes } from './routes/team.routes.ts';
 import { registerTutorRoutes } from './routes/tutor.routes.ts';
 import { registerReportRoutes } from './routes/reports.routes.ts';
 import { registerAdminSettingsRoutes } from './routes/admin-settings.routes.ts';
+import { registerOnyxTenancyRoutes } from './routes/onyx/tenancy.routes.ts';
+import { registerOnyxLearnRoutes } from './routes/onyx/learn.routes.ts';
+import { registerOnyxCodeLabRoutes } from './routes/onyx/codelab.routes.ts';
 import { registerPlatformRoutes } from './routes/platform.routes.ts';
 
 export async function buildServer() {
@@ -77,7 +80,13 @@ export async function buildServer() {
   registerTutorRoutes(app, ctx);
   registerReportRoutes(app, ctx);
   registerAdminSettingsRoutes(app, ctx);
+  registerOnyxTenancyRoutes(app, ctx);
+  registerOnyxLearnRoutes(app, ctx);
+  registerOnyxCodeLabRoutes(app, ctx);
 
+  // The worker interval below needs the same context the routes use --
+  // building a second one would mean a second connection pool.
+  (app as unknown as { ctx: typeof ctx }).ctx = ctx;
   return app;
 }
 
@@ -87,4 +96,28 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '
   const app = await buildServer();
   app.listen({ port, host: '0.0.0.0' })
     .catch((err) => { app.log.error(err); process.exit(1); });
+
+  // LAB-02b. The Code Lab worker runs in-process on an interval: one deployable
+  // is worth more than a second one nobody remembers to start, and the queue is
+  // durable either way. Splitting it into its own process later changes only
+  // this block.
+  //
+  // unref() so a pending tick never holds the process open on shutdown.
+  const everyMs = Number(process.env.ONYX_WORKER_INTERVAL_MS ?? 2000);
+  if (everyMs > 0) {
+    const ctx = (app as unknown as { ctx: { onyxRunWorker: (o?: {
+      concurrency?: number;
+    }) => Promise<unknown> } }).ctx;
+    let running = false;
+    setInterval(() => {
+      // Skip rather than overlap. Two passes at once would claim different jobs
+      // -- SKIP LOCKED makes that safe -- but the pool is small and throughput
+      // is not the problem the interval is solving.
+      if (running) return;
+      running = true;
+      void ctx.onyxRunWorker({ concurrency: Number(process.env.ONYX_WORKER_CONCURRENCY ?? 4) })
+        .catch((err) => app.log.error({ err }, 'onyx worker pass failed'))
+        .finally(() => { running = false; });
+    }, everyMs).unref();
+  }
 }

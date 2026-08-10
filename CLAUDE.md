@@ -31,6 +31,57 @@ in the original). Every one was an explicit decision, documented in the README:
 **Adding a seventh needs the user's agreement first.** Say what is broken in the
 original, then ask.
 
+**Onyx tables are not part of this count.** Onyx is a second product in this
+repository (ADR-006) with no parity constraint. Its tables live in `public`
+behind an `onyx_` prefix, and every tool that counts the port's tables excludes
+that prefix: `tools/db/audit.mjs`, `tests/e2e/s01-platform.e2e.ts`. Adding an
+Onyx table is ordinary work; adding a 62nd *ported* table is not.
+
+## Onyx invariants
+
+- **`onyx_app` was tried and withdrawn.** PostgREST serves only the schemas the
+  project is configured to expose, and that setting is project-wide on a live
+  project the port depends on. Everything failed with `Invalid schema: onyx_app`
+  until the tables moved to `public` with a prefix. Do not reintroduce a
+  dedicated schema without changing Settings → API → Exposed schemas first.
+- **Tenant comes from the token, never from a path or body.** A token whose
+  `tenant_id` is missing, zero, negative, fractional or a string is a 401, not a
+  default. `requireOnyx` enforces this; there are unit tests for each case.
+- **Every `onyx_` table needs `tenant_id`.** `onyx.assert_tenant_scoped()` fails
+  the migration runner and the E2E gate otherwise. Three exemptions only:
+  `onyx_tenants`, `onyx_users`, `onyx_schema_migrations`.
+- **Audit writes never throw.** The row describes work that already happened, so
+  a failure is logged through `#onError`, not raised. That means a broken audit
+  path is silent — the O01 E2E asserts entries exist for exactly this reason.
+- **Onyx's web session is `onyx_tenant_session`**, not the port's `onyx_session`.
+  `/api/proxy/[...path]` picks the cookie by path prefix.
+- **Staff means `admin` or `faculty` — name them, never `!== 'student'`.**
+  `exams` and `placement` are real roles; a negated check hands them every
+  lesson, roster and record in the institution.
+- **`assertCanTeach` on every course-scoped route.** Faculty means faculty *of
+  this course*. Admins are exempt; nobody else is.
+- **Attendance: present + late attended, excused leaves the denominator,
+  unmarked counts as absent.** Stated in `attendance.service.ts`; do not
+  recompute it anywhere else.
+- **A score is invisible until `returned_at` is set.** `forLearner()` in
+  `assignments.service.ts` downgrades `graded` to `submitted` for the learner —
+  do not bypass it by selecting the row directly.
+- **Nothing in this repo runs learner code.** `ExecutionProvider` is the
+  contract; with no sandbox configured the answer is a 503, never a local
+  fallback. Do not add one, in any environment.
+- **The queue is Postgres with `FOR UPDATE SKIP LOCKED`** (`queue.service.ts`).
+  It is the ONLY part of Onyx that talks to Postgres directly, because the claim
+  is one statement whose atomicity is the point. `onyxSql()` resolves the host
+  once, before the pool exists -- an earlier version swapped pool objects and
+  every held reference hung.
+- **A hidden test case is the answer key**: its stdin, its expected output, and
+  the actual output it produced. None is ever in a learner response, and the
+  last is not stored at all. Enforced in `codelab.service.ts`, not in routes.
+- **A workspace snapshot is jsonb, not copied rows**, and restore deletes files
+  added since. Anything else quietly breaks LAB-05's one promise.
+- **The QR secret never leaves the server.** `SESSION_COLUMNS` omits it *and*
+  `createSession` deletes it, so one careless edit is not enough to leak it.
+
 ## Non-obvious invariants
 
 - **Auth is a custom JWT, not Supabase Auth** (ADR-001). Signed with

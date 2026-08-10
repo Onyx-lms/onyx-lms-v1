@@ -24,3 +24,6 @@ Thumbs.db
 
 # Claude Code: the shared config is committed, per-developer overrides are not.
 .claude/settings.local.json
+
+# Supabase CLI scratch — holds the linked project ref
+supabase/.temp/
