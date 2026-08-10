@@ -1,0 +1,45 @@
+{
+  "name": "onyx-lms",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Onyx LMS - React/Node/TypeScript/Supabase port of the Laravel LMS",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "gen:schema": "python tools/gen_schema.py",
+    "gen:types": "python tools/gen_types.py",
+    "gen:rls": "python tools/gen_rls_seed.py",
+    "gen:all": "npm run gen:schema && npm run gen:rls && npm run gen:types",
+    "verify:parity": "python tools/verify_parity.py",
+    "build": "tsc --build",
+    "typecheck": "tsc --build --force",
+    "test": "node --test packages/core/test/*.test.ts",
+    "dev:api": "node --watch apps/api/src/server.ts",
+    "db:migrate": "node tools/db/migrate.mjs",
+    "db:reset": "node tools/db/migrate.mjs --reset",
+    "db:reload-cache": "node tools/db/reload-cache.mjs",
+    "db:verify": "node tools/db/verify-live.mjs",
+    "db:verify-rls": "node tools/db/verify-rls.mjs",
+    "dev:web": "npm run dev --workspace @onyx/web",
+    "build:web": "npm run build --workspace @onyx/web",
+    "db:audit": "node tools/db/audit.mjs",
+    "db:verify-storage": "node tools/db/verify-storage.mjs",
+    "db:import": "node tools/db/import-laravel.mjs",
+    "e2e": "node tools/e2e-run.mjs",
+    "e2e:only": "node --test tests/e2e/*.e2e.ts",
+    "verify:all": "npm run verify:parity && npm test && npx tsc --build --force && npm run db:audit && npm run e2e"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "pg": "^8.23.0"
+  },
+  "type": "module"
+}

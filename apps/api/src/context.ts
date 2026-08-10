@@ -1,0 +1,177 @@
+/**
+ * Wires the Sprint-1 platform services together once per process.
+ *
+ * Note which client each service gets -- that is the P-07 boundary in practice:
+ * settings and i18n read through the service client because `settings` is not
+ * anon-readable (it holds smtp_pass and API keys) and phrase auto-registration
+ * writes.
+ */
+import {
+  SettingsService, I18nService, StorageService, AuthService,
+  RegistrationService, VerificationService, PasswordResetService,
+  PermissionsService, ProfileService, UsersService, DeviceIpService,
+  CategoriesService, CoursesService, SeoService, InstructorsService,
+  ContactService, NewsletterService,
+  CourseBuilderService, SectionsService, LessonsService,
+  MailService, MediaService,
+  QuestionsService, QuizService,
+  EnrollmentService, CouponService, CartService, WishlistService,
+  PaymentService, OfflinePaymentService,
+  WatchService, PlayerService, PlayerSettingsService,
+  CertificateService, ForumService, ReviewService, InstructorReviewService,
+  MessagingService, LiveClassService, ZoomService, CompareService,
+  BootcampService, BootcampModuleService, BootcampResourceService,
+  BootcampClassService, BootcampPurchaseService,
+  TeamPackageService, TeamMemberService,
+  TutorCatalogService, TutorScheduleService, TutorBookingService,
+  RevenueService, PayoutService,
+  BlogService, BlogEngagementService, KnowledgeBaseService, TestimonialService,
+  RateLimiter, serviceClient, anonClient, type Db,
+} from '@onyx/core';
+
+export interface AppContext {
+  db: Db;
+  publicDb: Db;
+  settings: SettingsService;
+  i18n: I18nService;
+  storage: StorageService;
+  auth: AuthService;
+  registration: RegistrationService;
+  verification: VerificationService;
+  passwordReset: PasswordResetService;
+  permissions: PermissionsService;
+  profiles: ProfileService;
+  users: UsersService;
+  deviceIps: DeviceIpService;
+  categories: CategoriesService;
+  courses: CoursesService;
+  seo: SeoService;
+  instructors: InstructorsService;
+  contact: ContactService;
+  newsletter: NewsletterService;
+  builder: CourseBuilderService;
+  sections: SectionsService;
+  lessons: LessonsService;
+  watch: WatchService;
+  player: PlayerService;
+  playerSettings: PlayerSettingsService;
+  certificates: CertificateService;
+  forum: ForumService;
+  reviews: ReviewService;
+  instructorReviews: InstructorReviewService;
+  blog: BlogService;
+  blogEngagement: BlogEngagementService;
+  knowledgeBase: KnowledgeBaseService;
+  testimonials: TestimonialService;
+  messaging: MessagingService;
+  liveClasses: LiveClassService;
+  compare: CompareService;
+  bootcamps: BootcampService;
+  bootcampModules: BootcampModuleService;
+  bootcampResources: BootcampResourceService;
+  bootcampClasses: BootcampClassService;
+  bootcampPurchases: BootcampPurchaseService;
+  teamPackages: TeamPackageService;
+  teamMembers: TeamMemberService;
+  tutorCatalog: TutorCatalogService;
+  tutorSchedules: TutorScheduleService;
+  tutorBookings: TutorBookingService;
+  revenue: RevenueService;
+  payouts: PayoutService;
+  zoom: ZoomService;
+  payments: PaymentService;
+  offline: OfflinePaymentService;
+  enrollment: EnrollmentService;
+  coupons: CouponService;
+  cart: CartService;
+  wishlist: WishlistService;
+  questions: QuestionsService;
+  quiz: QuizService;
+  mail: MailService;
+  media: MediaService;
+  webOrigin: string;
+  limiter: RateLimiter;
+  jwtSecret: string;
+}
+
+export function createContext(): AppContext {
+  const db = serviceClient();
+  const settings = new SettingsService(db);
+  const mail = new MailService(settings);
+  const bootcampPurchases = new BootcampPurchaseService(db, settings);
+  const teamMembers = new TeamMemberService(db, settings);
+  const revenue = new RevenueService(db);
+  const categories = new CategoriesService(db);
+  const storage = new StorageService(db);
+  const enrollment = new EnrollmentService(db);
+  const coupons = new CouponService(db);
+  const cart = new CartService(db, enrollment, coupons);
+  const payments = new PaymentService(db, settings, cart, enrollment);
+  const watch = new WatchService(db);
+  const playerSettings = new PlayerSettingsService(db, settings, storage);
+  return {
+    db,
+    publicDb: anonClient(),
+    settings,
+    i18n: new I18nService(db),
+    storage,
+    auth: new AuthService(db),
+    registration: new RegistrationService(db),
+    verification: new VerificationService(db),
+    passwordReset: new PasswordResetService(db),
+    permissions: new PermissionsService(db),
+    profiles: new ProfileService(db),
+    users: new UsersService(db),
+    deviceIps: new DeviceIpService(db),
+    categories,
+    courses: new CoursesService(db, categories),
+    seo: new SeoService(db, settings),
+    instructors: new InstructorsService(db),
+    contact: new ContactService(db, mail, settings),
+    newsletter: new NewsletterService(db),
+    builder: new CourseBuilderService(db),
+    sections: new SectionsService(db),
+    lessons: new LessonsService(db),
+    watch,
+    player: new PlayerService(db, enrollment, watch, storage, playerSettings),
+    playerSettings,
+    certificates: new CertificateService(db, settings),
+    forum: new ForumService(db),
+    reviews: new ReviewService(db),
+    instructorReviews: new InstructorReviewService(db),
+    blog: new BlogService(db, settings),
+    blogEngagement: new BlogEngagementService(db),
+    knowledgeBase: new KnowledgeBaseService(db),
+    testimonials: new TestimonialService(db),
+    messaging: new MessagingService(db),
+    liveClasses: new LiveClassService(db),
+    compare: new CompareService(db),
+    bootcamps: new BootcampService(db),
+    bootcampModules: new BootcampModuleService(db),
+    bootcampResources: new BootcampResourceService(db),
+    bootcampClasses: new BootcampClassService(db),
+    bootcampPurchases,
+    teamPackages: new TeamPackageService(db),
+    teamMembers,
+    tutorCatalog: new TutorCatalogService(db),
+    tutorSchedules: new TutorScheduleService(db),
+    tutorBookings: new TutorBookingService(db, settings),
+    revenue,
+    payouts: new PayoutService(db, revenue),
+    zoom: new ZoomService(settings),
+    payments,
+    offline: new OfflinePaymentService(db, settings, cart, payments,
+      process.env.SUPABASE_JWT_SECRET ?? '', bootcampPurchases, teamMembers),
+    enrollment,
+    coupons,
+    cart,
+    wishlist: new WishlistService(db),
+    questions: new QuestionsService(db),
+    quiz: new QuizService(db),
+    mail,
+    media: new MediaService(db, storage),
+    webOrigin: process.env.WEB_ORIGIN ?? 'http://localhost:5173',
+    limiter: new RateLimiter(),
+    jwtSecret: process.env.SUPABASE_JWT_SECRET ?? '',
+  };
+}

@@ -1,0 +1,67 @@
+import Link from 'next/link';
+import type { CategoryNode, SiteSettings } from '@/lib/api';
+import { getSession, homeForRole } from '@/lib/session';
+
+export async function SiteHeader({ settings, categories }: {
+  settings: SiteSettings | null;
+  categories: CategoryNode[];
+}) {
+  const session = await getSession();
+
+  return (
+    <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
+      <div className="container-page flex h-16 items-center gap-6">
+        <Link href="/" className="text-lg font-semibold text-brand-700">
+          {settings?.system_title ?? 'Onyx LMS'}
+        </Link>
+
+        <nav className="hidden items-center gap-5 text-sm md:flex">
+          <Link href="/courses" className="hover:text-brand-600">Courses</Link>
+          <Link href="/instructors" className="hover:text-brand-600">Instructors</Link>
+          <Link href="/bootcamps" className="hover:text-brand-600">Workshops</Link>
+          <Link href="/tutors" className="hover:text-brand-600">Tutors</Link>
+          <Link href="/team-packages" className="hover:text-brand-600">Teams</Link>
+          <Link href="/blogs" className="hover:text-brand-600">Blog</Link>
+          <Link href="/knowledge-base" className="hover:text-brand-600">Help</Link>
+          <Link href="/about-us" className="hover:text-brand-600">About</Link>
+          <Link href="/contact-us" className="hover:text-brand-600">Contact</Link>
+        </nav>
+
+        <form action="/courses" className="ml-auto hidden flex-1 max-w-xs md:block">
+          <input
+            type="search"
+            name="search"
+            placeholder="Search courses"
+            aria-label="Search courses"
+            className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500"
+          />
+        </form>
+
+        {session ? (
+          <Link href={homeForRole(session.app_role)} className="btn-primary ml-auto md:ml-0">
+            Dashboard
+          </Link>
+        ) : (
+          <Link href="/login" className="btn-primary ml-auto md:ml-0">Sign in</Link>
+        )}
+      </div>
+
+      {categories.length > 0 && (
+        <div className="border-t border-slate-100 bg-slate-50">
+          <div className="container-page flex gap-4 overflow-x-auto py-2 text-sm">
+            {categories.slice(0, 8).map((c) => (
+              <Link
+                key={c.id}
+                href={`/courses?category=${c.slug}`}
+                className="whitespace-nowrap text-slate-600 hover:text-brand-600"
+              >
+                {c.title}
+                <span className="ml-1 text-xs text-slate-400">({c.course_count})</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+    </header>
+  );
+}

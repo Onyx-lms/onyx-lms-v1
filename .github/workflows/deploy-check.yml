@@ -1,0 +1,31 @@
+# F-09 -- scheduled audit of the live database.
+#
+# Catches drift applied outside the migration pipeline (a hand edit in the
+# Supabase dashboard, a half-applied change), which schema-parity alone cannot
+# see because it only compares generated files.
+name: Live deployment audit
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: onyx-lms
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: npm, cache-dependency-path: onyx-lms/package-lock.json }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: npm ci
+      - name: Audit live schema, RLS, seed and storage
+        run: npm run db:audit
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}

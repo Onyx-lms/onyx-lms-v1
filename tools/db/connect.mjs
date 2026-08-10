@@ -1,0 +1,86 @@
+/**
+ * One place that knows how to reach Postgres.
+ *
+ * Supabase's direct host (db.<ref>.supabase.co) is IPv6-ONLY on projects
+ * created after early 2024. On a network without working IPv6 it fails with
+ * ENOTFOUND -- which looks like a dead database but is only a dead route. The
+ * session pooler (aws-N-<region>.pooler.supabase.com) answers over IPv4 and
+ * speaks the same protocol, so it is the fallback.
+ *
+ * Set SUPABASE_POOLER_URL in .env to skip the probing entirely.
+ */
+import fs from 'node:fs';
+import pg from 'pg';
+
+const ROOT = new URL('../../', import.meta.url).pathname.replace(/^[/]([A-Za-z]:)/, '$1');
+
+export function loadEnv() {
+  return Object.fromEntries(fs.readFileSync(ROOT + '.env', 'utf8').split('\n')
+    .filter((l) => l.includes('=') && !l.trim().startsWith('#'))
+    .map((l) => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()]));
+}
+
+const clean = (url) => url.replace(/[?&]sslmode=[^&]*/, '');
+
+/** Candidate connection settings, best first. */
+function candidates(env) {
+  const out = [];
+  const direct = clean(env.SUPABASE_DB_URL ?? '');
+  if (direct) out.push({ label: 'direct', config: { connectionString: direct } });
+  if (env.SUPABASE_POOLER_URL) {
+    out.push({ label: 'pooler (configured)', config: { connectionString: clean(env.SUPABASE_POOLER_URL) } });
+  }
+
+  // Derive the pooler from the direct URL: same password, user is
+  // postgres.<project-ref>, host is the regional pooler.
+  try {
+    const u = new URL(direct);
+    const ref = u.hostname.replace(/^db\./, '').replace(/\.supabase\.co$/, '');
+    const region = env.SUPABASE_REGION ?? 'ap-northeast-1';
+    for (const host of ['aws-0-' + region + '.pooler.supabase.com',
+                        'aws-1-' + region + '.pooler.supabase.com']) {
+      out.push({
+        label: 'pooler ' + host,
+        config: {
+          host, port: 5432, database: 'postgres',
+          user: 'postgres.' + ref, password: decodeURIComponent(u.password),
+        },
+      });
+    }
+  } catch { /* no usable direct URL to derive from */ }
+  return out;
+}
+
+/**
+ * Connects, trying the direct host first and falling back to the pooler.
+ * Returns a connected client; the caller ends it.
+ */
+export async function connect(env = loadEnv()) {
+  const tried = [];
+  for (const { label, config } of candidates(env)) {
+    const client = new pg.Client({
+      ...config, ssl: { rejectUnauthorized: false }, connectionTimeoutMillis: 10_000,
+    });
+    try {
+      await client.connect();
+      if (label !== 'direct') {
+        console.log('[db] direct host unreachable, using ' + label);
+      }
+      return client;
+    } catch (e) {
+      tried.push(label + ': ' + e.message.split('\n')[0]);
+      try { await client.end(); } catch { /* never connected */ }
+    }
+  }
+  throw new Error('Could not reach the database. Tried:\n  ' + tried.join('\n  '));
+}
+
+/** Connect, run, always disconnect. */
+export async function withDb(fn, env = loadEnv()) {
+  const client = await connect(env);
+  try {
+    return await fn(client);
+  } finally {
+    await client.end();
+  }
+}

@@ -1,0 +1,53 @@
+# F-09 -- CI.
+#
+# The schema parity gate is the important one: the generated SQL is derived from
+# the Laravel database, so a hand edit to a migration file would silently break
+# the contract this whole port rests on. The build fails instead.
+name: CI
+
+on:
+  push:
+    branches: [main, certify]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: onyx-lms
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: onyx-lms/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install
+        run: npm ci
+
+      - name: Schema parity (generated SQL vs Laravel source)
+        run: npm run verify:parity
+
+      - name: Generated artefacts are up to date
+        run: |
+          npm run gen:all
+          git diff --exit-code supabase packages/types/src/database.ts \
+            || (echo "::error::Generated files are stale. Run 'npm run gen:all' and commit." && exit 1)
+
+      - name: Typecheck
+        run: npx tsc --build --force
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Web build
+        run: npm run build:web
+        env:
+          API_URL: http://127.0.0.1:4000

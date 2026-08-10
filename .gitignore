@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.next/
+out/
+*.tsbuildinfo
+
+# Secrets. .env holds real Supabase keys -- never commit it.
+.env
+.env.*
+!.env.example
+
+# Local runtime noise
+*.log
+npm-debug.log*
+coverage/
+.turbo/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code: the shared config is committed, per-developer overrides are not.
+.claude/settings.local.json
