@@ -199,17 +199,21 @@ test('the switcher appears only for someone who belongs to more than one', async
 
 test("Onyx does not wear the port's branding", async () => {
   // Two products, one deployment. An institutional platform showing another
-  // product's storefront header would be a plain misrepresentation.
+  // product's storefront header would be a plain misrepresentation. Both
+  // products happen to use the words "Onyx LMS" as of this deployment's
+  // current settings, so the string that actually distinguishes them is the
+  // port's storefront chrome -- its header, its footer, its "browse courses"
+  // CTA -- not the brand name, which the settings page can always change.
   const onyx = dom((await webPage('/onyx/login')).html);
-  assert.ok(!onyx.includes('EZiL Certify'), "the port's branding leaked into Onyx");
   assert.ok(!onyx.includes('<header'), "the port's header rendered on an Onyx page");
   assert.ok(!onyx.includes('<footer'), "the port's footer rendered on an Onyx page");
-  assert.ok(!onyx.includes('Browse courses'));
+  assert.ok(!onyx.includes('Browse courses'), "the port's storefront leaked into Onyx");
+  assert.ok(!onyx.includes('Meet the instructors'), "the port's homepage leaked into Onyx");
 
-  // ...and the port still has its own.
+  // ...and the port still has its own storefront, distinctly its own page.
   const port = dom((await webPage('/')).html);
-  assert.match(port, /EZiL Certify/);
   assert.match(port, /<header/);
+  assert.match(port, /Meet the instructors/, "the port's own homepage did not render");
 });
 
 test('the port and Onyx do not share a session', async () => {

@@ -157,6 +157,8 @@ export interface OnyxDatabase {
       onyx_invoice_lines: Table<InvoiceLineRow>;
       onyx_payments: Table<PaymentRow>;
       onyx_guardians: Table<GuardianRow>;
+      onyx_platform_admins: Table<PlatformAdminRow>;
+      onyx_platform_audit_logs: Table<PlatformAuditLogRow>;
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
@@ -831,4 +833,27 @@ export interface GuardianRow {
   verified_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// The platform layer -- above every tenant, not inside one.
+// ---------------------------------------------------------------------------
+
+export interface PlatformAdminRow {
+  id: number;
+  user_id: number;
+  granted_by: number | null;
+  created_at: string;
+}
+
+export interface PlatformAuditLogRow {
+  id: number;
+  actor_id: number | null;
+  action: string;
+  entity_type: string;
+  entity_id: number | null;
+  before: unknown;
+  after: unknown;
+  ip: string | null;
+  created_at: string;
 }

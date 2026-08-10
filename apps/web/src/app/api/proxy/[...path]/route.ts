@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { TOKEN_COOKIE } from '@/lib/session';
 import { ONYX_COOKIE } from '@/lib/onyx-session';
+import { PLATFORM_COOKIE } from '@/lib/onyx-platform-session';
 
 /**
  * Authenticated passthrough to the API for client components.
@@ -12,13 +13,21 @@ import { ONYX_COOKIE } from '@/lib/onyx-session';
  *
  * Two products share this origin (ADR-006) and each has its own cookie. The
  * path decides which one is sent: an Onyx token must never be offered to the
- * port's routes, nor the port's to Onyx's.
+ * port's routes, nor the port's to Onyx's. `onyx/platform/*` is a third case
+ * on top of that: a platform token, never a tenant token, because a platform
+ * admin's session carries no tenant_id for a tenant-scoped route to even use.
  */
 const API = process.env.API_URL ?? 'http://127.0.0.1:4000';
 
+function cookieFor(path: string[]): string {
+  if (path[0] === 'onyx' && path[1] === 'platform') return PLATFORM_COOKIE;
+  if (path[0] === 'onyx') return ONYX_COOKIE;
+  return TOKEN_COOKIE;
+}
+
 async function forward(request: Request, path: string[], method: string) {
   const jar = await cookies();
-  const token = jar.get(path[0] === 'onyx' ? ONYX_COOKIE : TOKEN_COOKIE)?.value;
+  const token = jar.get(cookieFor(path))?.value;
   const search = new URL(request.url).search;
   const body = ['GET', 'DELETE'].includes(method)
     ? undefined

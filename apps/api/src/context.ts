@@ -13,7 +13,7 @@ import {
   AssessService, ProctorService, AssessAnalyticsService,
   CareerService, PlacementService, ContestService,
   EngageService, SupportService, CampusService, ExaminationsService,
-  FinanceService, GuardianService,
+  FinanceService, GuardianService, PlatformService,
   executionProviderFromEnv, runCodeLabWorker,
   type ExecutionProvider, type CodeLabWorkerOptions,
   RegistrationService, VerificationService, PasswordResetService,
@@ -114,6 +114,7 @@ export interface AppContext {
   onyxExams: ExaminationsService;
   onyxFinance: FinanceService;
   onyxGuardians: GuardianService;
+  onyxPlatform: PlatformService;
   /** One pass of the Code Lab worker. Also driven by an interval in server.ts. */
   onyxRunWorker: (opts?: CodeLabWorkerOptions) =>
     Promise<{ done: number; retried: number; failed: number }>;
@@ -246,6 +247,7 @@ export function createContext(): AppContext {
     onyxExams,
     onyxFinance: new FinanceService(onyxDb, onyxAudit),
     onyxGuardians: new GuardianService(onyxDb, onyxAudit, onyxExams),
+    onyxPlatform: new PlatformService(onyxDb),
     onyxRunWorker: (opts) => runCodeLabWorker(onyxQueue, onyxCodeLab, {
       ...opts, onError: (m) => console.error('[onyx] ' + m),
     }),

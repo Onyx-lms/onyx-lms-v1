@@ -103,3 +103,60 @@ export function requireOnyxRole(req: RequestLike, secret: string, ...allowed: Ro
 export function assertSameTenant(claims: OnyxTokenClaims, tenantId: number): void {
   if (Number(tenantId) !== claims.tenant_id) throw forbidden();
 }
+
+/**
+ * A platform admin's token -- deliberately a different shape, not a wider
+ * version of OnyxTokenClaims. It carries no tenant_id at all, because a
+ * platform admin is not scoped to one institution; they sit above all of
+ * them. That absence is what keeps the two token kinds from ever being
+ * confused for each other: requireOnyx() rejects a token with no tenant_id
+ * outright (see its own comment), so a platform token is structurally unable
+ * to pass as a tenant token, and there is no shared "requireEither" path
+ * where a bug could blur the line between them.
+ */
+export interface PlatformTokenClaims {
+  sub: string;
+  user_id: number;
+  platform: true;
+  email: string;
+  aud: 'authenticated';
+  iat: number;
+  exp: number;
+}
+
+export function issuePlatformToken(input: {
+  userId: number; email: string; secret: string; ttlSeconds?: number;
+}): { token: string; expiresAt: number } {
+  const ttl = input.ttlSeconds ?? Number(process.env.ACCESS_TOKEN_TTL ?? 3600);
+  const now = Math.floor(Date.now() / 1000);
+  const claims: PlatformTokenClaims = {
+    sub: String(input.userId),
+    user_id: input.userId,
+    platform: true,
+    email: input.email,
+    aud: 'authenticated',
+    iat: now,
+    exp: now + ttl,
+  };
+  return { token: jwt.sign(claims, input.secret, { algorithm: 'HS256' }), expiresAt: claims.exp };
+}
+
+/** The platform equivalent of requireOnyx(). Accepts only a platform token. */
+export function requirePlatformAdmin(req: RequestLike, secret: string): PlatformTokenClaims {
+  const header = req.headers['authorization'];
+  const raw = Array.isArray(header) ? header[0] : header;
+  const token = (raw && raw.toLowerCase().startsWith('bearer ') ? raw.slice(7).trim() : null)
+    ?? req.cookies?.['onyx_platform_session'] ?? null;
+  if (!token) throw unauthorized();
+  let claims: PlatformTokenClaims;
+  try {
+    claims = jwt.verify(token, secret, { algorithms: ['HS256'] }) as PlatformTokenClaims;
+  } catch {
+    throw unauthorized();
+  }
+  // Belt and braces: a tenant token forged or replayed here is rejected on
+  // shape even though in practice a JWT signed for one purpose never
+  // decodes to a plausible claims object for the other.
+  if (claims.platform !== true) throw unauthorized();
+  return claims;
+}

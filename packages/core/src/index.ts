@@ -99,3 +99,4 @@ export * from './onyx/campus.service.ts';
 export * from './onyx/examinations.service.ts';
 export * from './onyx/finance.service.ts';
 export * from './onyx/guardian.service.ts';
+export * from './onyx/platform.service.ts';

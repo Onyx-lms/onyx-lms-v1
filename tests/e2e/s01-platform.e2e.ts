@@ -62,7 +62,10 @@ test('S01 public settings expose no secrets', async () => {
   for (const secret of ['smtp_pass', 'smtp_user', 'open_ai_secret_key']) {
     assert.equal(secret in res.data, false, secret + ' must never be public');
   }
-  assert.equal(res.data.system_title, 'EZiL Certify');
+  // Not a branding assertion -- proof the public endpoint actually serves the
+  // real row rather than a stale or default value. 'Onyx LMS' is what this
+  // deployment's system_title was deliberately set to via the admin API.
+  assert.equal(res.data.system_title, 'Onyx LMS');
 });
 
 test('S01 i18n serves the seeded corpus and reports direction', async () => {

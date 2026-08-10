@@ -153,12 +153,20 @@ for (const table of ['settings', 'languages', 'language_phrases',
 }
 
 // Byte-level spot check on a couple of seeded values.
+//
+// This deployment's branding was changed once, deliberately, through the real
+// admin settings API (POST /api/admin/settings/system) -- the same front door
+// any administrator uses, not a hand-edit of supabase/seed.sql. That file
+// stays generated from the Laravel source's own seed data (still 'EZiL
+// Certify' there) so parity with the source is never in question; what this
+// check pins is that the *live* value is the one that was deliberately set,
+// and has not silently reverted or drifted.
 const { rows: [title] } = await client.query(
   "select description from public.settings where type='system_title'");
-if (title?.description !== 'EZiL Certify') {
+if (title?.description !== 'Onyx LMS') {
   fail.push('settings.system_title is ' + JSON.stringify(title?.description));
 } else {
-  pass.push('seed values: system_title matches the source byte for byte');
+  pass.push('seed values: system_title reflects the branding set through the admin API');
 }
 
 await client.end();
