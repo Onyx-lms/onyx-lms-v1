@@ -10,11 +10,11 @@ test('S00 the live schema still matches Laravel, table for table', async () => {
       "select count(*)::int n from information_schema.columns where table_schema='public'");
     return { tables: t.n, columns: col.n };
   });
-  // 61 ported, plus five added by explicit decision because the Laravel models
+  // 61 ported, plus six added by explicit decision because the Laravel models
   // and controllers wrote to tables no migration ever created: quiz_submissions
   // (0004), blog_comments + blog_likes (0005), user_reviews (0006),
-  // bootcamp_resources (0008).
-  assert.equal(counts.tables, 66);
+  // bootcamp_resources (0008), applications (0009).
+  assert.equal(counts.tables, 67);
   assert.equal(counts.columns >= 580, true);
 });
 
@@ -28,8 +28,8 @@ test('S01 RLS is enabled and forced on every table', async () => {
       "where ns.nspname='public' and c.relkind='r' and c.relforcerowsecurity");
     return { enabled: r.n, forced: f.n };
   });
-  assert.equal(enabled, 66);
-  assert.equal(forced, 66);
+  assert.equal(enabled, 67);
+  assert.equal(forced, 67);
 });
 
 test('S01 anon cannot write, and cannot read the settings table', async () => {

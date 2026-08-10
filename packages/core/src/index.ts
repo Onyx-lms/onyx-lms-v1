@@ -70,3 +70,6 @@ export * from './tutor/tutor-schedule.service.ts';
 export * from './tutor/tutor-booking.service.ts';
 export * from './reports/revenue.service.ts';
 export * from './reports/payout.service.ts';
+export * from './admin/settings-admin.service.ts';
+export * from './admin/platform-admin.service.ts';
+export * from './admin/campaign.service.ts';

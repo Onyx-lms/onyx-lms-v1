@@ -25,6 +25,7 @@ import {
   TeamPackageService, TeamMemberService,
   TutorCatalogService, TutorScheduleService, TutorBookingService,
   RevenueService, PayoutService,
+  SettingsAdminService, PlatformAdminService, CampaignService,
   BlogService, BlogEngagementService, KnowledgeBaseService, TestimonialService,
   RateLimiter, serviceClient, anonClient, type Db,
 } from '@onyx/core';
@@ -78,6 +79,9 @@ export interface AppContext {
   tutorBookings: TutorBookingService;
   revenue: RevenueService;
   payouts: PayoutService;
+  settingsAdmin: SettingsAdminService;
+  platformAdmin: PlatformAdminService;
+  campaigns: CampaignService;
   zoom: ZoomService;
   payments: PaymentService;
   offline: OfflinePaymentService;
@@ -158,6 +162,9 @@ export function createContext(): AppContext {
     tutorBookings: new TutorBookingService(db, settings),
     revenue,
     payouts: new PayoutService(db, revenue),
+    settingsAdmin: new SettingsAdminService(db, settings),
+    platformAdmin: new PlatformAdminService(db),
+    campaigns: new CampaignService(db, settings, mail),
     zoom: new ZoomService(settings),
     payments,
     offline: new OfflinePaymentService(db, settings, cart, payments,

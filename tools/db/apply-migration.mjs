@@ -5,21 +5,14 @@
  *   node tools/db/apply-migration.mjs 0006_user_reviews.sql [table ...]
  */
 import fs from 'node:fs';
-import pg from 'pg';
+import { connect } from './connect.mjs';
 
 const [file, ...expect] = process.argv.slice(2);
 if (!file) throw new Error('usage: apply-migration.mjs <file.sql> [table ...]');
 
 const ROOT = new URL('../../', import.meta.url).pathname.replace(/^[/]([A-Za-z]:)/, '$1');
-const env = Object.fromEntries(fs.readFileSync(ROOT + '.env', 'utf8').split('\n')
-  .filter((l) => l.includes('=') && !l.trim().startsWith('#'))
-  .map((l) => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()]));
-
-const c = new pg.Client({
-  connectionString: env.SUPABASE_DB_URL.replace(/[?&]sslmode=[^&]*/, ''),
-  ssl: { rejectUnauthorized: false },
-});
-await c.connect();
+// Falls back to the IPv4 pooler when the IPv6-only direct host is unroutable.
+const c = await connect();
 const count = async () => (await c.query(
   "select count(*)::int n from information_schema.tables where table_schema='public'")).rows[0].n;
 

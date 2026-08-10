@@ -26,6 +26,7 @@ import { registerBootcampRoutes } from './routes/bootcamp.routes.ts';
 import { registerTeamRoutes } from './routes/team.routes.ts';
 import { registerTutorRoutes } from './routes/tutor.routes.ts';
 import { registerReportRoutes } from './routes/reports.routes.ts';
+import { registerAdminSettingsRoutes } from './routes/admin-settings.routes.ts';
 import { registerPlatformRoutes } from './routes/platform.routes.ts';
 
 export async function buildServer() {
@@ -75,6 +76,7 @@ export async function buildServer() {
   registerTeamRoutes(app, ctx);
   registerTutorRoutes(app, ctx);
   registerReportRoutes(app, ctx);
+  registerAdminSettingsRoutes(app, ctx);
 
   return app;
 }

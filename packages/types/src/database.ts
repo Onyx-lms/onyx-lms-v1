@@ -13,6 +13,30 @@ export type Json = string | number | boolean | null | { [k: string]: Json } | Js
 export interface Database {
   public: {
     Tables: {
+      applications: {
+        Row: {
+          id: number
+          user_id: number | null
+          phone: string | null
+          description: string | null
+          document: string | null
+          status: number | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: number
+          user_id?: number | null
+          phone?: string | null
+          description?: string | null
+          document?: string | null
+          status?: number | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: Partial<Database['public']['Tables']['applications']['Insert']>
+        Relationships: []
+      }
       blog_categories: {
         Row: {
           id: number
@@ -1779,6 +1803,7 @@ export interface Database {
 }
 
 // ---- Row aliases ----
+export type Applications = Database['public']['Tables']['applications']['Row'];
 export type BlogCategories = Database['public']['Tables']['blog_categories']['Row'];
 export type BlogComments = Database['public']['Tables']['blog_comments']['Row'];
 export type BlogLikes = Database['public']['Tables']['blog_likes']['Row'];
@@ -1847,6 +1872,7 @@ export type WatchHistories = Database['public']['Tables']['watch_histories']['Ro
 export type Wishlists = Database['public']['Tables']['wishlists']['Row'];
 
 export const TABLES = [
+  'applications',
   'blog_categories',
   'blog_comments',
   'blog_likes',

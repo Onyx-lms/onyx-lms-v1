@@ -101,7 +101,7 @@ else pass.push('identity sequences: at or ahead of max(id) on every table');
 // ---------- RLS ----------
 // quiz_submissions exists by explicit decision (migration 0004): Laravel's own
 // QuizSubmission model requires it but no migration ever created it.
-const INTENTIONAL_ADDITIONS = ['quiz_submissions', 'blog_comments', 'blog_likes', 'user_reviews', 'bootcamp_resources'];
+const INTENTIONAL_ADDITIONS = ['quiz_submissions', 'blog_comments', 'blog_likes', 'user_reviews', 'bootcamp_resources', 'applications'];
 const tableCount = Object.keys(source.tables).length + INTENTIONAL_ADDITIONS.length;
 const { rows: [rls] } = await client.query(
   "select count(*)::int c from pg_class c join pg_namespace n on n.oid=c.relnamespace " +

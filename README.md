@@ -37,7 +37,8 @@ its first argument. Nothing else in the app touches the Laravel code.
 | **S15** Team Training / Classrooms | 5/5 | 5/5 | **done, live** |
 | **S16** Tutor Booking | 7/7 | 6/6 | **done, live** |
 | **S17** Revenue, Payouts, Dashboards | 5/5 | 3/3 | **done, live** |
-| S18+ | settings, code IDE, hardening | | next |
+| **S18** Admin Settings | 9/9 | 6/6 | **done, live** |
+| S19+ | code IDE, hardening and handover | | next |
 
 ## Three schema inconsistencies preserved
 
@@ -133,7 +134,7 @@ student     /my-courses  /my-profile  /cart  /wishlist  /purchase-history
             /play-course/[slug]  /live-class/[id]
             /my-bootcamps  /my-bootcamps/[slug]  /bootcamp-class/[id]
             /my-team-packages  /my-team-packages/[id]
-            /my-bookings  /tuition/[id]  /dashboard
+            /my-bookings  /tuition/[id]  /dashboard  /become-instructor
 instructor  /instructor/dashboard  /instructor/courses  /instructor/courses/[id]
             /instructor/blogs  /instructor/bootcamps  /instructor/team-packages
             /instructor/tutoring  /instructor/payouts
@@ -142,9 +143,11 @@ admin       /admin/dashboard  /admin/users  /admin/courses  /admin/approvals
             /admin/knowledge-base  /admin/testimonials  /admin/messages
             /admin/contacts  /admin/live-class-settings  /admin/bootcamps
             /admin/team-packages  /admin/tutoring  /admin/revenue  /admin/payouts
+            /admin/settings  /admin/languages  /admin/languages/[id]
+            /admin/newsletters  /admin/applications
 ```
 
-84 routes. Everything server-rendered; the catalog and blog pages carry full
+90 routes. Everything server-rendered; the catalog and blog pages carry full
 metadata, and blog posts resolve `seo_fields` before falling back to the post.
 The two message screens opt out of caching entirely -- a conversation must never
 be served from a cache shared between users.
@@ -183,7 +186,7 @@ Rules preserved verbatim, including the counter-intuitive ones:
 - `true_false` answers are stored **raw**, not JSON-encoded, unlike every other type.
 - An unrecognised question type scores **wrong**, never skipped.
 
-## Five tables added beyond the 61
+## Six tables added beyond the 61
 
 Each one has a Laravel model and controllers that write to it, but **no Laravel
 migration ever creates it** -- so the feature throws "table not found" in the
@@ -197,6 +200,7 @@ are untouched and still audit at 580/580 columns.
 | `blog_likes` | `0005` | `BlogController.php` like handling |
 | `user_reviews` | `0006` | `SettingController::user_review_stor()` (admin testimonials) |
 | `bootcamp_resources` | `0008` | `Admin\BootcampResourceController` on every upload |
+| `applications` | `0009` | `student/BecomeInstructorController` on every submission |
 
 ## Running the whole thing
 
@@ -276,6 +280,7 @@ supabase/migrations/   0001_schema.sql   61 tables, generated, do not hand-edit
                        0004..0006        the four added tables (see above)
                        0007_...          messaging RLS + Realtime publication
                        0008_...          bootcamp_resources (see above)
+                       0009_...          applications (see above)
 supabase/seed.sql      settings, 4 languages, 404 phrases, categories
 tools/                 generators + the parity verifier
 packages/types/        generated Database types + Zod schemas for JSON columns
@@ -319,6 +324,32 @@ client already in use, not a new vendor.
 Third-party APIs arrive with the features that need them (Judge0 for the code
 IDE, Zoom, OpenAI, the payment providers). They are already called by the Laravel
 app today, so nothing new enters the system.
+
+## S18: settings with a declared surface, and secrets that stay server-side
+
+The Laravel settings controller wrote **whatever the form posted**, so a typo in
+a field name quietly created a setting nobody reads and the real one never
+changed. The keys are declared here, grouped by screen, and anything else is a
+422 naming the offending key. A unit test also asserts no key appears on two
+screens, because two screens saving the same key would fight each other.
+
+**Secrets are write-only.** `smtp_pass`, the Zoom and OpenAI credentials, the
+reCAPTCHA secret and every gateway key that looks like a secret are never
+returned by a read — the screen shows "Set"/"Not set", and submitting the field
+blank leaves the stored value alone. Only a deliberate non-blank value overwrites
+one. The old screens rendered `smtp_pass` straight into the form's `value`.
+
+**`users.paymentkeys` has a sibling problem in SET-09:**
+`student/BecomeInstructorController` inserts into an `applications` table that no
+migration creates. Added as migration `0009` with your agreement — the sixth of
+these. Approving an application now promotes the applicant to instructor for
+real, and a *rejected* applicant may apply again, which the original refused
+forever because it checked only for the existence of a row.
+
+Two smaller ones: sending a newsletter looped and stopped at the first failure,
+so one bad address abandoned the rest of the list — sending is batched here and
+reports sent/failed counts; and adding a language used to leave the phrase editor
+empty, so a new language now starts with a copy of every known phrase.
 
 ## S17: revenue that reconciles, and payout details with nowhere to live
 

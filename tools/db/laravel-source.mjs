@@ -20,10 +20,11 @@ export function laravelRoot() {
 export function laravelDb() {
   const file = path.join(laravelRoot(), 'database', 'database.sqlite');
   if (!fs.existsSync(file)) {
-    throw new Error('Cannot find the Laravel source database at:
-  ' + path.resolve(file)
-      + '
-Set LARAVEL_ROOT to the Laravel checkout.');
+    throw new Error([
+      'Cannot find the Laravel source database at:',
+      '  ' + path.resolve(file),
+      'Set LARAVEL_ROOT to the Laravel checkout.',
+    ].join('\n'));
   }
   return file;
 }

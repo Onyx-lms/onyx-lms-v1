@@ -16,7 +16,7 @@ it. Only the parity generators and `tools/db/laravel-source.mjs` reference it.
 are **generated** from the Laravel SQLite database by `tools/gen_schema.py` — a
 hand edit is a bug, and CI fails on it.
 
-Five tables have been added beyond the 61, each because a Laravel model and
+Six tables have been added beyond the 61, each because a Laravel model and
 controller write to a table **no migration ever creates** (so the feature throws
 in the original). Every one was an explicit decision, documented in the README:
 
@@ -26,8 +26,9 @@ in the original). Every one was an explicit decision, documented in the README:
 | `blog_comments`, `blog_likes` | `0005` |
 | `user_reviews` | `0006` |
 | `bootcamp_resources` | `0008` |
+| `applications` | `0009` |
 
-**Adding a sixth needs the user's agreement first.** Say what is broken in the
+**Adding a seventh needs the user's agreement first.** Say what is broken in the
 original, then ask.
 
 ## Non-obvious invariants
@@ -55,7 +56,7 @@ original, then ask.
 
 Read it, but verify against the actual schema before porting. Recurring patterns:
 
-- Controllers writing to tables that do not exist (the five added tables above).
+- Controllers writing to tables that do not exist (the six added tables above).
 - **Several generations of the same feature coexisting** with different column
   names — messaging had three, only one of which can execute (ADR-004).
 - Helpers reading tables the deployment never created — `get_frontend_settings()`

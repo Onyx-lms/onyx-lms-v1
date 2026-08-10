@@ -74,6 +74,16 @@ ADDITIONAL_TABLES = {
         ("created_at", "datetime", 0, 0),
         ("updated_at", "datetime", 0, 0),
     ],
+    "applications": [
+        ("id", "integer", 1, 1),
+        ("user_id", "integer", 0, 0),
+        ("phone", "varchar", 0, 0),
+        ("description", "text", 0, 0),
+        ("document", "varchar", 0, 0),
+        ("status", "tinyint(1)", 0, 0),
+        ("created_at", "datetime", 0, 0),
+        ("updated_at", "datetime", 0, 0),
+    ],
 }
 
 

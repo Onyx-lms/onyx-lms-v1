@@ -44,7 +44,7 @@ for (const t of Object.keys(source)) {
 }
 // quiz_submissions is an intentional ADDITION (see 0004). Laravel's own
 // QuizSubmission model requires it but no migration ever created it.
-const INTENTIONAL_ADDITIONS = new Set(['quiz_submissions', 'blog_comments', 'blog_likes', 'user_reviews', 'bootcamp_resources']);
+const INTENTIONAL_ADDITIONS = new Set(['quiz_submissions', 'blog_comments', 'blog_likes', 'user_reviews', 'bootcamp_resources', 'applications']);
 for (const t of Object.keys(live)) {
   if (!source[t] && !INTENTIONAL_ADDITIONS.has(t)) problems.push(`EXTRA TABLE ${t}`);
 }

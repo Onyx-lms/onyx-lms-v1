@@ -12,6 +12,7 @@ export const STUDENT_NAV: NavItem[] = [
   { href: '/my-certificates', label: 'Certificates' },
   { href: '/messages', label: 'Messages' },
   { href: '/my-profile', label: 'My profile' },
+  { href: '/become-instructor', label: 'Become an instructor' },
   { href: '/courses', label: 'Browse courses' },
 ];
 
@@ -41,6 +42,10 @@ export const ADMIN_NAV: NavItem[] = [
   { href: '/admin/tutoring', label: 'Tutor taxonomy' },
   { href: '/admin/revenue', label: 'Revenue' },
   { href: '/admin/payouts', label: 'Payouts' },
+  { href: '/admin/applications', label: 'Instructor applications' },
+  { href: '/admin/newsletters', label: 'Newsletters' },
+  { href: '/admin/languages', label: 'Languages' },
+  { href: '/admin/settings', label: 'Settings' },
   { href: '/admin/blogs', label: 'Blog' },
   { href: '/admin/knowledge-base', label: 'Knowledge base' },
   { href: '/admin/testimonials', label: 'Testimonials' },
