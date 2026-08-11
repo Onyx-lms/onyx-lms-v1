@@ -181,6 +181,15 @@ export class AssignmentsService {
    * separate from submit() rather than a flag on it, because a draft must never
    * be able to become a submission by accident: the acceptance criterion is
    * that a dropped connection costs nothing, not that it submits early.
+   *
+   * The read-then-insert below has a real window: the browser fires this on
+   * every blur, and clicking Submit blurs the textarea a moment before the
+   * click itself lands, so an ordinary "type, then click Submit" can send a
+   * draft save and a submit within milliseconds of each other. Both can pass
+   * the `existing` check before either has committed, and the loser's insert
+   * hits `onyx_assignment_submissions_unique` -- not a conflict the person
+   * caused, so it is folded into the update the winner already made rather
+   * than shown as a failed save.
    */
   async saveDraft(tenantId: number, assignmentId: number, userId: number, body: string) {
     const assignment = await this.#openAssignment(tenantId, assignmentId, userId);
@@ -200,6 +209,15 @@ export class AssignmentsService {
       tenant_id: tenantId, assignment_id: assignment.id, user_id: userId,
       body, status: 'draft', attempt: 1,
     }).select(SUBMISSION_COLUMNS).maybeSingle();
+    if (error && /duplicate key|unique/i.test(error.message)) {
+      const race = await this.#submission(tenantId, assignmentId, userId);
+      if (race && race.status === 'draft') {
+        await this.#db.from('onyx_assignment_submissions')
+          .update({ body, updated_at: now }).eq('id', race.id);
+        return { ...race, body, updated_at: now };
+      }
+      if (race) throw new HttpError(422, 'This has already been submitted.');
+    }
     if (error) throw new HttpError(500, 'Could not save your draft: ' + error.message);
     return data!;
   }
@@ -256,6 +274,21 @@ export class AssignmentsService {
       body: input.body ?? null, file_path: input.file_path ?? null,
       status: 'submitted', attempt: 1, submitted_at: at, is_late: late ? 1 : 0,
     });
+    // Same footrace as saveDraft(), the other way around: the autosave this
+    // submit's own blur just triggered can win the race between the read
+    // above and this insert. The row it created is the draft this submit was
+    // always going to become, so that becomes an update instead of a failure.
+    if (error && /duplicate key|unique/i.test(error.message)) {
+      const race = await this.#submission(tenantId, assignmentId, userId);
+      if (race && race.status === 'draft') {
+        await this.#db.from('onyx_assignment_submissions').update({
+          body: input.body ?? race.body,
+          file_path: input.file_path ?? race.file_path,
+          status: 'submitted', submitted_at: at, is_late: late ? 1 : 0, updated_at: at,
+        }).eq('id', race.id);
+        return this.mySubmission(tenantId, assignmentId, userId);
+      }
+    }
     if (error) throw new HttpError(500, 'Could not submit: ' + error.message);
     return this.mySubmission(tenantId, assignmentId, userId);
   }

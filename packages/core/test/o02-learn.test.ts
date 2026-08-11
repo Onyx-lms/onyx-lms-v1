@@ -78,6 +78,10 @@ function world() {
     onyx_rubric_criteria: [],
     onyx_assignment_submissions: [],
     onyx_submission_scores: [],
+  }, {
+    // Matches 0002_learn.sql's onyx_assignment_submissions_unique -- without
+    // this the fake cannot reproduce the draft/submit footrace at all.
+    onyx_assignment_submissions: [['assignment_id', 'user_id']],
   });
   const academics = new AcademicsService(db as never);
   return {
@@ -584,6 +588,35 @@ test('a draft is saved, restored, and is not a submission', async () => {
   // not that it submits early.
   assert.equal(restored!.status, 'draft');
   assert.ok(!restored!.submitted_at, 'a draft looked submitted');
+});
+
+test('a draft-save racing its own submit does not fail with a database error', async () => {
+  // Reproduces a real sequence: the browser saves a draft on blur, and
+  // clicking Submit blurs the textarea a moment before the click lands, so
+  // both requests can reach the service within milliseconds of each other.
+  // Both read "no submission yet" before either has written one, and the
+  // loser's insert used to surface a raw Postgres unique-violation message on
+  // an entirely ordinary click.
+  const { db, assignments, assignment } = await withAssignment();
+  const id = Number(assignment.id);
+  await assignments.publish(T, id);
+
+  const [draftResult, submitResult] = await Promise.all([
+    assignments.saveDraft(T, id, 10, 'typed just before clicking submit'),
+    assignments.submit(T, id, 10, { body: 'typed just before clicking submit' }),
+  ]);
+  assert.ok(draftResult, 'the draft save threw instead of folding into the submit');
+  assert.ok(submitResult, 'the submit threw instead of folding into the draft');
+
+  const final = await assignments.mySubmission(T, id, 10);
+  assert.equal(final!.status, 'submitted', 'the race left the submission stuck as a draft');
+  assert.equal(final!.body, 'typed just before clicking submit');
+
+  // Exactly one row -- the loser updated the winner's row rather than a
+  // second one slipping in under a different identity.
+  const rows = (db.tables.onyx_assignment_submissions as { assignment_id: number; user_id: number }[])
+    .filter((r) => Number(r.assignment_id) === id && Number(r.user_id) === 10);
+  assert.equal(rows.length, 1, 'the race produced two submission rows for the same person');
 });
 
 test('an empty submission is refused', async () => {
