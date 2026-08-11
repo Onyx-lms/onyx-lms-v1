@@ -75,7 +75,7 @@ function world(provider: ExecutionProvider = fakeProvider(), now = () => 1_800_0
   return {
     db, academics, enqueued,
     codelab: new CodeLabService(db as never, academics, queue, provider, now),
-    workspaces: new WorkspaceService(db as never, academics, now),
+    workspaces: new WorkspaceService(db as never, academics, provider, now),
   };
 }
 
@@ -730,4 +730,64 @@ test('a comment can be resolved, and an empty one is refused', async () => {
   const comment = await w.workspaces.comment(T, id, 10, 'student', { body: 'note to self' });
   const resolved = await w.workspaces.resolveComment(T, id, Number(comment.id), 10, 'student');
   assert.ok(resolved.resolved_at);
+});
+
+test('running a workspace file answers with the sandbox result, not a queued row', async () => {
+  const w = world();
+  const workspace = await w.workspaces.create(T, 10, {
+    title: 'P', language: 'python', entry_path: 'main.py',
+  });
+  const id = Number(workspace.id);
+  await w.workspaces.writeFiles(T, id, 10, 'student', [{ path: 'main.py', content: 'print(1)' }]);
+
+  const result = await w.workspaces.run(T, id, 10, 'student', {});
+  assert.equal(result.path, 'main.py', 'did not default to the entry file');
+  assert.equal(result.verdict, 'ok');
+  assert.equal(result.stdout, 'print(1)', 'the fake provider echoes the source');
+  assert.equal(w.enqueued.length, 0, 'a workspace run must not go through the grading queue');
+});
+
+test('run picks the file asked for, not always the entry file', async () => {
+  const w = world();
+  const workspace = await w.workspaces.create(T, 10, {
+    title: 'P', language: 'python', entry_path: 'main.py',
+  });
+  const id = Number(workspace.id);
+  await w.workspaces.writeFiles(T, id, 10, 'student', [
+    { path: 'main.py', content: 'print("main")' },
+    { path: 'scratch.py', content: 'print("scratch")' },
+  ]);
+
+  const result = await w.workspaces.run(T, id, 10, 'student', { path: 'scratch.py' });
+  assert.equal(result.path, 'scratch.py');
+  assert.equal(result.stdout, 'print("scratch")');
+});
+
+test('run refuses an empty file rather than asking the sandbox to do nothing', async () => {
+  const w = world();
+  const workspace = await w.workspaces.create(T, 10, { title: 'P', entry_path: 'main.py' });
+  const id = Number(workspace.id);
+  await w.workspaces.writeFiles(T, id, 10, 'student', [{ path: 'main.py', content: '   ' }]);
+  await assert.rejects(w.workspaces.run(T, id, 10, 'student', {}),
+    (e: HttpError) => e.status === 422);
+});
+
+test('nobody runs somebody else\'s workspace, not even a mentor of the course', async () => {
+  const w = world();
+  const workspace = await w.workspaces.create(T, 10, {
+    title: 'P', entry_path: 'main.py', course_id: 1,
+  });
+  const id = Number(workspace.id);
+  await w.workspaces.writeFiles(T, id, 10, 'student', [{ path: 'main.py', content: 'print(1)' }]);
+  await assert.rejects(w.workspaces.run(T, id, 20, 'faculty', {}),
+    (e: HttpError) => e.status === 403, 'faculty executed a learner\'s code, not just reviewed it');
+});
+
+test('run refuses loudly when no sandbox is configured, same as submitting a problem', async () => {
+  const w = world(new UnconfiguredProvider());
+  const workspace = await w.workspaces.create(T, 10, { title: 'P', entry_path: 'main.py' });
+  const id = Number(workspace.id);
+  await w.workspaces.writeFiles(T, id, 10, 'student', [{ path: 'main.py', content: 'print(1)' }]);
+  await assert.rejects(w.workspaces.run(T, id, 10, 'student', {}),
+    (e: HttpError) => e.status === 503);
 });

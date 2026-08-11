@@ -230,6 +230,21 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
       claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role));
   });
 
+  /**
+   * Runs one file in the sandbox and answers with the result directly --
+   * unlike `/problems/:id/submit`, nothing here is queued. See
+   * WorkspaceService.run for why: one owner, one file, one Judge0 call.
+   */
+  app.post('/api/onyx/workspaces/:id/run', async (req) => {
+    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const body = validate(z.object({
+      path: z.string().max(500).optional(),
+      stdin: z.string().max(65_536).optional(),
+    }), req.body ?? {});
+    return ok(await ctx.onyxWorkspaces.run(
+      claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role, body));
+  });
+
   app.put('/api/onyx/workspaces/:id/files', async (req) => {
     const claims = requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({

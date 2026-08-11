@@ -151,8 +151,9 @@ export function createContext(): AppContext {
   // claiming work is a single FOR UPDATE SKIP LOCKED statement, and PostgREST
   // cannot express it.
   const onyxQueue = new QueueService(onyxSql(), 'api-' + process.pid);
-  // LAB-02a. Unconfigured is a first-class outcome -- the bank, workspaces and
-  // the queue all work without a sandbox; only running code does not.
+  // LAB-02a. Unconfigured is a first-class outcome -- the bank, the queue and
+  // a workspace's files, snapshots and review all work without a sandbox;
+  // only running code, in either place, does not.
   const onyxExecution = executionProviderFromEnv();
   const onyxCodeLab = new CodeLabService(onyxDb, onyxAcademics, onyxQueue, onyxExecution);
   const onyxAttendance = new AttendanceService(onyxDb, onyxAcademics);
@@ -246,7 +247,7 @@ export function createContext(): AppContext {
     onyxQueue,
     onyxExecution,
     onyxCodeLab,
-    onyxWorkspaces: new WorkspaceService(onyxDb, onyxAcademics),
+    onyxWorkspaces: new WorkspaceService(onyxDb, onyxAcademics, onyxExecution),
     onyxAssess: new AssessService(onyxDb, onyxAcademics),
     onyxProctor: new ProctorService(onyxDb, onyxAudit),
     onyxAssessAnalytics: new AssessAnalyticsService(onyxDb),

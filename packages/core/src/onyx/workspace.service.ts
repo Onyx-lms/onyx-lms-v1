@@ -16,6 +16,10 @@ import type { OnyxDb } from './db.ts';
 import type { Role } from '@onyx/types';
 import { HttpError } from '../http/errors.ts';
 import type { AcademicsService } from './academics.service.ts';
+import {
+  LANGUAGES, NoSandboxError, type ExecutionProvider, type Language, type RunResult,
+} from './execution.provider.ts';
+import { increment } from './metrics.ts';
 
 const WORKSPACE_COLUMNS = 'id, tenant_id, course_id, user_id, title, language, entry_path, created_at, updated_at';
 const FILE_COLUMNS = 'id, tenant_id, workspace_id, path, content, updated_at';
@@ -52,11 +56,16 @@ export function normalisePath(input: string): string {
 export class WorkspaceService {
   #db: OnyxDb;
   #academics: AcademicsService;
+  #provider: ExecutionProvider;
   #now: () => number;
 
-  constructor(db: OnyxDb, academics: AcademicsService, now: () => number = Date.now) {
+  constructor(
+    db: OnyxDb, academics: AcademicsService, provider: ExecutionProvider,
+    now: () => number = Date.now,
+  ) {
     this.#db = db;
     this.#academics = academics;
+    this.#provider = provider;
     this.#now = now;
   }
 
@@ -177,6 +186,54 @@ export class WorkspaceService {
     await this.#db.from('onyx_workspace_files')
       .delete().eq('tenant_id', tenantId).eq('workspace_id', workspaceId).eq('path', clean);
     return this.files(tenantId, workspaceId);
+  }
+
+  /**
+   * Runs one file through the sandbox and returns the result in the same
+   * response.
+   *
+   * LAB-02b's queue exists for "200 submissions at once" -- a whole class
+   * hitting Submit against one assignment. A workspace has one owner running
+   * their own project, so there is nothing to batch and nothing gained by
+   * making this a row someone has to poll: it is a single Judge0 call, and
+   * Judge0's own `wait=true` is built for exactly that.
+   *
+   * Only the owner runs it, for the same reason only the owner edits it: a
+   * mentor's tool here is a comment, not code they can execute themselves.
+   */
+  async run(tenantId: number, workspaceId: number, userId: number, role: Role, input: {
+    path?: string; stdin?: string;
+  }): Promise<RunResult & { path: string }> {
+    const workspace = await this.#assertOwner(tenantId, workspaceId, userId, role);
+    const language = workspace.language as Language;
+    if (!LANGUAGES.includes(language)) {
+      throw new HttpError(422, 'This workspace is set to "' + workspace.language
+        + '", which has no sandbox to run it in.');
+    }
+    if (!this.#provider.supports(language)) {
+      throw new HttpError(503, new NoSandboxError().message);
+    }
+
+    const path = input.path ? normalisePath(input.path) : workspace.entry_path;
+    const files = await this.files(tenantId, workspaceId);
+    const file = files.find((f) => f.path === path);
+    if (!file) throw new HttpError(404, 'No file at ' + path + '.');
+    if (!String(file.content ?? '').trim()) throw new HttpError(422, 'There is nothing to run.');
+
+    increment('onyx_workspace_runs_total', { language });
+    try {
+      const result = await this.#provider.run({
+        language, source: String(file.content), stdin: input.stdin ?? null,
+      });
+      // A provider failure is a verdict (`internal_error`), not a throw -- see
+      // Judge0Provider.run(), which never lets a sandbox problem become an
+      // unhandled rejection. Counted the same either way.
+      if (result.verdict === 'internal_error') increment('onyx_workspace_run_failures_total');
+      return { path, ...result };
+    } catch (e) {
+      increment('onyx_workspace_run_failures_total');
+      throw e;
+    }
   }
 
   // ---- snapshots ----

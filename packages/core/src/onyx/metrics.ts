@@ -32,6 +32,8 @@ export type MetricName =
   | 'onyx_payments_total'
   | 'onyx_payment_failures_total'
   | 'onyx_attempts_expired_total'
+  | 'onyx_workspace_runs_total'
+  | 'onyx_workspace_run_failures_total'
   | 'onyx_notifications_total'
   | 'onyx_notification_failures_total'
   | 'onyx_http_requests_total'
@@ -45,6 +47,8 @@ const HELP: Record<MetricName, string> = {
   onyx_payments_total: 'Payments settled, by whichever path got there first.',
   onyx_payment_failures_total: 'Payments that failed to settle. Alert on any.',
   onyx_attempts_expired_total: 'Abandoned assessment attempts closed by the sweep.',
+  onyx_workspace_runs_total: 'Workspace files run through the sandbox, outside grading.',
+  onyx_workspace_run_failures_total: 'Workspace runs the sandbox itself could not complete.',
   onyx_notifications_total: 'Notifications raised.',
   onyx_notification_failures_total: 'Notifications that could not be written or sent.',
   onyx_http_requests_total: 'Requests served.',

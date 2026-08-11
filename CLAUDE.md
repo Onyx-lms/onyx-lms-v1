@@ -149,6 +149,14 @@ Onyx table is ordinary work; adding a 62nd *ported* table is not.
   of each handler -- an early version searched too small a window and reported
   every guarded route as public, which is the one way this file can be worse
   than nothing.
+- **`POST /workspaces/:id/run` does not go through the code queue**, unlike
+  every other line that reaches the sandbox. The queue exists for "200
+  submissions at once" -- a class hitting Submit against one assignment; a
+  workspace run is one owner executing one file of their own project, so there
+  is nothing to batch and no submission id worth making someone poll for. It
+  calls `ExecutionProvider.run()` straight from the request and answers with
+  the result. Do not "fix" this into the queue without a reason a workspace
+  actually has.
 
 ## Non-obvious invariants
 

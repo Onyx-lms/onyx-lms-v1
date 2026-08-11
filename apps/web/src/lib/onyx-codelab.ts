@@ -58,6 +58,18 @@ export interface WorkspaceDetail extends Workspace {
   can_review: boolean;
 }
 
+/** One sandbox call against one workspace file -- `POST /workspaces/:id/run`. */
+export interface WorkspaceRunResult {
+  path: string;
+  verdict: 'ok' | 'compile_error' | 'runtime_error' | 'timeout'
+    | 'memory_exceeded' | 'output_exceeded' | 'internal_error';
+  stdout: string;
+  stderr: string;
+  compileOutput: string;
+  runtimeMs: number;
+  memoryKb: number;
+}
+
 export const DIFFICULTY_LABELS: Record<string, string> = {
   easy: 'Easy', medium: 'Medium', hard: 'Hard',
 };

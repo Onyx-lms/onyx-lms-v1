@@ -191,6 +191,7 @@ docs:check` fails the build if it has.
 | `GET` | `/api/onyx/workspaces` | any member |
 | `POST` | `/api/onyx/workspaces` | any member |
 | `GET` | `/api/onyx/workspaces/:id` | any member |
+| `POST` | `/api/onyx/workspaces/:id/run` | any member |
 | `PUT` | `/api/onyx/workspaces/:id/files` | any member |
 | `DELETE` | `/api/onyx/workspaces/:id/files` | any member |
 | `POST` | `/api/onyx/workspaces/:id/snapshots` | any member |
@@ -328,4 +329,4 @@ docs:check` fails the build if it has.
 
 ---
 
-_242 endpoints across 9 route files._
+_243 endpoints across 9 route files._

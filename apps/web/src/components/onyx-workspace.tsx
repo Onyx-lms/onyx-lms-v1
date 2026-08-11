@@ -3,12 +3,13 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { OnyxEditor } from './onyx-editor';
+import type { WorkspaceRunResult } from '@/lib/onyx-codelab';
 
 /**
  * LAB-05 -- the project workspace.
  *
  * The file tree, the editor, snapshots and mentor comments in one screen,
- * because moving between them is the work. Two things are deliberate:
+ * because moving between them is the work. Three things are deliberate:
  *
  *   * **Restore asks first.** It replaces the tree exactly, including deleting
  *     files added since, which is the feature -- and is also destructive, so it
@@ -16,6 +17,10 @@ import { OnyxEditor } from './onyx-editor';
  *   * **A mentor comments; a mentor does not edit.** The editor is read-only
  *     for anyone who is not the owner, matching what the API allows rather than
  *     letting someone type into a box whose save will be refused.
+ *   * **Run answers in the same request.** `/workspaces/:id/run` is not the
+ *     queued path `/problems/:id/submit` uses -- one owner running one file
+ *     has nothing to batch, so there is no submission id to poll here, only a
+ *     result to show.
  */
 export interface WsFile { id: number; path: string; content: string }
 export interface WsSnapshot { id: number; label: string; created_at: string; file_count: number }
@@ -40,6 +45,9 @@ export function OnyxWorkspace({ workspace, isOwner, canReview }: {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const [running, setRunning] = useState(false);
+  const [runResult, setRunResult] = useState<WorkspaceRunResult | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
 
   const current = files.find((f) => f.path === active);
 
@@ -53,6 +61,25 @@ export function OnyxWorkspace({ workspace, isOwner, canReview }: {
       after?.();
       router.refresh();
     });
+
+  /** Answers straight away -- see the note above on why this does not poll. */
+  const run = async () => {
+    setRunError(null);
+    setRunResult(null);
+    setRunning(true);
+    try {
+      const res = await fetch('/api/proxy/onyx/workspaces/' + workspace.id + '/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: active }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!body.ok) { setRunError(body.message ?? 'That did not run.'); return; }
+      setRunResult(body.data as WorkspaceRunResult);
+    } finally {
+      setRunning(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -116,6 +143,14 @@ export function OnyxWorkspace({ workspace, isOwner, canReview }: {
           {isOwner ? (
             <div className="flex flex-wrap items-center gap-2">
               <button
+                type="button" disabled={running}
+                onClick={run}
+                className="rounded-lg border border-slate-300 px-4 py-1.5 text-sm text-slate-700
+                           hover:bg-slate-50 disabled:opacity-50"
+              >
+                {running ? 'Running…' : 'Run'}
+              </button>
+              <button
                 type="button" disabled={pending}
                 onClick={() => call('/files', {
                   method: 'PUT',
@@ -145,12 +180,20 @@ export function OnyxWorkspace({ workspace, isOwner, canReview }: {
               >
                 Take a snapshot
               </button>
+              <span className="text-xs text-muted">Runs {active || 'the open file'}.</span>
             </div>
           ) : (
             <p className="text-xs text-muted">
               You are reviewing this project. Leave a comment rather than editing it.
             </p>
           )}
+
+          {runError ? (
+            <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">
+              {runError}
+            </p>
+          ) : null}
+          {runResult ? <RunConsole result={runResult} /> : null}
         </div>
       </div>
 
@@ -248,5 +291,51 @@ export function OnyxWorkspace({ workspace, isOwner, canReview }: {
         </section>
       </div>
     </div>
+  );
+}
+
+const VERDICT_LABEL: Record<WorkspaceRunResult['verdict'], string> = {
+  ok: 'Ran',
+  compile_error: 'Did not compile',
+  runtime_error: 'Runtime error',
+  timeout: 'Timed out',
+  memory_exceeded: 'Used too much memory',
+  output_exceeded: 'Output was too long, truncated',
+  internal_error: 'Could not run',
+};
+
+/** What Run answers with. Not the graded Console in onyx-codelab -- there is
+ *  no pass/fail here, only what the file printed. */
+function RunConsole({ result }: { result: WorkspaceRunResult }) {
+  const ok = result.verdict === 'ok';
+  return (
+    <section className="rounded-2xl border border-line">
+      <header className="flex flex-wrap items-baseline gap-3 border-b border-line px-4 py-3">
+        <span className={'text-sm font-medium ' + (ok ? 'text-emerald-700' : 'text-rose-700')}>
+          {VERDICT_LABEL[result.verdict]}
+        </span>
+        <span className="font-mono text-xs text-muted">{result.path}</span>
+        {result.runtimeMs ? <span className="text-xs text-muted">{result.runtimeMs}ms</span> : null}
+        {result.memoryKb ? (
+          <span className="ml-auto text-xs text-muted">{Math.round(result.memoryKb / 1024)}MB</span>
+        ) : null}
+      </header>
+      {result.compileOutput ? (
+        <pre className="overflow-x-auto border-b border-line bg-amber-50 p-3 text-xs text-amber-900">
+          {result.compileOutput}
+        </pre>
+      ) : null}
+      {result.stdout ? (
+        <pre className="overflow-x-auto border-b border-line bg-slate-950 p-3 text-xs text-slate-100">
+          {result.stdout}
+        </pre>
+      ) : null}
+      {result.stderr ? (
+        <pre className="overflow-x-auto p-3 text-xs text-rose-700">{result.stderr}</pre>
+      ) : null}
+      {ok && !result.stdout && !result.stderr ? (
+        <p className="px-4 py-3 text-xs text-muted">Ran with no output.</p>
+      ) : null}
+    </section>
   );
 }
