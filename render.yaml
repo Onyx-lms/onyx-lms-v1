@@ -54,6 +54,22 @@ services:
         sync: false
       - key: SUPABASE_ANON_KEY
         sync: false
+
+      # The Code Lab queue talks to Postgres directly rather than through
+      # PostgREST, so it needs a connection string as well as the REST keys.
+      # Leaving it out does not fail the boot -- the API serves fine -- it makes
+      # the worker throw "Missing SUPABASE_DB_URL" every two seconds forever,
+      # which is a quieter failure and a worse one.
+      #
+      # It must be the POOLER host, not db.<ref>.supabase.co: the direct host is
+      # IPv6-only on projects created after early 2024 and Render's egress is
+      # IPv4, so the direct URL fails to resolve from the container. Shape:
+      #   postgresql://postgres.<ref>:<pw>@aws-0-<region>.pooler.supabase.com:5432/postgres
+      # with the password percent-encoded (a raw @ breaks URI parsing).
+      - key: SUPABASE_DB_URL
+        sync: false
+      - key: SUPABASE_REGION
+        value: ap-south-1
       # Bypasses RLS. Server-side only -- this is the one that must never reach
       # a browser or a repository.
       - key: SUPABASE_SERVICE_ROLE_KEY
