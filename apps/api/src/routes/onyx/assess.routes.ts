@@ -188,7 +188,15 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
   /** Starts, or resumes the attempt already in progress. Same call either way. */
   app.post('/api/onyx/assessments/:id/start', async (req) => {
     const claims = requireOnyx(asReq(req), ctx.jwtSecret);
-    const body = validate(z.object({ consent: z.boolean().optional() }), req.body ?? {});
+    const body = validate(z.object({
+      consent: z.boolean().optional(),
+      // What the browser has running. A paper that requires a camera or a
+      // screen share is not dealt without it -- see AssessService.start.
+      devices: z.object({
+        camera: z.boolean().optional(),
+        screen: z.boolean().optional(),
+      }).optional(),
+    }), req.body ?? {});
     return ok(await ctx.onyxAssess.start(claims.tenant_id, idOf(req), claims.user_id, body));
   });
 

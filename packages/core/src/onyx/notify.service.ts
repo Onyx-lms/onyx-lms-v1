@@ -48,7 +48,13 @@ export type NotificationKind =
   | 'results.published'
   | 'certificate.issued'
   | 'invoice.issued'
-  | 'discussion.mentioned';
+  | 'discussion.mentioned'
+  /**
+   * An attempt has crossed the review threshold while it is still being sat.
+   * Sent to invigilating staff, not to the candidate: telling somebody
+   * mid-paper that they are under suspicion is its own kind of interference.
+   */
+  | 'assessment.integrity_review';
 
 export interface NotificationInput {
   userId: number;

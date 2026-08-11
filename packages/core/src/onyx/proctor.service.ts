@@ -57,14 +57,25 @@ export const EVENT_KINDS = Object.keys(EVENT_WEIGHTS);
 /** Above this, an attempt goes to the review queue. */
 export const REVIEW_THRESHOLD = 5;
 
+/** The part of NotifyService this needs. Narrow, so a test can pass a fake. */
+export interface ProctorNotifier {
+  notify(tenantId: number, input: {
+    userId: number; kind: 'assessment.integrity_review';
+    title: string; body?: string | null; link?: string | null;
+  }): Promise<unknown>;
+}
+
 export class ProctorService {
   #db: OnyxDb;
   #audit: AuditService;
+  #notify: ProctorNotifier | null;
   #now: () => number;
 
-  constructor(db: OnyxDb, audit: AuditService, now: () => number = Date.now) {
+  constructor(db: OnyxDb, audit: AuditService, notify: ProctorNotifier | null = null,
+    now: () => number = Date.now) {
     this.#db = db;
     this.#audit = audit;
+    this.#notify = notify;
     this.#now = now;
   }
 
@@ -136,34 +147,84 @@ export class ProctorService {
     };
   }
 
-  /** ASS-02b -- everything an invigilator has to look at, worst first. */
+  /**
+   * ASS-02b -- everything an invigilator has to look at, worst first.
+   *
+   * Includes every attempt that is STILL RUNNING, not only the ones that have
+   * already tripped something. The filter used to be `integrity_flags > 0`,
+   * which meant a candidate sitting cleanly was invisible: the one screen whose
+   * job is to show who is sitting right now showed nobody until they
+   * misbehaved, so "watch the room" was the one thing it could not do. A clean
+   * sitting is exactly what an invigilator wants to confirm.
+   *
+   * Each row carries the live device state, derived from the last camera/screen
+   * event, so the answer to "is their camera actually on?" is on the list
+   * rather than one click away per candidate.
+   */
   async reviewQueue(tenantId: number, assessmentId?: number) {
     let q = this.#db.from('onyx_assessment_attempts')
-      .select(ATTEMPT_COLUMNS).eq('tenant_id', tenantId).gt('integrity_flags', 0);
+      .select(ATTEMPT_COLUMNS).eq('tenant_id', tenantId)
+      .or('integrity_flags.gt.0,status.eq.in_progress');
     if (assessmentId) q = q.eq('assessment_id', assessmentId);
     const { data } = await q.order('integrity_flags', { ascending: false });
     const attempts = data ?? [];
     if (!attempts.length) return [];
 
+    // What each attempt's paper actually demands. Without this, "no camera
+    // event" is indistinguishable from "this paper never wanted a camera", and
+    // an invigilator reading "not required" about a paper that requires one is
+    // worse informed than if the column were blank.
+    const { data: papers } = await this.#db.from('onyx_assessments')
+      .select('id, require_camera, require_screen, proctoring')
+      .eq('tenant_id', tenantId)
+      .in('id', [...new Set(attempts.map((a) => Number(a.assessment_id)))]);
+    const needs = new Map((papers ?? []).map((p) => [Number(p.id), {
+      camera: Boolean(p.proctoring) && Boolean(p.require_camera),
+      screen: Boolean(p.proctoring) && Boolean(p.require_screen),
+    }]));
+
     const { data: events } = await this.#db.from('onyx_proctor_events')
       .select(EVENT_COLUMNS).eq('tenant_id', tenantId)
-      .in('attempt_id', attempts.map((a) => Number(a.id)));
+      .in('attempt_id', attempts.map((a) => Number(a.id)))
+      .order('at', { ascending: true });
+
     const open = new Map<number, number>();
+    const camera = new Map<number, boolean>();
+    const screen = new Map<number, boolean>();
+    const away = new Map<number, number>();
     for (const e of events ?? []) {
-      if (e.review === 'open') {
-        open.set(Number(e.attempt_id), (open.get(Number(e.attempt_id)) ?? 0) + 1);
-      }
+      const id = Number(e.attempt_id);
+      if (e.review === 'open') open.set(id, (open.get(id) ?? 0) + 1);
+      // Ascending order, so the last write for each attempt wins and the map
+      // ends up holding the most recent state.
+      if (e.kind === 'camera_on') camera.set(id, true);
+      if (e.kind === 'camera_off') camera.set(id, false);
+      if (e.kind === 'screen_on') screen.set(id, true);
+      if (e.kind === 'screen_off') screen.set(id, false);
+      if (e.kind === 'tab_blur') away.set(id, (away.get(id) ?? 0) + 1);
     }
 
-    return attempts.map((a) => ({
-      attempt_id: Number(a.id),
-      assessment_id: Number(a.assessment_id),
-      user_id: Number(a.user_id),
-      status: a.status,
-      integrity_flags: a.integrity_flags,
-      integrity_status: a.integrity_status,
-      open_events: open.get(Number(a.id)) ?? 0,
-    }));
+    return attempts.map((a) => {
+      const need = needs.get(Number(a.assessment_id)) ?? { camera: false, screen: false };
+      return {
+        attempt_id: Number(a.id),
+        assessment_id: Number(a.assessment_id),
+        user_id: Number(a.user_id),
+        status: a.status,
+        integrity_flags: a.integrity_flags,
+        integrity_status: a.integrity_status,
+        open_events: open.get(Number(a.id)) ?? 0,
+        requires_camera: need.camera,
+        requires_screen: need.screen,
+        // null means "never reported either way". Paired with requires_*, that
+        // reads as "required and silent" -- a paper being sat with no camera
+        // event at all -- rather than being mistaken for "not required".
+        camera_on: camera.get(Number(a.id)) ?? null,
+        screen_on: screen.get(Number(a.id)) ?? null,
+        tab_switches: away.get(Number(a.id)) ?? 0,
+        started_at: a.started_at,
+      };
+    });
   }
 
   /**
@@ -243,6 +304,52 @@ export class ProctorService {
 
     await this.#db.from('onyx_assessment_attempts')
       .update({ integrity_flags: score, integrity_status: status }).eq('id', attemptId);
+
+    // Crossing the threshold is the moment worth telling somebody about.
+    //
+    // Nothing was ever pushed before: every flag was visible on the
+    // invigilation console and nowhere else, so "reported to faculty" meant
+    // "faculty could go and look", and a paper being sat right now could reach
+    // the review threshold with nobody aware of it.
+    //
+    // Sent on the TRANSITION only, and only while the paper is still running:
+    // one message when a pattern emerges, not one per tab switch, because an
+    // alert that arrives five times an hour is an alert nobody reads. Below the
+    // threshold the console remains the record -- a single tab switch is a
+    // notification popping up, and interrupting an invigilator for it would
+    // teach them to ignore the channel.
+    if (status === 'review' && attempt.integrity_status !== 'review'
+      && attempt.status === 'in_progress') {
+      await this.#alertInvigilators(tenantId, attempt, score);
+    }
+  }
+
+  /**
+   * Tells the people who invigilate that an attempt needs a look.
+   *
+   * Staff are found by membership role rather than by course, because an exams
+   * officer invigilating a hall is often not the person who teaches the paper.
+   * Failure here is swallowed: a notification that cannot be delivered must not
+   * roll back the flag that earned it.
+   */
+  async #alertInvigilators(tenantId: number, attempt: Record<string, unknown>, score: number) {
+    if (!this.#notify) return;
+    try {
+      const { data: staff } = await this.#db.from('onyx_memberships')
+        .select('user_id, role').eq('tenant_id', tenantId)
+        .in('role', ['admin', 'faculty', 'exams']);
+      const attemptId = Number(attempt.id);
+      for (const s of staff ?? []) {
+        await this.#notify.notify(tenantId, {
+          userId: Number(s.user_id),
+          kind: 'assessment.integrity_review',
+          title: 'Attempt ' + attemptId + ' has reached the review threshold',
+          body: 'A paper being sat now has an integrity score of ' + score
+            + '. Nothing here is a verdict -- it is a prompt to look.',
+          link: '/onyx/attempts/' + attemptId + '/integrity',
+        });
+      }
+    } catch { /* the flag is recorded; the message is best effort */ }
   }
 
   async #attempt(tenantId: number, id: number) {

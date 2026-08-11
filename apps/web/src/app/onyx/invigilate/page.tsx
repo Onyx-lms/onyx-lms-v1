@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxPageRole, onyxApi, type Me } from '@/lib/onyx-session';
+import { LiveRefresh } from '@/components/onyx-live';
 import {
   ActionLink, Card, CardGrid, DataTable, EmptyRow, Icon, Meter, Pill, Score,
   SectionHead, State, StatTile,
@@ -12,6 +13,27 @@ export const metadata: Metadata = { title: 'Invigilate' };
 interface QueueRow {
   attempt_id: number; assessment_id: number; user_id: number; status: string;
   integrity_flags: number; integrity_status: string; open_events: number;
+  /** null means the attempt has never reported either way -- not the same as off. */
+  camera_on: boolean | null; screen_on: boolean | null;
+  requires_camera: boolean; requires_screen: boolean;
+  tab_switches: number; started_at: string | null;
+}
+
+/**
+ * A device, as four states rather than two.
+ *
+ * "Off", "never said" and "never wanted" are three different things that a
+ * boolean flattens into one. Silence on a paper that requires a camera is the
+ * loudest of them -- somebody is sitting a monitored paper and the browser has
+ * never once said the camera is on -- and it used to render as the reassuring
+ * "not required".
+ */
+function device(on: boolean | null, required: boolean, label: string): {
+  tone: 'on' | 'off' | 'idle'; text: string;
+} {
+  if (!required) return { tone: 'idle', text: 'Not required' };
+  if (on === null) return { tone: 'off', text: label + ' never reported' };
+  return on ? { tone: 'on', text: label + ' on' } : { tone: 'off', text: label + ' OFF' };
 }
 
 /**
@@ -55,16 +77,22 @@ export default async function OnyxInvigilatePage() {
     onyxApi<QueueRow[]>('/api/onyx/proctor/queue'),
   ]);
 
-  // Everything below is read off the queue the API already returned. A sitting
-  // is an assessment with flagged attempts on it; the invigilation console is
-  // the only place that grouping is worth anything.
+  // Everything below is read off the queue the API already returned. The queue
+  // now carries every running attempt as well as every flagged one, so the two
+  // are counted separately: a clean sitting in progress is not a flag, and a
+  // console that adds them together tells an invigilator the room is on fire.
   const running = queue.filter((r) => r.status === 'in_progress');
+  const flagged = queue.filter((r) => r.integrity_flags > 0);
   const openEvents = queue.reduce((n, r) => n + r.open_events, 0);
   const awaiting = queue.filter((r) => r.open_events > 0).length;
   const decided = queue.filter((r) => r.integrity_status === 'cleared'
     || r.integrity_status === 'upheld').length;
+  // A running paper whose required device has dropped out: the one thing on
+  // this screen worth interrupting somebody for.
+  const deviceDown = running.filter((r) =>
+    (r.requires_camera && r.camera_on !== true) || (r.requires_screen && r.screen_on !== true));
 
-  const sittings = [...queue.reduce((map, r) => {
+  const sittings = [...flagged.reduce((map, r) => {
     const s = map.get(r.assessment_id) ?? {
       assessment_id: r.assessment_id, attempts: 0, live: 0, open: 0, worst: 0, settled: 0,
     };
@@ -104,22 +132,94 @@ export default async function OnyxInvigilatePage() {
             )}
           </span>
           <span className="text-[13px] text-muted">
-            <span className="tabular-nums">{queue.length}</span> flagged
+            <span className="tabular-nums">{flagged.length}</span> flagged
             {' · '}
             <span className="tabular-nums">{openEvents}</span>
             {openEvents === 1 ? ' event awaiting review' : ' events awaiting review'}
           </span>
+          {deviceDown.length ? (
+            <span className="text-[13px] font-semibold text-red-700">
+              {deviceDown.length === 1
+                ? '1 running paper has a required device off'
+                : deviceDown.length + ' running papers have a required device off'}
+            </span>
+          ) : null}
+          {/* Without this the console rendered once and then went stale, which
+              on the one screen meant to show what is happening now is the most
+              misleading thing it could do. */}
+          <span className="ml-auto"><LiveRefresh seconds={15} label="This console" /></span>
         </div>
       </Card>
 
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatTile label="Flagged attempts" value={queue.length}
-          note={queue.length === 0 ? 'nothing has tripped a rule' : 'worst first below'} />
+        <StatTile label="Flagged attempts" value={flagged.length}
+          note={flagged.length === 0 ? 'nothing has tripped a rule' : 'worst first below'} />
         <StatTile label="Awaiting review" value={awaiting}
           note={openEvents + (openEvents === 1 ? ' open event' : ' open events')} />
         <StatTile label="Running now" value={running.length} note="papers still in progress" />
         <StatTile label="Decided" value={decided} note="cleared or upheld by a person" />
       </div>
+
+      {/* Who is sitting right now, and what their devices are doing.
+          This section could not exist before: the queue only returned attempts
+          that had already tripped a rule, so a candidate sitting cleanly was
+          invisible and there was nothing to watch until something went wrong. */}
+      <section className="mb-7">
+        <SectionHead title="Sitting now" />
+        <div tabIndex={0} role="region" aria-label="Attempts in progress">
+          <DataTable
+            caption="Papers in progress, with the state of each required device"
+            head={
+              <>
+                <th scope="col">Attempt</th>
+                <th scope="col">Camera</th>
+                <th scope="col">Screen</th>
+                <th scope="col">Left the paper</th>
+                <th scope="col">Flag score</th>
+                <th scope="col"><span className="sr-only">Actions</span></th>
+              </>
+            }
+          >
+            {running.map((r) => {
+              const cam = device(r.camera_on, r.requires_camera, 'Camera');
+              const scr = device(r.screen_on, r.requires_screen, 'Screen');
+              const sev = severity(r.integrity_flags);
+              return (
+                <tr key={r.attempt_id} className="align-middle">
+                  <td>
+                    <div className="font-semibold">Attempt {r.attempt_id}</div>
+                    <div className="text-[12.5px] text-muted">
+                      Candidate #{r.user_id} · assessment #{r.assessment_id}
+                    </div>
+                  </td>
+                  <td><State tone={cam.tone}>{cam.text}</State></td>
+                  <td><State tone={scr.tone}>{scr.text}</State></td>
+                  <td className="tabular-nums">
+                    {r.tab_switches === 0 ? (
+                      <span className="text-muted">Never</span>
+                    ) : (
+                      <span className={r.tab_switches >= 3 ? 'font-semibold text-red-700' : ''}>
+                        {r.tab_switches} {r.tab_switches === 1 ? 'time' : 'times'}
+                      </span>
+                    )}
+                  </td>
+                  <td><Score value={r.integrity_flags} band={sev.band} /></td>
+                  <td className="text-right">
+                    <ActionLink href={'/onyx/attempts/' + r.attempt_id + '/integrity'}
+                      label="Watch" />
+                  </td>
+                </tr>
+              );
+            })}
+            {running.length === 0 ? (
+              <EmptyRow colSpan={6} icon="shield">
+                Nobody is sitting a monitored paper at the moment. Candidates appear here as
+                soon as they start, whether or not anything has been flagged.
+              </EmptyRow>
+            ) : null}
+          </DataTable>
+        </div>
+      </section>
 
       {sittings.length > 1 ? (
         <section className="mb-7">
@@ -193,7 +293,7 @@ export default async function OnyxInvigilatePage() {
               </>
             }
           >
-            {queue.map((r) => {
+            {flagged.map((r) => {
               const sev = severity(r.integrity_flags);
               const state = caseState(r.integrity_status);
               return (
@@ -222,7 +322,7 @@ export default async function OnyxInvigilatePage() {
                 </tr>
               );
             })}
-            {queue.length === 0 ? (
+            {flagged.length === 0 ? (
               <EmptyRow colSpan={6} icon="shield">
                 Nothing to review. Attempts appear here the moment a monitored event is
                 recorded against one — a tab switch, a paste, a camera that stops.

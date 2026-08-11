@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   formatClock, type Assessment, type CandidateAttempt, type PaperQuestion,
 } from '@/lib/onyx-assess';
-import { ProctorMedia, ProctorPreflight } from '@/components/onyx-proctor';
+import { ProctorMedia, ProctorPreflight, type DeviceState } from '@/components/onyx-proctor';
 
 /**
  * ASS-01b/c + ASS-02a -- sitting a paper.
@@ -37,6 +37,21 @@ export function OnyxSitPaper({ assessment, attempt }: {
   const [pending, start] = useTransition();
   const timers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const submitting = useRef(false);
+
+  // ASS-02a. How many times this candidate has left the paper, whether they are
+  // being told about it right now, and what their devices are actually doing.
+  const departures = useRef(0);
+  const [departureCount, setDepartures] = useState(0);
+  const [warnAway, setWarnAway] = useState(false);
+  const [media, setMedia] = useState({ camera: false, screen: false });
+
+  // Required devices that are not running right now. While this is non-empty
+  // the paper is covered: a requirement you can ignore is not a requirement.
+  const missing: string[] = [];
+  if (assessment.proctoring) {
+    if (assessment.require_camera && !media.camera) missing.push('your camera');
+    if (assessment.require_screen && !media.screen) missing.push('your screen');
+  }
 
   // ---- the clock ----
 
@@ -121,8 +136,33 @@ export function OnyxSitPaper({ assessment, attempt }: {
         body: JSON.stringify({ kind, detail, client_at: new Date().toISOString() }),
       });
     };
-    const onVisibility = () => send(document.visibilityState === 'hidden' ? 'tab_blur' : 'tab_focus');
-    const onBlur = () => send('tab_blur');
+
+    // Switching tabs fires BOTH `visibilitychange` and `blur`, so the old code
+    // recorded two tab_blur events -- weight 2 -- for one switch, and a
+    // candidate reached the review threshold in half the switches the weights
+    // were written for. `away` collapses them: one departure, one event.
+    let away = false;
+    const leave = (how: string) => {
+      if (away) return;
+      away = true;
+      departures.current += 1;
+      setDepartures(departures.current);
+      send('tab_blur', { how, count: departures.current });
+    };
+    const arrive = () => {
+      if (!away) return;
+      away = false;
+      send('tab_focus');
+      // Told on return rather than on leaving: a warning drawn while the tab is
+      // hidden is a warning nobody reads.
+      setWarnAway(true);
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') leave('tab_hidden'); else arrive();
+    };
+    const onBlur = () => leave('window_blur');
+    const onFocus = () => { if (document.visibilityState === 'visible') arrive(); };
     const onPaste = (e: ClipboardEvent) =>
       send('paste', { length: e.clipboardData?.getData('text')?.length ?? 0 });
     const onCopy = () => send('copy');
@@ -130,12 +170,14 @@ export function OnyxSitPaper({ assessment, attempt }: {
 
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('blur', onBlur);
+    window.addEventListener('focus', onFocus);
     document.addEventListener('paste', onPaste);
     document.addEventListener('copy', onCopy);
     document.addEventListener('fullscreenchange', onFullscreen);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('blur', onBlur);
+      window.removeEventListener('focus', onFocus);
       document.removeEventListener('paste', onPaste);
       document.removeEventListener('copy', onCopy);
       document.removeEventListener('fullscreenchange', onFullscreen);
@@ -157,7 +199,31 @@ export function OnyxSitPaper({ assessment, attempt }: {
           attemptId={attempt.id}
           requireCamera={Boolean(assessment.require_camera)}
           requireScreen={Boolean(assessment.require_screen)}
+          onState={setMedia}
         />
+      ) : null}
+
+      {/* You left the paper, and the invigilator knows.
+          Said plainly and once per departure, with the running count, because a
+          candidate who does not know a switch was recorded cannot choose to
+          stop -- and a flag nobody was warned about is a trap rather than a
+          rule. Dismissable: it is a warning, not a punishment. */}
+      {warnAway ? (
+        <div role="alert"
+          className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-400
+                     bg-amber-50 p-3 text-sm text-amber-900">
+          <span className="font-semibold">You left the paper.</span>
+          <span className="min-w-0 flex-1">
+            This was recorded and your invigilator can see it
+            {departureCount > 1 ? ' — ' + departureCount + ' times so far' : ''}. Stay on this
+            tab until you hand in.
+          </span>
+          <button type="button" onClick={() => setWarnAway(false)}
+            className="rounded-lg border border-amber-400 bg-white px-3 py-1 text-xs
+                       font-semibold hover:bg-amber-100">
+            I understand
+          </button>
+        </div>
       ) : null}
 
       <div className={'sticky top-0 z-10 flex flex-wrap items-center gap-4 rounded-xl border p-3 '
@@ -207,31 +273,53 @@ export function OnyxSitPaper({ assessment, attempt }: {
         <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>
       ) : null}
 
-      <ol className="space-y-6">
-        {attempt.questions.map((q, i) => (
-          <li key={q.question_id} className="rounded-2xl border border-line p-4">
-            <div className="flex items-baseline justify-between gap-3">
-              <span className="text-xs uppercase tracking-wide text-muted">
-                Question {i + 1}
-              </span>
-              <span className="text-xs text-muted">
-                {q.points} mark{q.points === 1 ? '' : 's'}
-                {saved[q.question_id]
-                  ? <span className="ml-2 text-muted">{saved[q.question_id]}</span>
-                  : null}
-              </span>
-            </div>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">{q.prompt}</p>
-            <div className="mt-3">
-              <QuestionInput
-                question={q}
-                value={responses[q.question_id]}
-                onChange={(v) => answer(q.question_id, v)}
-              />
-            </div>
-          </li>
-        ))}
-      </ol>
+      {/* The paper is withheld while a required device is off.
+          Not merely dimmed: the questions are removed from the document, so
+          there is nothing to read through a translucent overlay and nothing for
+          a screen reader to reach either. The clock keeps running -- the server
+          owns it and pausing on demand would be a way to buy thinking time --
+          which is why the panel above stays interactive so the candidate can
+          fix it immediately. */}
+      {missing.length ? (
+        <div role="alert"
+          className="rounded-2xl border-2 border-rose-300 bg-rose-50 p-6 text-center">
+          <p className="text-base font-bold text-rose-900">
+            The paper is hidden until {missing.join(' and ')} {missing.length > 1 ? 'are' : 'is'} on
+          </p>
+          <p className="mx-auto mt-2 max-w-[52ch] text-sm text-rose-900">
+            This assessment is monitored and cannot be sat without
+            {' ' + missing.join(' and ')}. Use the panel above to turn
+            {missing.length > 1 ? ' them ' : ' it '}back on — your answers are saved and the
+            clock is still running.
+          </p>
+        </div>
+      ) : (
+        <ol className="space-y-6">
+          {attempt.questions.map((q, i) => (
+            <li key={q.question_id} className="rounded-2xl border border-line p-4">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-xs uppercase tracking-wide text-muted">
+                  Question {i + 1}
+                </span>
+                <span className="text-xs text-muted">
+                  {q.points} mark{q.points === 1 ? '' : 's'}
+                  {saved[q.question_id]
+                    ? <span className="ml-2 text-muted">{saved[q.question_id]}</span>
+                    : null}
+                </span>
+              </div>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">{q.prompt}</p>
+              <div className="mt-3">
+                <QuestionInput
+                  question={q}
+                  value={responses[q.question_id]}
+                  onChange={(v) => answer(q.question_id, v)}
+                />
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   );
 }
@@ -319,9 +407,10 @@ function QuestionInput({ question, value, onChange }: {
 export function OnyxStartAssessment({ assessment }: { assessment: Assessment }) {
   const router = useRouter();
   const [consented, setConsented] = useState(false);
-  // Every device the paper requires has been proved to work. Starts true so
-  // an unproctored paper is not gated on a check it never runs.
-  const [devicesReady, setDevicesReady] = useState(true);
+  // Every device the paper requires has been proved to work. Starts ok so an
+  // unproctored paper is not gated on a check it never runs.
+  const [devices, setDevices] = useState<DeviceState>(
+    { camera: false, screen: false, ok: true });
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
@@ -362,7 +451,7 @@ export function OnyxStartAssessment({ assessment }: { assessment: Assessment }) 
           <ProctorPreflight
             requireCamera={Boolean(assessment.require_camera)}
             requireScreen={Boolean(assessment.require_screen)}
-            onReady={setDevicesReady}
+            onReady={setDevices}
           />
         </div>
       ) : null}
@@ -371,13 +460,19 @@ export function OnyxStartAssessment({ assessment }: { assessment: Assessment }) 
 
       <button
         type="button"
-        disabled={pending || (Boolean(assessment.proctoring) && (!consented || !devicesReady))}
+        disabled={pending || (Boolean(assessment.proctoring) && (!consented || !devices.ok))}
         onClick={() => start(async () => {
           setError(null);
           const res = await fetch('/api/proxy/onyx/assessments/' + assessment.id + '/start', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ consent: consented }),
+            // The server checks these against require_camera / require_screen
+            // and withholds the paper if one is missing, so a disabled button
+            // is no longer the only thing standing in the way.
+            body: JSON.stringify({
+              consent: consented,
+              devices: { camera: devices.camera, screen: devices.screen },
+            }),
           });
           const body = await res.json().catch(() => ({}));
           if (!body.ok) { setError(body.message ?? 'Could not start.'); return; }

@@ -346,6 +346,11 @@ export class AssessService {
    */
   async start(tenantId: number, assessmentId: number, userId: number, opts: {
     consent?: boolean;
+    /**
+     * What the browser says it has running. Checked against require_camera /
+     * require_screen below.
+     */
+    devices?: { camera?: boolean; screen?: boolean };
   } = {}) {
     const assessment = await this.assessment(tenantId, assessmentId);
     if (assessment.status !== 'published') throw new HttpError(404, 'Assessment not found.');
@@ -378,6 +383,27 @@ export class AssessService {
       // Monitoring somebody without asking is not monitoring, it is
       // surveillance. The consent is per attempt and recorded.
       throw new HttpError(422, 'This assessment is proctored and needs your consent to start.');
+    }
+
+    // A required device has to be running before a paper is dealt.
+    //
+    // This used to be enforced only by disabling the Start button, which meant
+    // require_camera and require_screen were decoration: POST straight to this
+    // route and the paper came back regardless. The browser is still the only
+    // thing that can see a camera, so this is the client's word -- but it is now
+    // the client's word ON THE RECORD, and the paper is withheld without it,
+    // which is the difference between a requirement and a suggestion. Continuous
+    // enforcement (the paper blanking when a device stops) lives in the sitting
+    // component, because only it is there while the attempt runs.
+    if (assessment.proctoring) {
+      const devices = opts.devices ?? {};
+      if (assessment.require_camera && !devices.camera) {
+        throw new HttpError(422, 'This paper requires your camera. Turn it on to start.');
+      }
+      if (assessment.require_screen && !devices.screen) {
+        throw new HttpError(422, 'This paper requires you to share your screen. '
+          + 'Share your entire screen to start.');
+      }
     }
 
     const attemptNumber = existing.length + 1;

@@ -82,16 +82,34 @@ else pass.push('indexes: all ' + source.indexes.length + ' Laravel indexes prese
   (liveIdxNames.size - source.indexes.length) + ' primary keys added');
 
 // ---------- identity sequences ----------
+//
+// This asks the sequence what it would hand out next, which is NOT
+// pg_sequences.last_value.
+//
+// last_value is NULL until a sequence has actually been written to disk, and
+// coalescing that to 0 makes every correctly-set-but-never-yet-called sequence
+// look rewound to zero. A freshly restored database is exactly that case: after
+// the ap-south-1 migration all 29 sequences with rows behind them were reported
+// as "next insert would collide" while nextval() was in fact returning max+1 on
+// every one of them. A migration gate that cries wolf on a good restore is
+// worse than no gate, because the next real collision gets waved through.
+//
+// pg_sequence_last_value() returns NULL only for a genuinely never-set
+// sequence; otherwise it is the stored value, and is_called says whether that
+// value has been consumed. next = is_called ? last+1 : last.
 const seqProblems = [];
 for (const table of Object.keys(source.tables)) {
   if (!(source.tables[table] ?? []).some((c) => c.name === 'id')) continue;
-  const { rows: [r] } = await client.query(
-    'select coalesce(max(id), 0)::bigint as max_id, ' +
-    "coalesce((select last_value from pg_sequences where schemaname='public' " +
-    'and sequencename = $1), 0)::bigint as seq from public."' + table + '"',
-    [table + '_id_seq']);
-  if (Number(r.max_id) > Number(r.seq)) {
-    seqProblems.push(table + ': max(id)=' + r.max_id + ' > sequence=' + r.seq +
+  // Read the sequence relation directly: it exposes both last_value and
+  // is_called, which the pg_sequences view does not.
+  const { rows: [s] } = await client.query(
+    'select (select coalesce(max(id), 0)::bigint from public."' + table + '") as max_id, ' +
+    'seq.last_value::bigint as last_value, seq.is_called ' +
+    'from public."' + table + '_id_seq" as seq');
+
+  const next = s.is_called ? BigInt(s.last_value) + 1n : BigInt(s.last_value);
+  if (BigInt(s.max_id) >= next) {
+    seqProblems.push(table + ': max(id)=' + s.max_id + ' but next sequence value is ' + next +
       ' (next insert would collide)');
   }
 }

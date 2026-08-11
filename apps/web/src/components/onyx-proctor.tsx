@@ -62,36 +62,48 @@ function faceDetector(): FaceDetectorLike | null {
   }
 }
 
+/** What the preflight proved, and what the Start button sends to the server. */
+export interface DeviceState { camera: boolean; screen: boolean; ok: boolean }
+
 /**
  * Asks for the devices a paper requires, before the clock starts.
  *
  * Deliberately part of the consent step rather than the paper: discovering that
  * your camera is broken is survivable at the front of the paper and is not
- * survivable ninety seconds into a timed one. `onReady` reports whether every
- * required device was granted, which is what gates the Start button.
+ * survivable ninety seconds into a timed one.
+ *
+ * Screen sharing is proved here too. It used to be skipped -- the note said a
+ * grant cannot be carried across a navigation, which is true -- but "cannot be
+ * carried" is not "cannot be checked", and the consequence of skipping it was
+ * that `require_screen` never stopped anybody: a candidate could sit the whole
+ * paper having simply not clicked the button. The grant here is released
+ * immediately and asked for again on the paper; what this step establishes is
+ * that the candidate HAS a screen to share and is willing to share it, which is
+ * what the server is told and what the Start button waits for.
  */
 export function ProctorPreflight({ requireCamera, requireScreen, onReady }: {
   requireCamera: boolean;
   requireScreen: boolean;
-  onReady: (ok: boolean) => void;
+  onReady: (state: DeviceState) => void;
 }) {
   const [camera, setCamera] = useState<'unknown' | 'ok' | 'refused'>('unknown');
-  const [busy, setBusy] = useState(false);
+  const [screen, setScreen] = useState<'unknown' | 'ok' | 'refused'>('unknown');
+  const [busy, setBusy] = useState<'camera' | 'screen' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const needed = requireCamera || requireScreen;
 
   useEffect(() => {
-    if (!needed) onReady(true);
-    // Screen sharing cannot be pre-flighted: it needs a fresh user gesture on
-    // the page that uses it, and a browser will not carry a grant across a
-    // navigation. So the camera is what this step can prove, and the screen is
-    // asked for on the paper itself.
-    else onReady(requireCamera ? camera === 'ok' : true);
-  }, [needed, requireCamera, camera, onReady]);
+    const state = {
+      camera: camera === 'ok',
+      screen: screen === 'ok',
+      ok: (!requireCamera || camera === 'ok') && (!requireScreen || screen === 'ok'),
+    };
+    onReady(needed ? state : { camera: false, screen: false, ok: true });
+  }, [needed, requireCamera, requireScreen, camera, screen, onReady]);
 
-  const check = useCallback(async () => {
-    setBusy(true);
+  const checkCamera = useCallback(async () => {
+    setBusy('camera');
     setError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
@@ -106,35 +118,71 @@ export function ProctorPreflight({ requireCamera, requireScreen, onReady }: {
         ? 'Your browser refused access to the camera. This paper cannot be started without it.'
         : 'No camera was available. Check that one is connected and not in use by another app.');
     } finally {
-      setBusy(false);
+      setBusy(null);
+    }
+  }, []);
+
+  const checkScreen = useCallback(async () => {
+    setBusy('screen');
+    setError(null);
+    try {
+      const stream = await (navigator.mediaDevices as MediaDevices & {
+        getDisplayMedia(c?: unknown): Promise<MediaStream>;
+      }).getDisplayMedia({ video: true, audio: false });
+      const surface = (stream.getVideoTracks()[0]?.getSettings() as
+        { displaySurface?: string } | undefined)?.displaySurface;
+      stream.getTracks().forEach((t) => t.stop());
+      // Sharing one window hides everything else on the desktop, which is the
+      // thing an invigilator is looking at. Say so rather than silently
+      // accepting a share that defeats the requirement.
+      if (surface && surface !== 'monitor') {
+        setScreen('refused');
+        setError('You shared a single window. This paper needs your entire screen — '
+          + 'choose the whole screen and try again.');
+        return;
+      }
+      setScreen('ok');
+    } catch {
+      setScreen('refused');
+      setError('Screen sharing was refused. This paper cannot be started without it.');
+    } finally {
+      setBusy(null);
     }
   }, []);
 
   if (!needed) return null;
 
+  const row = (label: string, state: 'unknown' | 'ok' | 'refused', busyKey: 'camera' | 'screen',
+    onClick: () => void, doneText: string, todoText: string) => (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <button
+        type="button" onClick={onClick} disabled={busy !== null || state === 'ok'}
+        className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm
+                   hover:bg-slate-50 disabled:opacity-60"
+      >
+        {state === 'ok' ? doneText : busy === busyKey ? 'Checking…' : label}
+      </button>
+      <span className={'text-xs ' + (state === 'ok' ? 'text-green-700' : 'text-muted')}>
+        {state === 'ok' ? 'Granted.' : todoText}
+      </span>
+    </div>
+  );
+
   return (
     <div className="mt-3 rounded-lg border border-amber-300 bg-white p-3">
       <p className="text-sm font-medium">Before you start</p>
-      {requireCamera ? (
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button
-            type="button" onClick={check} disabled={busy || camera === 'ok'}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm
-                       hover:bg-slate-50 disabled:opacity-60"
-          >
-            {camera === 'ok' ? 'Camera ready' : busy ? 'Checking…' : 'Check my camera'}
-          </button>
-          <span className={'text-xs ' + (camera === 'ok' ? 'text-green-700' : 'text-muted')}>
-            {camera === 'ok'
-              ? 'Found, and permission granted.'
-              : 'Required for this paper.'}
-          </span>
-        </div>
-      ) : null}
+      {requireCamera
+        ? row('Check my camera', camera, 'camera', () => void checkCamera(),
+          'Camera ready', 'Required for this paper.')
+        : null}
+      {requireScreen
+        ? row('Share my screen', screen, 'screen', () => void checkScreen(),
+          'Screen ready', 'Required — choose your entire screen, not one window.')
+        : null}
       {requireScreen ? (
         <p className="mt-2 text-xs text-muted">
-          You will be asked to share your screen on the first page of the paper. Choose your
-          entire screen — sharing a single window does not show an invigilator what else is open.
+          You will be asked for your screen once more when the paper opens: a browser will not
+          carry a share across a page change.
         </p>
       ) : null}
       {error ? <p role="alert" className="mt-2 text-xs text-rose-700">{error}</p> : null}
@@ -150,10 +198,16 @@ export function ProctorPreflight({ requireCamera, requireScreen, onReady }: {
  * able to see exactly what is being captured, and an invigilator's timeline is
  * fairer when the person on it knew the state they were in.
  */
-export function ProctorMedia({ attemptId, requireCamera, requireScreen }: {
+export function ProctorMedia({ attemptId, requireCamera, requireScreen, onState }: {
   attemptId: number;
   requireCamera: boolean;
   requireScreen: boolean;
+  /**
+   * Live device state, so the paper can refuse to show itself while a required
+   * device is off. Without this the panel could say "Camera off" in red beside
+   * a perfectly readable paper, which is a label rather than a requirement.
+   */
+  onState?: (state: { camera: boolean; screen: boolean }) => void;
 }) {
   const video = useRef<HTMLVideoElement | null>(null);
   const cameraStream = useRef<MediaStream | null>(null);
@@ -226,6 +280,11 @@ export function ProctorMedia({ attemptId, requireCamera, requireScreen }: {
       send('screen_off', { reason: 'refused' });
     }
   }, [send]);
+
+  // Report upward whenever either device changes, so the paper can gate on it.
+  useEffect(() => {
+    onState?.({ camera: cameraOn, screen: screenOn });
+  }, [cameraOn, screenOn, onState]);
 
   useEffect(() => {
     if (requireCamera) void startCamera();

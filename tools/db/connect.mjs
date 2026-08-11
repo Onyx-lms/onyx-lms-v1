@@ -33,12 +33,22 @@ function candidates(env) {
 
   // Derive the pooler from the direct URL: same password, user is
   // postgres.<project-ref>, host is the regional pooler.
+  //
+  // The region cannot be derived from the project ref, so it must be declared.
+  // This used to default to 'ap-northeast-1'; when the project moved to
+  // ap-south-1 that default would have quietly built Tokyo pooler hostnames for
+  // a Mumbai database and reported them as unreachable, which reads as "the
+  // database is down" rather than "you are knocking on the wrong door".
+  // Saying nothing is better than guessing wrong.
   try {
     const u = new URL(direct);
     const ref = u.hostname.replace(/^db\./, '').replace(/\.supabase\.co$/, '');
-    const region = env.SUPABASE_REGION ?? 'ap-northeast-1';
-    for (const host of ['aws-0-' + region + '.pooler.supabase.com',
-                        'aws-1-' + region + '.pooler.supabase.com']) {
+    const region = env.SUPABASE_REGION;
+    if (!region) {
+      out.push({ label: 'pooler (skipped: set SUPABASE_REGION in .env to enable)', config: null });
+    }
+    for (const host of region ? ['aws-0-' + region + '.pooler.supabase.com',
+                                 'aws-1-' + region + '.pooler.supabase.com'] : []) {
       out.push({
         label: 'pooler ' + host,
         config: {
@@ -58,6 +68,9 @@ function candidates(env) {
 export async function connect(env = loadEnv()) {
   const tried = [];
   for (const { label, config } of candidates(env)) {
+    // A null config is a note about a candidate that could not be built at all
+    // (an undeclared region), carried so the failure message says why.
+    if (!config) { tried.push(label); continue; }
     const client = new pg.Client({
       ...config, ssl: { rejectUnauthorized: false }, connectionTimeoutMillis: 10_000,
     });

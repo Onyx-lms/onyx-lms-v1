@@ -249,7 +249,9 @@ export function createContext(): AppContext {
     onyxCodeLab,
     onyxWorkspaces: new WorkspaceService(onyxDb, onyxAcademics, onyxExecution),
     onyxAssess: new AssessService(onyxDb, onyxAcademics),
-    onyxProctor: new ProctorService(onyxDb, onyxAudit),
+    // The notifier is what turns a crossed threshold into something an
+    // invigilator is told rather than something they must go and find.
+    onyxProctor: new ProctorService(onyxDb, onyxAudit, onyxNotify),
     onyxAssessAnalytics: new AssessAnalyticsService(onyxDb),
     onyxCareer,
     onyxPlacement: new PlacementService(onyxDb, onyxCareer, onyxAttendance),
