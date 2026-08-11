@@ -58,7 +58,10 @@ export async function SiteHeader({ settings, categories }: {
                 className="whitespace-nowrap text-slate-600 hover:text-brand-600"
               >
                 {c.title}
-                <span className="ml-1 text-xs text-slate-400">({c.course_count})</span>
+                {/* `muted`, not slate-400: the count sits on the tinted strip
+                    and axe flagged it as a serious contrast failure on every
+                    page that renders this header, not just this one. */}
+                <span className="ml-1 text-xs text-muted">({c.course_count})</span>
               </Link>
             ))}
           </div>
