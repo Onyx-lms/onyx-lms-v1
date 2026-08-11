@@ -138,6 +138,52 @@ export async function withDb<T>(fn: (c: pg.Client) => Promise<T>): Promise<T> {
 export const ADMIN = { email: 'root@onyx.test', password: 'OnyxRoot#2026' };
 export const STUDENT = { email: 'mailtest@onyx.test', password: 'Secret#2026' };
 
+/** The seeded platform operator. Granted from the machine, not over HTTP. */
+export const PLATFORM = { email: 'superadmin@onyx.platform', password: 'Platform#2026!' };
+
+/**
+ * A platform-admin bearer token, cached alongside the tenant tokens.
+ *
+ * Platform tokens come from a different door than tenant tokens
+ * (/api/onyx/platform/login, not /api/onyx/auth/login) and carry `platform:
+ * true` instead of a tenant_id, so they cannot be minted by login() above.
+ */
+export async function platformToken(): Promise<string> {
+  const cache = readCache();
+  const key = 'platform:' + PLATFORM.email;
+  if (stillValid(cache[key])) return cache[key]!;
+
+  const res = await api<{ token: string }>('/api/onyx/platform/login', { body: PLATFORM });
+  if (!res.ok) throw new Error('platform login failed: ' + res.message);
+  cache[key] = res.data.token;
+  writeCache(cache);
+  return res.data.token;
+}
+
+export interface TenantSpec {
+  name: string;
+  slug?: string;
+  plan?: string | null;
+  admin: { name: string; email: string; password: string };
+}
+
+/**
+ * Creates an institution, the way an operator does.
+ *
+ * POST /api/onyx/tenants used to be open: anyone who could reach the API could
+ * bring an institution into existence and make themselves its administrator.
+ * It now sits behind requirePlatformAdmin(), so every fixture that needs an
+ * institution has to present a platform token first -- hence this helper
+ * rather than a bare api() call in a dozen suites. Returns the raw response so
+ * callers keep asserting on it exactly as before; the failure cases (duplicate
+ * slug, bad payload) still have to come back from the API, not from here.
+ */
+export async function createTenant<T = { tenant: { id: number } }>(
+  spec: TenantSpec,
+): Promise<ApiResponse<T>> {
+  return api<T>('/api/onyx/tenants', { body: spec, token: await platformToken() });
+}
+
 /** Unique-per-run suffix so repeated runs never collide. */
 export const RUN = Date.now().toString(36);
 

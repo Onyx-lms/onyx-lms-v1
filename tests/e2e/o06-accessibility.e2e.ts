@@ -16,7 +16,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, webPage, WEB, RUN } from './harness.ts';
+import { api, createTenant, webPage, WEB, RUN } from './harness.ts';
 
 const dom = (html: string) => html.replace(/<script[\s\S]*?<\/script>/g, '');
 
@@ -39,11 +39,9 @@ async function signIn(email: string): Promise<string> {
 }
 
 test('a college and a learner to look at the pages with', async () => {
-  const created = await api('/api/onyx/tenants', {
-    body: {
-      name: T.name, slug: T.slug,
-      admin: { name: 'Admin', email: mail('admin'), password: pw },
-    },
+  const created = await createTenant({
+    name: T.name, slug: T.slug,
+    admin: { name: 'Admin', email: mail('admin'), password: pw },
   });
   assert.equal(created.ok, true, created.message);
   w.cookies.admin = await signIn(mail('admin'));

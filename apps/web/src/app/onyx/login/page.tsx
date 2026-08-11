@@ -60,17 +60,12 @@ export default async function OnyxLoginPage() {
         </div>
       </Card>
 
+      {/* No "start a new institution" link any more: institutions are created
+          by the platform team, from the platform console, so inviting somebody
+          to self-serve here would only lead them to a page explaining that
+          they cannot. */}
       <p className="mt-4 text-center text-sm text-muted">
-        Setting up a new institution?{' '}
-        {/* WCAG 1.4.1: a link inside a sentence cannot rely on colour alone
-            to be distinguishable, and brand-600 on this background is only
-            1.17:1 against the surrounding text -- nowhere near the 3:1 a
-            colour-only distinction would need. Underlined unconditionally
-            rather than only on hover, which is what a mouse user never sees
-            until it is too late to matter. */}
-        <Link href="/onyx/signup" className="font-semibold text-brand-600 underline">
-          Start here
-        </Link>
+        Institutions are set up by the Onyx platform team.
       </p>
     </div>
   );

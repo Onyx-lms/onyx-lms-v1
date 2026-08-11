@@ -17,7 +17,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, withDb, RUN } from './harness.ts';
+import { api, createTenant, withDb, RUN } from './harness.ts';
 
 const pw = 'OnyxTest#2026';
 const mail = (who: string) => 'sb.' + who + '.' + RUN + '@onyx.test';
@@ -61,11 +61,9 @@ async function submitAndWait(token: string, source: string, mode: 'run' | 'submi
 }
 
 test('a college with a published problem', async () => {
-  const created = await api('/api/onyx/tenants', {
-    body: {
-      name: T.name, slug: T.slug,
-      admin: { name: 'Admin', email: mail('admin'), password: pw },
-    },
+  const created = await createTenant({
+    name: T.name, slug: T.slug,
+    admin: { name: 'Admin', email: mail('admin'), password: pw },
   });
   assert.equal(created.ok, true, created.message);
   w.admin = await login(mail('admin'));

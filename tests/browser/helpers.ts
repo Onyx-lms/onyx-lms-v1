@@ -10,7 +10,7 @@
  * and direct database cleanup.
  */
 import type { Page } from '@playwright/test';
-import { api, withDb, RUN, WEB } from '../e2e/harness.ts';
+import { api, withDb, RUN, WEB, createTenant as createTenantAsPlatform } from '../e2e/harness.ts';
 
 export { RUN, WEB, withDb, api };
 
@@ -22,12 +22,17 @@ export function mail(suite: string, who: string): string {
   return suite + '.' + who + '.' + RUN + '@onyx.test';
 }
 
-/** Creates an institution and its first administrator, via the API. */
+/**
+ * Creates an institution and its first administrator, via the API.
+ *
+ * Goes through the harness helper because POST /api/onyx/tenants is no longer
+ * open: it requires a platform-admin token, which the harness mints and caches.
+ */
 export async function createTenant(
   name: string, slug: string, adminName: string, adminEmail: string,
 ): Promise<number> {
-  const res = await api<{ tenant: { id: number } }>('/api/onyx/tenants', {
-    body: { name, slug, admin: { name: adminName, email: adminEmail, password: PASSWORD } },
+  const res = await createTenantAsPlatform({
+    name, slug, admin: { name: adminName, email: adminEmail, password: PASSWORD },
   });
   if (!res.ok) throw new Error('createTenant(' + slug + ') failed: ' + res.message);
   return Number(res.data.tenant.id);

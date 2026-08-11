@@ -29,7 +29,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, RUN } from './harness.ts';
+import { api, createTenant, RUN } from './harness.ts';
 
 const pw = 'OnyxTest#2026';
 const mail = (who: string) => 'sec02.' + who + '.' + RUN + '@onyx.test';
@@ -139,9 +139,9 @@ const REFUSED = [403, 404];
 const ALLOWED = [200, 201, 400, 404, 409, 422];
 
 test('an institution with one of every role in it', async () => {
-  const res = await api<{ tenant: { id: number } }>('/api/onyx/tenants', {
-    body: { name: T.name, slug: T.slug,
-      admin: { name: 'Matrix Admin', email: mail('admin'), password: pw } },
+  const res = await createTenant({
+    name: T.name, slug: T.slug,
+    admin: { name: 'Matrix Admin', email: mail('admin'), password: pw },
   });
   assert.equal(res.ok, true, res.message);
   token.admin = await login(mail('admin'));

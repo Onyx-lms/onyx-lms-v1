@@ -14,7 +14,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, withDb, RUN } from './harness.ts';
+import { api, createTenant, withDb, RUN } from './harness.ts';
 
 const pw = 'OnyxTest#2026';
 const mail = (who: string) => 'ex.' + who + '.' + RUN + '@onyx.test';
@@ -39,11 +39,9 @@ const login = async (email: string) => {
 
 test('two boards, a course and two candidates', async () => {
   for (const [key, t] of [['alpha', A], ['beta', B]] as const) {
-    const res = await api<{ tenant: { id: number } }>('/api/onyx/tenants', {
-      body: {
-        name: t.name, slug: t.slug,
-        admin: { name: t.name, email: mail(key + '.admin'), password: pw },
-      },
+    const res = await createTenant({
+      name: t.name, slug: t.slug,
+      admin: { name: t.name, email: mail(key + '.admin'), password: pw },
     });
     assert.equal(res.ok, true, res.message);
     w[key].id = Number(res.data.tenant.id);

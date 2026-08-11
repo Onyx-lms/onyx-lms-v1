@@ -8,7 +8,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, webPage, withDb, WEB, RUN } from './harness.ts';
+import { api, createTenant, webPage, withDb, WEB, RUN } from './harness.ts';
 
 /**
  * React splits interpolated text with HTML comments, so "belong to {n}
@@ -57,11 +57,15 @@ test('the sign-in and onboarding pages render for a visitor', async () => {
   assert.equal(login.status, 200);
   assert.match(login.html, /Sign in to Onyx/);
 
+  // /onyx/signup used to carry a form that created an institution and made
+  // whoever filled it in the administrator. It is now a dead end that says so:
+  // still 200, because the sign-in page links to it and it is worth explaining,
+  // but with nothing on it that creates anything.
   const signup = await webPage('/onyx/signup');
   assert.equal(signup.status, 200);
-  assert.match(signup.html, /Create an institution/);
-  // The promise the form makes, and the reason createTenant does both at once.
+  assert.match(signup.html, /no longer something you can do yourself/i);
   assert.match(signup.html, /first administrator/i);
+  assert.ok(!dom(signup.html).includes('<form'), 'the closed signup page still offers a form');
 });
 
 test('a signed-out visitor is sent to sign in, not to an empty shell', async () => {
@@ -72,22 +76,45 @@ test('a signed-out visitor is sent to sign in, not to an empty shell', async () 
   }
 });
 
-test('an institution can be created from the web and signed into', async () => {
+/**
+ * The web origin no longer has a way to create an institution.
+ *
+ * This used to be the "an institution can be created from the web and signed
+ * into" test, and it passed against an open proxy: POST /api/onyx/signup on
+ * this origin forwarded, unauthenticated, to POST /api/onyx/tenants. That
+ * entry is gone from the allow-list, and a route that is not in the map is not
+ * reachable -- which is the half of the promise a test can actually check.
+ */
+test('the web origin offers no way to create an institution', async () => {
+  const res = await fetch(WEB + '/api/onyx/signup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: 'Backdoor ' + RUN, slug: 'backdoor-' + RUN,
+      admin: { name: 'Backdoor', email: mail('backdoor'), password: pw },
+    }),
+  });
+  assert.equal(res.status, 404, 'the web signup proxy still creates institutions');
+
+  await withDb(async (c) => {
+    const { rows } = await c.query(
+      'SELECT slug FROM public."onyx_tenants" WHERE slug = $1', ['backdoor-' + RUN]);
+    assert.equal(rows.length, 0, 'the refused web signup still created an institution');
+  });
+});
+
+test('an institution set up for it can be signed into from the web', async () => {
+  // The institutions these pages are rendered from are now created the only way
+  // they can be: by the platform operator, through the platform-authenticated
+  // helper in the harness. Everything below this line is unchanged -- what is
+  // being proved is still the shell, the navigation and the switcher.
   const create = async (t: { name: string; slug: string }, adminEmail: string) => {
-    const res = await fetch(WEB + '/api/onyx/signup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: t.name, slug: t.slug,
-        admin: { name: t.name + ' Admin', email: adminEmail, password: pw },
-      }),
+    const res = await createTenant({
+      name: t.name, slug: t.slug,
+      admin: { name: t.name + ' Admin', email: adminEmail, password: pw },
     });
-    const body = await res.json();
-    assert.equal(body.ok, true, 'signup failed: ' + body.message);
-    // Creating an institution must not hand back a token in the body: the
-    // cookie route owns it, and there is no tenant in it yet either way.
-    assert.equal(body.data.token, undefined);
-    return Number(body.data.tenant.id);
+    assert.equal(res.ok, true, 'create ' + t.slug + ' failed: ' + res.message);
+    return Number(res.data.tenant.id);
   };
 
   state.alpha = await create(A, mail('alpha.admin'));

@@ -12,7 +12,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
   validate, ok, HttpError,
-  requireOnyx, requireOnyxRole, issueOnyxToken, ROLES,
+  requireOnyx, requireOnyxRole, requirePlatformAdmin, issueOnyxToken, ROLES,
 } from '@onyx/core';
 import type { Role } from '@onyx/types';
 import type { AppContext } from '../../context.ts';
@@ -93,11 +93,24 @@ export function registerOnyxTenancyRoutes(app: FastifyInstance, ctx: AppContext)
   // ---- F-06: onboarding a new institution ----
 
   /**
-   * Deliberately unauthenticated: this is how the first institution comes into
-   * existence, before anyone has a token for it. In production this sits behind
-   * a signup gate or an operator console; the shape does not change.
+   * Creating an institution is a platform-admin act, and only that.
+   *
+   * This used to be deliberately unauthenticated, with a comment saying that
+   * "in production this sits behind a signup gate or an operator console".
+   * It did not: /onyx/signup posted here through an open allow-list entry, so
+   * anyone who could reach the API could bring an institution into existence
+   * and make themselves its administrator. The operator console the comment
+   * imagined already exists -- POST /api/onyx/platform/tenants, behind
+   * requirePlatformAdmin -- so this route now demands the same token rather
+   * than being a second, softer way in.
+   *
+   * The bootstrap objection ("who creates the first one, before any token
+   * exists?") is already answered elsewhere: the first platform admin is
+   * granted from the machine by tools/onyx/grant-platform-admin.mjs, against
+   * the service-role connection. Nothing needs an open HTTP route.
    */
   app.post('/api/onyx/tenants', async (req) => {
+    requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       name: z.string().min(1).max(255),
       slug: z.string().max(255).optional(),

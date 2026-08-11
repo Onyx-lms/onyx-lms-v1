@@ -11,7 +11,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, withDb, RUN, env } from './harness.ts';
+import { api, withDb, RUN, env, createTenant } from './harness.ts';
 
 const A = { name: 'Alpha University ' + RUN, slug: 'alpha-' + RUN };
 const B = { name: 'Beta Institute ' + RUN, slug: 'beta-' + RUN };
@@ -39,12 +39,10 @@ const login = async (email: string, tenantId?: number) => {
 
 test('two institutions can be created, each with its own administrator', async () => {
   for (const [key, t] of [['alpha', A], ['beta', B]] as const) {
-    const res = await api<{ tenant: { id: number } }>('/api/onyx/tenants', {
-      body: {
-        name: t.name,
-        slug: t.slug,
-        admin: { name: t.name + ' Admin', email: world[key].adminEmail, password: pw },
-      },
+    const res = await createTenant({
+      name: t.name,
+      slug: t.slug,
+      admin: { name: t.name + ' Admin', email: world[key].adminEmail, password: pw },
     });
     assert.equal(res.ok, true, 'create ' + t.slug + ' failed: ' + res.message);
     world[key].id = Number(res.data.tenant.id);
@@ -56,9 +54,44 @@ test('two institutions can be created, each with its own administrator', async (
   world.beta.token = await login(world.beta.adminEmail);
 });
 
+/**
+ * Creating an institution is an operator action, not an open sign-up.
+ *
+ * This route used to accept anyone: reach the API, post a name, and you owned
+ * a brand-new institution with yourself as its administrator. It now demands a
+ * platform token, and "demands" has to mean something a test can break -- so
+ * both of the obvious ways in are tried here, no token and a perfectly valid
+ * tenant-admin token, and neither may create anything.
+ */
+test('creating an institution requires a platform token', async () => {
+  const spec = (who: string) => ({
+    name: 'Gatecrasher ' + RUN + ' ' + who,
+    slug: 'gatecrash-' + who + '-' + RUN,
+    admin: { name: 'Gatecrasher', email: mail('gatecrash.' + who), password: pw },
+  });
+
+  const anonymous = await api('/api/onyx/tenants', { body: spec('anon') });
+  assert.equal(anonymous.status, 401, 'an unauthenticated caller created an institution');
+
+  // A tenant admin is fully authenticated -- just not for this. A token that
+  // opens one institution must not be able to mint another.
+  const tenantAdmin = await api('/api/onyx/tenants', {
+    token: world.alpha.token, body: spec('tenant-admin'),
+  });
+  assert.equal(tenantAdmin.status, 401,
+    'a tenant admin token created an institution');
+
+  // Neither attempt may have left anything behind.
+  await withDb(async (c) => {
+    const { rows } = await c.query(
+      'SELECT slug FROM public."onyx_tenants" WHERE slug LIKE $1', ['gatecrash-%-' + RUN]);
+    assert.equal(rows.length, 0, 'a refused create still landed: ' + JSON.stringify(rows));
+  });
+});
+
 test('a slug can only belong to one institution', async () => {
-  const res = await api('/api/onyx/tenants', {
-    body: { name: A.name, slug: A.slug, admin: { name: 'x', email: mail('dupe'), password: pw } },
+  const res = await createTenant({
+    name: A.name, slug: A.slug, admin: { name: 'x', email: mail('dupe'), password: pw },
   });
   assert.equal(res.ok, false);
   assert.equal(res.status, 422);

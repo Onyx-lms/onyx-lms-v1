@@ -7,13 +7,18 @@ const API = process.env.API_URL ?? 'http://127.0.0.1:4000';
 /**
  * Onyx auth, proxied so the token can be stored in a cookie this origin owns.
  *
- * An allow-list rather than a passthrough: `signup` and `login` are open by
- * design, `switch` needs the caller's current session, and nothing else is
- * reachable through here at all.
+ * An allow-list rather than a passthrough: `login` is open by design, `switch`
+ * needs the caller's current session, and nothing else is reachable through
+ * here at all.
+ *
+ * `signup` used to sit here, open, pointing at POST /api/onyx/tenants — which
+ * meant anyone who could load the sign-in page could create an institution and
+ * make themselves its administrator. Institutions are now created only by a
+ * platform admin, only from the platform console, so the entry is gone rather
+ * than merely hidden: a route that is not in this map is not reachable.
  */
 const ROUTES: Record<string, { path: string; authed: boolean }> = {
   login: { path: '/api/onyx/auth/login', authed: false },
-  signup: { path: '/api/onyx/tenants', authed: false },
   switch: { path: '/api/onyx/auth/switch', authed: true },
 };
 

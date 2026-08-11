@@ -8,7 +8,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, webPage, withDb, WEB, RUN } from './harness.ts';
+import { api, createTenant, webPage, withDb, WEB, RUN } from './harness.ts';
 
 /** The rendered document, without the RSC payload. See o01-web.e2e.ts. */
 const dom = (html: string) => html.replace(/<script[\s\S]*?<\/script>/g, '');
@@ -70,11 +70,9 @@ async function viaWeb<T = any>(path: string, cookie: string, init: {
 }
 
 test('a college with a course, a cohort and some work', async () => {
-  const created = await api<{ tenant: { id: number } }>('/api/onyx/tenants', {
-    body: {
-      name: T.name, slug: T.slug,
-      admin: { name: 'Admin', email: mail('admin'), password: pw },
-    },
+  const created = await createTenant({
+    name: T.name, slug: T.slug,
+    admin: { name: 'Admin', email: mail('admin'), password: pw },
   });
   assert.equal(created.ok, true, created.message);
   w.tenant = Number(created.data.tenant.id);
