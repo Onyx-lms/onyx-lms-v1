@@ -1,7 +1,9 @@
+import Link from 'next/link';
 import type { Metadata } from 'next';
 import { OnyxPlatformShell } from '@/components/onyx-platform-shell';
 import { SuspendToggle } from '@/components/onyx-platform-forms';
 import { requirePlatformSession, platformApi } from '@/lib/onyx-platform-session';
+import { Card, Empty, SectionHead, StatTile, StatusDot } from '@/components/onyx-ui';
 
 export const metadata: Metadata = { title: 'Institution' };
 
@@ -15,40 +17,80 @@ export default async function OnyxPlatformTenantPage({ params }: { params: Promi
   const session = await requirePlatformSession();
   const { id } = await params;
   const tenant = await platformApi<TenantDetail>('/api/onyx/platform/tenants/' + id);
+  const total = Object.values(tenant.members_by_role).reduce((sum, n) => sum + n, 0);
 
   return (
     <OnyxPlatformShell
       email={session.email}
       title={tenant.name}
-      subtitle={tenant.slug + (tenant.plan ? ' · ' + tenant.plan : '')}
+      subtitle={total + (total === 1 ? ' member' : ' members')}
     >
       <div className="space-y-6">
-        <div className="flex items-center gap-3">
-          <span className={'rounded-full px-2 py-0.5 text-xs ' + (tenant.status === 1
-            ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700')}>
-            {tenant.status === 1 ? 'active' : 'suspended'}
-          </span>
+        <Link href="/onyx/platform"
+          className="inline-flex items-center gap-1 text-[13px] font-semibold text-muted
+                     hover:text-brand-700 hover:underline">
+          &larr; Every institution
+        </Link>
+
+        {/* Suspension is the one destructive thing this console does, so it
+            sits in its own card with the current state next to it rather than
+            as a loose button under a heading. A suspended institution is a
+            customer nobody can sign in to, and the screen should feel like it. */}
+        <Card className={'flex flex-wrap items-center justify-between gap-4 p-4 '
+          + (tenant.status === 1 ? '' : 'border-red-300 bg-red-50/60')}>
+          <div>
+            <StatusDot on={tenant.status === 1} />
+            <p className="mt-1 text-[13px] text-muted">
+              {tenant.status === 1
+                ? 'Everyone at this institution can sign in.'
+                : 'Nobody at this institution can sign in. Their data is untouched.'}
+            </p>
+          </div>
           <SuspendToggle tenantId={tenant.id} suspended={tenant.status !== 1} />
-        </div>
+        </Card>
 
         <section>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">People</h2>
-          <div className="mt-3 grid gap-4 sm:grid-cols-3 lg:grid-cols-4">
-            {Object.entries(tenant.members_by_role).map(([role, count]) => (
-              <div key={role} className="rounded-2xl border border-line p-4">
-                <div className="text-xs uppercase tracking-wide text-muted">{role}</div>
-                <div className="mt-1 text-2xl font-semibold">{count}</div>
-              </div>
-            ))}
-            {Object.keys(tenant.members_by_role).length === 0 ? (
-              <p className="text-sm text-muted">Nobody has joined yet.</p>
-            ) : null}
-          </div>
+          <SectionHead title={'People \u00b7 ' + total} />
+          {Object.keys(tenant.members_by_role).length === 0 ? (
+            <Card className="p-2">
+              <Empty icon="users">Nobody has joined this institution yet.</Empty>
+            </Card>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {Object.entries(tenant.members_by_role)
+                .sort((a, b) => b[1] - a[1])
+                .map(([role, count]) => (
+                  <StatTile key={role} label={role} value={count} />
+                ))}
+            </div>
+          )}
         </section>
 
-        <p className="text-xs text-muted">
-          Created {new Date(tenant.created_at).toLocaleString()}
-        </p>
+        <Card className="p-4">
+          <dl className="grid gap-x-6 gap-y-3 text-[13px] sm:grid-cols-3">
+            <div>
+              <dt className="text-[11px] font-bold uppercase tracking-[.08em] text-muted">
+                Address
+              </dt>
+              <dd className="mt-0.5 font-mono">{tenant.slug}</dd>
+            </div>
+            <div>
+              <dt className="text-[11px] font-bold uppercase tracking-[.08em] text-muted">
+                Plan
+              </dt>
+              <dd className="mt-0.5">{tenant.plan ?? 'None recorded'}</dd>
+            </div>
+            <div>
+              <dt className="text-[11px] font-bold uppercase tracking-[.08em] text-muted">
+                Created
+              </dt>
+              <dd className="mt-0.5">
+                {new Date(tenant.created_at).toLocaleDateString(undefined,
+                  { day: 'numeric', month: 'long', year: 'numeric' })}
+              </dd>
+            </div>
+          </dl>
+        </Card>
       </div>
     </OnyxPlatformShell>
   );

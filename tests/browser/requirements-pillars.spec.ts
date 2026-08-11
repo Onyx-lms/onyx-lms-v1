@@ -46,15 +46,25 @@ test.describe('proposal pillars, one browser check each', () => {
 
   // ---- Onyx Learn (LRN-01: program/semester-mapped catalog) --------------
   test('Learn: the catalog reads differently for a learner than for the people running it', async ({ page }) => {
+    // Asserted through what the two roles are OFFERED rather than through the
+    // subtitle each is given. The old version matched the strapline verbatim,
+    // so rewording the page failed a test that had found no defect -- and a
+    // learner and a lecturer being handed the same strapline would have passed
+    // it, which is the thing the test is named after.
     await signInViaForm(page, studentEmail);
     await page.goto('/onyx/courses');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Courses');
-    await expect(page.getByText('What you are enrolled in, and what else is open.')).toBeVisible();
+    // A learner is shown the catalogue and is never offered course authoring.
+    await expect(page.getByRole('heading', { name: 'Catalogue' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /create a course/i })).toHaveCount(0);
 
     await page.context().clearCookies();
     await signInViaForm(page, facultyEmail);
     await page.goto('/onyx/courses');
-    await expect(page.getByText('Everything running at ' + T.name + '.')).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Courses');
+    // The people running it get the whole register, and the means to add to it.
+    await expect(page.getByRole('heading', { name: 'Every course' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /create a course/i })).toBeVisible();
   });
 
   // ---- Onyx Code Lab (LAB-01/LAB-04: browser IDE, problem bank) ----------

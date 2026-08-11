@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { OnyxPlatformShell } from '@/components/onyx-platform-shell';
 import { GrantAdminForm, RevokeAdminButton } from '@/components/onyx-platform-forms';
 import { requirePlatformSession, platformApi } from '@/lib/onyx-platform-session';
+import { Empty, Pill } from '@/components/onyx-ui';
 
 export const metadata: Metadata = { title: 'Platform admins' };
 
@@ -19,25 +20,49 @@ export default async function OnyxPlatformAdminsPage() {
     <OnyxPlatformShell
       email={session.email}
       title="Platform admins"
-      subtitle="Grant an existing account, or create a new one. The last admin cannot be revoked."
+      subtitle={admins.length === 1
+        ? 'One operator.'
+        : admins.length + ' operators.'}
+      action={<GrantAdminForm />}
     >
       <div className="space-y-6">
-        <GrantAdminForm />
+        {/* Everyone on this list can suspend an institution and grant this
+            power to somebody else, so the list is short on purpose and the
+            page says as much rather than leaving it to be inferred. */}
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm
+                        text-amber-900">
+          Everyone here can create, suspend and read every institution on the platform, and
+          can grant that to anyone else. The last one cannot be revoked — a platform with no
+          operator is one nobody can get back into.
+        </div>
 
-        <ul className="divide-y divide-line rounded-2xl border border-line">
+        <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line
+                       bg-white shadow-card">
           {admins.map((a) => (
-            <li key={a.id} className="flex items-center justify-between px-4 py-3">
-              <div>
-                <div className="text-sm font-medium">{a.user?.name ?? 'User #' + a.user_id}</div>
-                <div className="text-xs text-muted">
-                  {a.user?.email} · granted {new Date(a.created_at).toLocaleDateString()}
-                </div>
-              </div>
-              {admins.length > 1 ? <RevokeAdminButton id={a.id} /> : null}
+            <li key={a.id} className="flex flex-wrap items-center gap-3 px-4 py-3.5">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full
+                               bg-gradient-to-br from-brand-500 to-brand-700 text-[13px]
+                               font-bold text-white" aria-hidden="true">
+                {(a.user?.name ?? a.user?.email ?? '?').slice(0, 2).toUpperCase()}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[15px] font-semibold">
+                  {a.user?.name ?? 'User #' + a.user_id}
+                </span>
+                <span className="block truncate text-[12.5px] text-muted">
+                  {a.user?.email}
+                  {' · granted '}
+                  {new Date(a.created_at).toLocaleDateString(undefined,
+                    { day: 'numeric', month: 'short', year: 'numeric' })}
+                </span>
+              </span>
+              {admins.length > 1
+                ? <RevokeAdminButton id={a.id} />
+                : <Pill tone="neutral">Last operator</Pill>}
             </li>
           ))}
           {admins.length === 0 ? (
-            <li className="px-4 py-6 text-center text-sm text-muted">None yet.</li>
+            <li><Empty icon="shield">Nobody holds platform admin yet.</Empty></li>
           ) : null}
         </ul>
       </div>

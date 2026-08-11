@@ -351,3 +351,98 @@ export function CardGrid({ children, min = '17rem' }: {
     </div>
   );
 }
+
+/* ------------------------------------------------------------ data tables */
+
+/**
+ * The table an operator console is made of.
+ *
+ * The learner screens moved off tables because a learner is picking one thing
+ * to open. An administrator is doing the opposite -- scanning forty rows and
+ * comparing a column -- and for that a table is not a fallback, it is the right
+ * instrument. What the admin screens were missing was not a different shape but
+ * the same care: the audit log, the roster and the institution list each drew
+ * their own header row, their own borders and their own empty state.
+ *
+ * So this is one surface, one header treatment, one divider, one empty state.
+ * `<DataTable>` renders the chrome; the caller writes the `<tr>`s, because a
+ * column-config abstraction would have to grow a way to express every cell any
+ * of these screens needs and would earn nothing for it.
+ *
+ * `caption` is not decoration: it is what a screen reader announces before it
+ * starts reading rows, and a table without one is a grid of numbers with no
+ * name. It is visually hidden and always required.
+ */
+export function DataTable({ caption, head, children, empty, scroll = true }: {
+  /** Announced to a screen reader before the rows. Never optional. */
+  caption: string;
+  /** The `<th>` cells. Wrapped in the header row for you. */
+  head: React.ReactNode;
+  children: React.ReactNode;
+  /** Shown instead of the body when there is nothing. */
+  empty?: React.ReactNode;
+  /** Wide tables scroll inside their own box rather than the page. */
+  scroll?: boolean;
+}) {
+  const table = (
+    <table className="w-full text-sm">
+      <caption className="sr-only">{caption}</caption>
+      <thead>
+        <tr className="border-b border-line bg-slate-50 text-left text-[11px] uppercase
+                       tracking-[.06em] text-muted [&>th]:whitespace-nowrap
+                       [&>th]:px-4 [&>th]:py-2.5 [&>th]:font-bold">
+          {head}
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-line [&>tr>td]:px-4 [&>tr>td]:py-3
+                        [&>tr:hover]:bg-brand-50/40">
+        {children}
+      </tbody>
+    </table>
+  );
+
+  return (
+    <div className={'overflow-hidden rounded-2xl border border-line bg-white shadow-card '
+      + (scroll ? 'overflow-x-auto' : '')}>
+      {table}
+      {empty}
+    </div>
+  );
+}
+
+/**
+ * A row that is nothing but an empty state, spanning the table.
+ *
+ * Inside the tbody rather than after it, so the message sits where the rows
+ * would be instead of below a table with a header and no content.
+ */
+export function EmptyRow({ colSpan, icon, children }: {
+  colSpan: number; icon?: IconName; children: React.ReactNode;
+}) {
+  return (
+    <tr className="hover:!bg-transparent">
+      <td colSpan={colSpan} className="!p-0">
+        <Empty icon={icon}>{children}</Empty>
+      </td>
+    </tr>
+  );
+}
+
+/**
+ * On or off, as a dot and a word.
+ *
+ * Colour alone cannot carry a state -- about one man in twelve would read the
+ * red and the green as the same -- so the word is always there and the dot is
+ * the thing that makes it scannable down a column.
+ */
+export function StatusDot({ on, onLabel = 'Active', offLabel = 'Suspended' }: {
+  on: boolean; onLabel?: string; offLabel?: string;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[13px] font-semibold">
+      <span aria-hidden="true"
+        className={'h-2 w-2 shrink-0 rounded-full ' + (on ? 'bg-green-600' : 'bg-red-600')} />
+      <span className={on ? 'text-green-700' : 'text-red-700'}>{on ? onLabel : offLabel}</span>
+    </span>
+  );
+}

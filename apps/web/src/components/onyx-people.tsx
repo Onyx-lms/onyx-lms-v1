@@ -123,25 +123,43 @@ export function OnyxPeople({ members, canEdit }: { members: Member[]; canEdit: b
           instead, where it costs no width.
           tabIndex/role keep the scroll reachable by keyboard on the widths
           that still need it. */}
-      <div className="max-w-full overflow-x-auto rounded-2xl border border-line"
+      <div className="max-w-full overflow-x-auto rounded-2xl border border-line bg-white shadow-card"
         tabIndex={0} role="region" aria-label="Members of this institution">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
-            <tr>
-              <th className="px-4 py-3">Name</th>
-              <th className="hidden px-4 py-3 sm:table-cell">Email</th>
-              <th className="px-4 py-3">Role</th>
-              {canEdit ? <th className="px-4 py-3"><span className="sr-only">Actions</span></th> : null}
+          <caption className="sr-only">Everyone at this institution</caption>
+          <thead>
+            <tr className="border-b border-line bg-slate-50 text-left text-[11px] uppercase
+                           tracking-[.06em] text-muted [&>th]:whitespace-nowrap [&>th]:px-4
+                           [&>th]:py-2.5 [&>th]:font-bold">
+              <th scope="col">Name</th>
+              <th scope="col" className="hidden sm:table-cell">Email</th>
+              <th scope="col">Role</th>
+              {canEdit ? <th scope="col"><span className="sr-only">Actions</span></th> : null}
             </tr>
           </thead>
-          <tbody>
+          <tbody className="divide-y divide-line">
             {shown.map((m) => (
-              <tr key={m.id} className="border-t border-line">
+              <tr key={m.id} className="hover:bg-brand-50/40">
                 <td className="px-4 py-3">
-                  {m.user?.name ?? '—'}
-                  {/* The address, folded under the name on a phone only. */}
-                  <span className="block truncate text-xs text-muted sm:hidden">
-                    {m.user?.email ?? ''}
+                  <span className="flex items-center gap-2.5">
+                    {/* Initials, so a roster of forty reads as people rather
+                        than as forty lines of text. Decorative -- the name is
+                        right beside it, so a screen reader skips this. */}
+                    <span aria-hidden="true"
+                      className="grid h-8 w-8 shrink-0 place-items-center rounded-full
+                                 bg-gradient-to-br from-brand-500 to-brand-700 text-[11px]
+                                 font-bold text-white">
+                      {(m.user?.name ?? m.user?.email ?? '?').slice(0, 2).toUpperCase()}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate font-semibold">
+                        {m.user?.name ?? '—'}
+                      </span>
+                      {/* The address, folded under the name on a phone only. */}
+                      <span className="block truncate text-xs text-muted sm:hidden">
+                        {m.user?.email ?? ''}
+                      </span>
+                    </span>
                   </span>
                 </td>
                 <td className="hidden px-4 py-3 text-muted sm:table-cell">

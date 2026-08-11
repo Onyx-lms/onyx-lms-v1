@@ -78,9 +78,9 @@ export default async function OnyxPlacementPage() {
 
       <section>
         <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Employers</h2>
-        <div className="mt-3 overflow-x-auto rounded-2xl border border-line">
+        <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-white shadow-card">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
+            <thead className="border-b border-line bg-slate-50 text-left text-[11px] font-bold uppercase tracking-[.06em] text-muted">
               <tr>
                 <th className="px-4 py-3">Company</th>
                 <th className="px-4 py-3">Contact</th>

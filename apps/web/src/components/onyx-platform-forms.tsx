@@ -93,8 +93,8 @@ export function PlatformSignOut() {
         router.push('/onyx/platform/login');
         router.refresh();
       })}
-      className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs
-                 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+      className="min-h-[38px] w-full rounded-2xl border border-line px-3 py-1.5 text-xs
+                 font-medium text-slate-700 hover:bg-brand-50 disabled:opacity-50"
     >
       {pending ? 'Signing out…' : 'Sign out'}
     </button>

@@ -86,9 +86,9 @@ export default async function OnyxResultsPage({ params }: { params: Promise<{ id
           and weakest 27% &mdash; a negative value usually means the answer key is wrong,
           not that the question was hard.
         </p>
-        <div className="mt-3 overflow-x-auto rounded-2xl border border-line">
+        <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-white shadow-card">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
+            <thead className="border-b border-line bg-slate-50 text-left text-[11px] font-bold uppercase tracking-[.06em] text-muted">
               <tr>
                 <th className="px-4 py-3">Question</th>
                 <th className="px-4 py-3">Answered</th>
@@ -137,9 +137,9 @@ export default async function OnyxResultsPage({ params }: { params: Promise<{ id
 
       <section className="mt-8">
         <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Candidates</h2>
-        <div className="mt-3 overflow-x-auto rounded-2xl border border-line">
+        <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-white shadow-card">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
+            <thead className="border-b border-line bg-slate-50 text-left text-[11px] font-bold uppercase tracking-[.06em] text-muted">
               <tr>
                 <th className="px-4 py-3">Attempt</th>
                 <th className="px-4 py-3">Score</th>

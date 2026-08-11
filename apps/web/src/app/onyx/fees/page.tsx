@@ -61,10 +61,10 @@ export default async function OnyxFeesPage(
         </p>
       ) : null}
 
-      <div className="overflow-x-auto rounded-2xl border border-line">
+      <div className="overflow-x-auto rounded-2xl border border-line bg-white shadow-card">
         <table className="w-full text-sm">
           <caption className="sr-only">Your invoices</caption>
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
+          <thead className="border-b border-line bg-slate-50 text-left text-[11px] font-bold uppercase tracking-[.06em] text-muted">
             <tr>
               <th scope="col" className="px-4 py-3">Invoice</th>
               <th scope="col" className="px-4 py-3">Total</th>

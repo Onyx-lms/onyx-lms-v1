@@ -32,7 +32,7 @@ export default async function OnyxMarkingPage({ params }: { params: Promise<{ id
 
       <div className="mt-4 overflow-x-auto rounded-2xl border border-line">
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
+          <thead className="border-b border-line bg-slate-50 text-left text-[11px] font-bold uppercase tracking-[.06em] text-muted">
             <tr>
               <th className="px-4 py-3">Candidate</th>
               <th className="px-4 py-3">Handed in</th>

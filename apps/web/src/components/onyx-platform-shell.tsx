@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { OnyxBrand } from '@/components/onyx-brand';
+import { OnyxMark } from '@/components/onyx-brand';
 import { PlatformSignOut } from '@/components/onyx-platform-forms';
 
 /**
@@ -8,41 +8,96 @@ import { PlatformSignOut } from '@/components/onyx-platform-forms';
  * OnyxShell's whole header is a tenant switcher: an institution's name, its
  * role labels, a list of other institutions the signed-in person belongs to.
  * None of that exists for a platform admin, who is not a member of any
- * institution by virtue of holding this session. Reusing OnyxShell here
- * would mean either passing it a fake tenant or teaching it a "no tenant"
- * mode -- both bend a component whose whole point is "you are always inside
- * exactly one institution" to describe someone who, on this page, is not.
+ * institution by virtue of holding this session. Reusing OnyxShell here would
+ * mean either passing it a fake tenant or teaching it a "no tenant" mode --
+ * both bend a component whose whole point is "you are always inside exactly one
+ * institution" to describe someone who, on this page, is not.
+ *
+ * What it does share is the chrome. Until now this was a bare grid with a
+ * left-aligned link list, and it read as an internal tool bolted to the side of
+ * the product -- which is roughly the opposite of the impression you want from
+ * the screen that can suspend a paying customer. Same header, same sidebar
+ * card, same type scale; the one deliberate difference is the band naming this
+ * as the platform, because an operator who forgets which console they are in is
+ * one click from acting on the wrong institution.
  */
-export function OnyxPlatformShell({ email, title, subtitle, children }: {
-  email: string; title: string; subtitle?: string; children: React.ReactNode;
+export function OnyxPlatformShell({ email, title, subtitle, children, action }: {
+  email: string;
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+  /** The primary action for this screen, beside the title. */
+  action?: React.ReactNode;
 }) {
   return (
-    <div className="container-page grid gap-8 py-8 lg:grid-cols-[220px_1fr]">
-      <aside>
-        <Link href="/onyx/platform" className="inline-block rounded-lg focus-visible:outline-none">
-          <OnyxBrand className="mb-1" />
+    <div className="min-h-screen bg-canvas">
+      <header className="sticky top-0 z-40 flex h-[60px] items-center gap-3 border-b border-line
+                         bg-white/90 px-4 backdrop-blur lg:px-7">
+        <Link href="/onyx/platform" aria-label="Onyx platform console, home"
+          className="flex min-h-[44px] items-center gap-2.5">
+          <OnyxMark className="h-7 w-auto" />
+          <span className="text-[15px] font-bold tracking-tight">Onyx</span>
         </Link>
-        <p className="mb-4 text-xs uppercase tracking-wide text-muted">Platform console</p>
-        <nav className="space-y-1">
-          <Link href="/onyx/platform"
-            className="block rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-100">
-            Institutions
-          </Link>
-          <Link href="/onyx/platform/admins"
-            className="block rounded-lg px-3 py-2 text-sm text-slate-700 hover:bg-slate-100">
-            Platform admins
-          </Link>
-        </nav>
-        <div className="mt-4 rounded-2xl border border-line p-3">
-          <div className="truncate text-xs text-muted" title={email}>{email}</div>
-          <PlatformSignOut />
-        </div>
-      </aside>
-      <section>
-        <h1 className="text-2xl font-semibold">{title}</h1>
-        {subtitle ? <p className="mt-1 text-sm text-muted">{subtitle}</p> : null}
-        <div className="mt-6">{children}</div>
-      </section>
+        {/* Said out loud, in the one place it cannot be missed. Every other
+            screen in this product acts on one institution; this one acts on
+            all of them. */}
+        <span className="rounded-full bg-ink px-2.5 py-1 text-[11px] font-bold uppercase
+                         tracking-[.08em] text-white">
+          Platform
+        </span>
+        <span className="flex-1" />
+        <span className="hidden truncate text-xs text-muted sm:block" title={email}>{email}</span>
+      </header>
+
+      <div className="grid gap-7 px-4 pb-16 pt-5 lg:grid-cols-[216px_minmax(0,1fr)]
+                      lg:items-start lg:px-7 lg:pt-7">
+        <aside className="lg:sticky lg:top-[84px]">
+          <div className="rounded-2xl border border-line bg-white p-3.5">
+            <div className="text-[10.5px] font-bold uppercase tracking-[.09em] text-muted">
+              Operator
+            </div>
+            <div className="mt-0.5 truncate text-sm font-bold" title={email}>{email}</div>
+            <div className="text-xs text-muted">Every institution</div>
+          </div>
+
+          <nav className="mt-4" aria-label="Platform">
+            <NavLink href="/onyx/platform" label="Institutions" />
+            <NavLink href="/onyx/platform/admins" label="Platform admins" />
+          </nav>
+
+          <div className="mt-4 rounded-2xl border border-line bg-white p-3">
+            <PlatformSignOut />
+          </div>
+        </aside>
+
+        <main id="main" tabIndex={-1} className="min-w-0">
+          <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="text-2xl font-extrabold tracking-tight sm:text-[28px]">{title}</h1>
+              {subtitle ? <p className="mt-1 text-sm text-muted">{subtitle}</p> : null}
+            </div>
+            {action}
+          </div>
+          {children}
+        </main>
+      </div>
     </div>
+  );
+}
+
+/**
+ * A sidebar link.
+ *
+ * Not marked active. There are two of them and the `<h1>` already names the
+ * screen; a client component to read the pathname would be the only reason
+ * this whole shell could not be a server component.
+ */
+function NavLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Link href={href}
+      className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-medium
+                 text-slate-700 hover:bg-brand-50 hover:text-brand-700">
+      {label}
+    </Link>
   );
 }

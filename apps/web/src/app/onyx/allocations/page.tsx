@@ -131,10 +131,10 @@ export default async function OnyxAllocationsPage(
           <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
             Teaching load
           </h2>
-          <div className="mt-3 overflow-x-auto rounded-2xl border border-line">
+          <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-white shadow-card">
             <table className="w-full text-sm">
               <caption className="sr-only">Teaching load per person for {chosen!.name}</caption>
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
+              <thead className="border-b border-line bg-slate-50 text-left text-[11px] font-bold uppercase tracking-[.06em] text-muted">
                 <tr>
                   <th scope="col" className="px-4 py-3">Who</th>
                   <th scope="col" className="px-4 py-3">Courses</th>
@@ -172,10 +172,10 @@ export default async function OnyxAllocationsPage(
           <h2 className="mt-8 text-sm font-medium uppercase tracking-wide text-muted">
             Allocations
           </h2>
-          <div className="mt-3 overflow-x-auto rounded-2xl border border-line">
+          <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-white shadow-card">
             <table className="w-full text-sm">
               <caption className="sr-only">Every allocation in {chosen!.name}</caption>
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
+              <thead className="border-b border-line bg-slate-50 text-left text-[11px] font-bold uppercase tracking-[.06em] text-muted">
                 <tr>
                   <th scope="col" className="px-4 py-3">Course</th>
                   <th scope="col" className="px-4 py-3">Who</th>
