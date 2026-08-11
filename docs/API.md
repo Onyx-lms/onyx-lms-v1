@@ -303,6 +303,9 @@ docs:check` fails the build if it has.
 | `GET` | `/api/onyx/platform/me` | platform admin |
 | `GET` | `/api/onyx/platform/tenants` | platform admin |
 | `GET` | `/api/onyx/platform/tenants/:id` | platform admin |
+| `GET` | `/api/onyx/platform/tenants/:id/people` | platform admin |
+| `GET` | `/api/onyx/platform/tenants/:id/academics` | platform admin |
+| `GET` | `/api/onyx/platform/tenants/:id/grades` | platform admin |
 | `POST` | `/api/onyx/platform/tenants` | platform admin |
 | `POST` | `/api/onyx/platform/tenants/:id/suspend` | platform admin |
 | `POST` | `/api/onyx/platform/tenants/:id/activate` | platform admin |
@@ -320,7 +323,7 @@ docs:check` fails the build if it has.
 | `POST` | `/api/onyx/auth/login` | **no token** — public by design |
 | `POST` | `/api/onyx/auth/switch` | any member |
 | `GET` | `/api/onyx/me` | any member |
-| `POST` | `/api/onyx/tenants` | **no token** — public by design |
+| `POST` | `/api/onyx/tenants` | platform admin |
 | `GET` | `/api/onyx/members` | admin, faculty |
 | `POST` | `/api/onyx/members` | admin |
 | `PATCH` | `/api/onyx/members/:id` | admin |
@@ -329,4 +332,4 @@ docs:check` fails the build if it has.
 
 ---
 
-_243 endpoints across 9 route files._
+_246 endpoints across 9 route files._

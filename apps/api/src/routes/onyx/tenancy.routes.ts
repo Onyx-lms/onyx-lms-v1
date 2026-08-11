@@ -100,9 +100,16 @@ export function registerOnyxTenancyRoutes(app: FastifyInstance, ctx: AppContext)
    * It did not: /onyx/signup posted here through an open allow-list entry, so
    * anyone who could reach the API could bring an institution into existence
    * and make themselves its administrator. The operator console the comment
-   * imagined already exists -- POST /api/onyx/platform/tenants, behind
-   * requirePlatformAdmin -- so this route now demands the same token rather
-   * than being a second, softer way in.
+   * imagined already exists -- POST /api/onyx/platform/tenants -- so this
+   * route now demands the same platform token rather than being a second,
+   * softer way in.
+   *
+   * (Naming the guard function in this comment is deliberately avoided:
+   * tools/onyx/gen-api-docs.mjs infers "who may call it" by grepping the
+   * handler window for the guard's name, and prose mentioning it upstream
+   * made the generator report neighbouring routes as platform-gated when
+   * they are not. A security document that mislabels a route is worse than
+   * one that is terse.)
    *
    * The bootstrap objection ("who creates the first one, before any token
    * exists?") is already answered elsewhere: the first platform admin is

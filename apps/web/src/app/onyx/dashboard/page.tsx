@@ -8,9 +8,13 @@ import { formatDuration, isStaff, type Assignment, type Course, type Outline } f
 import { OnyxNudges } from '@/components/onyx-engage';
 import {
   Banner, Buckets, Card, Hero, Icon, ListRow, Meter, Pill, Ring, RowList,
-  SectionHead, StackBar, StatTile, Empty, relativeDue,
+  SectionHead, StackBar, State, StatTile, Empty, relativeDue,
 } from '@/components/onyx-ui';
-import type { ProgressSummary } from '@/lib/onyx-campus';
+import type {
+  Discussion, ProgressSummary, Room, TimetableSlot,
+} from '@/lib/onyx-campus';
+import { WEEKDAYS, hhmm } from '@/lib/onyx-campus';
+import type { AttendanceAnalytics, AttendanceSession } from '@/lib/onyx-learn';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 
@@ -60,6 +64,12 @@ export default async function OnyxDashboard() {
   await requireOnyxSession();
   const me = await onyxApi<Me>('/api/onyx/me');
   if (REDIRECT[me.role]) redirect(REDIRECT[me.role]!);
+
+  // A teacher does not run the institution, so they do not get the screen that
+  // does. `isStaff` is admin || faculty, and everything below it was written
+  // for an operator: headcounts, the role split, "manage people". See
+  // FacultyDashboard for what a teacher actually opens this page to find out.
+  if (me.role === 'faculty') return <FacultyDashboard me={me} />;
 
   const staff = isStaff(me.role);
   const isLearner = me.role === 'student';
@@ -309,6 +319,587 @@ export default async function OnyxDashboard() {
                 ))}
               </RowList>
             </section>
+          ) : null}
+
+          {me.memberships.length > 1 ? (
+            <Banner tone="info" icon="building">
+              You belong to {me.memberships.length} institutions. Use the switcher to move
+              between them &mdash; each shows only its own people and records.
+            </Banner>
+          ) : null}
+        </div>
+      </div>
+    </OnyxShell>
+  );
+}
+
+/* =========================================================== faculty ===== */
+
+/** `/api/onyx/courses/:id` carries the teaching assignment. Nothing else does. */
+interface CourseDetail extends Course { faculty?: { user_id: number }[] }
+interface Member { user_id: number; role: string; user: { name: string } | null }
+
+/**
+ * Three caps, because every one of these is a fan-out.
+ *
+ * There is no "courses I teach" endpoint -- teaching is a link that only
+ * `/api/onyx/courses/:id` returns -- so finding them means reading the
+ * catalogue and then reading each course. That is fine for a department and
+ * silly for a thousand-course institution, so it stops at a sensible depth
+ * rather than pretending the page is free.
+ */
+const SCAN = 40;   // catalogue rows checked for a teaching link
+const DEEP = 12;   // taught courses given the full per-course fan-out
+const QUEUE = 24;  // published briefs whose marking queue is read
+
+const minutesOf = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+const clockOf = (iso: string) =>
+  new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+const plural = (n: number, one: string, many = one + 's') => n + ' ' + (n === 1 ? one : many);
+
+/** One line on the Today rail: a scheduled class, or a register to take. */
+interface TodayRow {
+  key: string; at: number; kind: 'class' | 'register';
+  title: string; time: string; where?: string;
+  href?: string; action?: { href: string; label: string }; open?: boolean;
+}
+
+/**
+ * What a teacher opens this page to find out.
+ *
+ * The shape follows the products that solved this already: Workable opens on
+ * the person and their day, Charma puts today's schedule beside action items
+ * split into what is due now and what is coming, and Circle leads with
+ * per-course student progress rather than institution totals. None of them
+ * open on a headcount, because a teacher cannot act on one.
+ *
+ * So: what is waiting on them, then their day, then their courses, then the
+ * things that have gone quietly wrong. Every number here is one the API
+ * actually returns -- see the notes on `attendance` below for the one place
+ * that forced a substitution rather than an invention.
+ */
+async function FacultyDashboard({ me }: { me: Me }) {
+  const [catalogue, grid, rooms, members] = await Promise.all([
+    onyxApiSafe<Course[]>('/api/onyx/courses'),
+    onyxApiSafe<TimetableSlot[]>('/api/onyx/timetable?faculty_id=' + me.user_id),
+    onyxApiSafe<Room[]>('/api/onyx/rooms'),
+    onyxApiSafe<Member[]>('/api/onyx/members'),
+  ]);
+
+  const catalog = catalogue ?? [];
+  const slots = grid ?? [];
+  const details = await Promise.all(catalog.slice(0, SCAN).map((c) =>
+    onyxApiSafe<CourseDetail>('/api/onyx/courses/' + c.id)));
+  const taught = details.filter((d): d is CourseDetail =>
+    Boolean(d?.faculty?.some((f) => Number(f.user_id) === me.user_id)));
+
+  // Everything a course can tell its teacher, per course, in parallel.
+  const packs = await Promise.all(taught.slice(0, DEEP).map(async (course) => {
+    const [roster, assignments, sessions, questions, attendance] = await Promise.all([
+      onyxApiSafe<{ user_id: number }[]>('/api/onyx/courses/' + course.id + '/roster'),
+      onyxApiSafe<Assignment[]>('/api/onyx/courses/' + course.id + '/assignments'),
+      onyxApiSafe<AttendanceSession[]>('/api/onyx/courses/' + course.id + '/attendance'),
+      onyxApiSafe<Discussion[]>('/api/onyx/courses/' + course.id + '/discussions?status=open'),
+      onyxApiSafe<AttendanceAnalytics>(
+        '/api/onyx/courses/' + course.id + '/attendance/analytics'),
+    ]);
+    return {
+      course,
+      roster: roster ?? [],
+      assignments: assignments ?? [],
+      sessions: sessions ?? [],
+      questions: questions ?? [],
+      attendance,
+    };
+  }));
+
+  // The marking queue. `/api/onyx/assignments/:id` returns `submissions` to
+  // staff and nothing to anyone else, so this is the only place the count
+  // exists -- there is no cross-course "unmarked" endpoint to ask instead.
+  const briefs = packs.flatMap((p) => p.assignments
+    .filter((a) => a.status === 'published')
+    .map((a) => ({ assignment: a, course: p.course })));
+  const queues = await Promise.all(briefs.slice(0, QUEUE).map(async (b) => {
+    const full = await onyxApiSafe<Assignment>('/api/onyx/assignments/' + b.assignment.id);
+    const subs = full?.submissions ?? [];
+    return {
+      ...b,
+      total: subs.length,
+      waiting: subs.filter((s) => s.status === 'submitted').length,
+      // Marked but never released. Invisible to the learner, and the one
+      // backlog nobody notices because it does not look like a backlog.
+      held: subs.filter((s) => s.status === 'graded').length,
+      done: subs.filter((s) => s.status === 'graded' || s.status === 'returned').length,
+    };
+  }));
+
+  const toMark = queues.filter((q) => q.waiting > 0).sort((a, b) => b.waiting - a.waiting);
+  const toReturn = queues.filter((q) => q.held > 0);
+  const waiting = queues.reduce((n, q) => n + q.waiting, 0);
+  const held = queues.reduce((n, q) => n + q.held, 0);
+  const marked = queues.reduce((n, q) => n + q.done, 0);
+  const handed = queues.reduce((n, q) => n + q.total, 0);
+
+  // Headcount that means something to a teacher: the people in front of them,
+  // counted once even when they take two of your courses.
+  const learners = new Set<number>();
+  packs.forEach((p) => p.roster.forEach((r) => learners.add(Number(r.user_id))));
+
+  const now = new Date();
+  const todayNum = ((now.getDay() + 6) % 7) + 1;   // 0 = Sunday in JS; 1 = Monday here
+  const isToday = (iso: string) => {
+    const d = new Date(iso);
+    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+      && d.getDate() === now.getDate();
+  };
+
+  const roomName = new Map((rooms ?? []).map((r) => [r.id, r.code + ' · ' + r.name]));
+  const courseName = new Map(catalog.map((c) => [c.id, c.code + ' · ' + c.title]));
+  const teaches = new Set(taught.map((c) => c.id));
+
+  const classes: TodayRow[] = slots.filter((s) => s.day_of_week === todayNum).map((s) => ({
+    key: 'slot-' + s.id,
+    at: minutesOf(s.starts_at),
+    kind: 'class',
+    title: courseName.get(s.course_id) ?? 'Course #' + s.course_id,
+    time: hhmm(s.starts_at) + '–' + hhmm(s.ends_at),
+    where: roomName.get(s.room_id),
+    href: teaches.has(s.course_id) ? '/onyx/courses/' + s.course_id : undefined,
+    // A register link only where a register can actually be taken: the API
+    // refuses the attendance screens for a course you are not on.
+    action: teaches.has(s.course_id)
+      ? { href: '/onyx/courses/' + s.course_id + '/attendance', label: 'Register' }
+      : undefined,
+  }));
+
+  const registers: TodayRow[] = packs.flatMap((p) => p.sessions
+    .filter((s) => isToday(s.scheduled_at))
+    .map((s) => {
+      const at = new Date(s.scheduled_at);
+      const href = '/onyx/courses/' + p.course.id + '/attendance/' + s.id;
+      return {
+        key: 'sess-' + s.id,
+        at: at.getHours() * 60 + at.getMinutes(),
+        kind: 'register' as const,
+        title: s.title,
+        time: clockOf(s.scheduled_at) + ' · ' + s.duration_minutes + ' min',
+        where: p.course.code + ' · ' + p.course.title,
+        open: s.status === 'open',
+        href,
+        action: { href, label: s.status === 'open' ? 'Take register' : 'View' },
+      };
+    }));
+
+  const today = [...classes, ...registers].sort((a, b) => a.at - b.at);
+  const nextSlot = slots.find((s) => s.day_of_week > todayNum) ?? slots[0] ?? null;
+
+  // Registers left open after the class has been and gone. Anyone can still
+  // check themselves in to one of these, which is the reason it is a warning
+  // and not a statistic.
+  const stale = packs.flatMap((p) => p.sessions
+    .filter((s) => s.status === 'open' && Date.parse(s.scheduled_at) < now.getTime()
+      && !isToday(s.scheduled_at))
+    .map((s) => ({ course: p.course, session: s })));
+
+  const unanswered = packs.flatMap((p) => p.questions
+    .filter((q) => q.reply_count === 0)
+    .map((q) => ({ course: p.course, q })));
+  const shortfalls = packs.filter((p) => (p.attendance?.cohort.below ?? 0) > 0);
+
+  // Deadlines you set, soonest first, late included -- a brief that went past
+  // its date is the one about to arrive as a pile of late submissions.
+  const deadlines = briefs
+    .filter((b) => b.assignment.due_at)
+    .sort((a, b) => Date.parse(a.assignment.due_at!) - Date.parse(b.assignment.due_at!))
+    .slice(0, 4);
+
+  const contactMinutes = slots.reduce((n, s) =>
+    n + (minutesOf(s.ends_at) - minutesOf(s.starts_at)), 0);
+  const daysTaught = new Set(slots.map((s) => s.day_of_week)).size;
+
+  const myName = (members ?? []).find((m) => Number(m.user_id) === me.user_id)?.user?.name ?? null;
+
+  /* The one thing on the page, chosen rather than stacked: marking first
+     because it blocks a learner, then questions, then an open register. */
+  const lead = waiting > 0
+    ? {
+      eyebrow: 'Waiting on you',
+      title: plural(waiting, 'submission') + ' to mark',
+      sub: toMark[0]
+        ? toMark[0].course.code + ' · ' + toMark[0].assignment.title
+          + ' has the most — ' + toMark[0].waiting + ' waiting'
+        : undefined,
+      href: '/onyx/assignments/' + (toMark[0]?.assignment.id ?? ''),
+      cta: 'Start marking',
+    }
+    : unanswered.length > 0
+      ? {
+        eyebrow: 'Waiting on you',
+        title: plural(unanswered.length, 'question') + ' with no reply',
+        sub: unanswered[0]!.course.code + ' · ' + unanswered[0]!.q.title,
+        href: '/onyx/discussions/' + unanswered[0]!.q.id,
+        cta: 'Answer it',
+      }
+      : stale.length > 0
+        ? {
+          eyebrow: 'Waiting on you',
+          title: plural(stale.length, 'register') + ' still open',
+          sub: stale[0]!.course.code + ' · ' + stale[0]!.session.title
+            + ' — anyone can still check in',
+          href: '/onyx/courses/' + stale[0]!.course.id + '/attendance/'
+            + stale[0]!.session.id,
+          cta: 'Close it',
+        }
+        : null;
+
+  return (
+    <OnyxShell
+      me={me}
+      title={myName ? 'Hello, ' + myName : me.tenant.name}
+      subtitle={taught.length
+        ? plural(taught.length, 'course') + ' · ' + plural(learners.size, 'student')
+          + ' · ' + me.tenant.name
+        : 'No course has been assigned to you at ' + me.tenant.name + ' yet.'}
+    >
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.62fr)_minmax(290px,.92fr)] xl:items-start">
+        {/* ---------------- main column ---------------- */}
+        <div className="min-w-0">
+          <section className="mb-5" aria-labelledby="waiting-h">
+            {lead ? (
+              <Hero
+                eyebrow={lead.eyebrow}
+                title={<span id="waiting-h">{lead.title}</span>}
+                sub={lead.sub}
+                // One button, not two. `Hero` sizes its action slot at
+                // max-content and clips what does not fit, so a second link
+                // here loses its right-hand end at 320px -- and "your courses"
+                // is already the section heading's action and a quick link.
+                actions={
+                  <Link href={lead.href}
+                    className="inline-flex min-h-[44px] items-center gap-2 rounded-2xl bg-white
+                               px-4 text-[14.5px] font-bold text-brand-700 hover:bg-brand-50
+                               focus-visible:outline-white">
+                    <Icon name="edit" className="h-4 w-4" />
+                    {lead.cta}
+                  </Link>
+                }
+              >
+                {handed > 0 ? (
+                  <>
+                    <Meter percent={handed ? (marked / handed) * 100 : 0}
+                      label="Submissions marked" tone="light" />
+                    <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3
+                                    text-[12.5px]">
+                      <span className="font-bold tabular-nums">
+                        {marked} of {handed} submissions marked
+                      </span>
+                      <span className="tabular-nums text-white/80">
+                        {held > 0 ? held + ' marked, not returned yet' : 'across your courses'}
+                      </span>
+                    </div>
+                  </>
+                ) : null}
+              </Hero>
+            ) : (
+              // A zero in a big box is a thing to interpret. A sentence is not.
+              <Banner tone="good" icon="check">
+                <strong className="font-bold" id="waiting-h">Nothing is waiting on you.</strong>
+                <span className="mt-0.5 block text-[13px]">
+                  {taught.length
+                    ? 'Every submission is marked, every question has a reply and no register '
+                      + 'was left open. Today is below.'
+                    : 'Once an administrator puts you on a course, its marking queue, register '
+                      + 'and questions all arrive here.'}
+                </span>
+              </Banner>
+            )}
+          </section>
+
+          {/* Four numbers about this person's teaching. Not one of them is a
+              fact about the institution -- that screen belongs to somebody
+              whose job is the institution. */}
+          <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <StatTile label="Your courses" value={taught.length}
+              note={catalog.length ? 'of ' + plural(catalog.length, 'in the catalogue',
+                'in the catalogue') : undefined} />
+            <StatTile label="Students taught" value={learners.size}
+              note={packs.length ? 'across ' + plural(packs.length, 'course') : undefined} />
+            <StatTile label="Waiting to mark" value={waiting}
+              note={held > 0
+                ? held + ' marked, not returned'
+                : waiting === 1 ? 'submission waiting' : 'submissions waiting'} />
+            <StatTile label="Today" value={today.length}
+              note={slots.length ? plural(slots.length, 'class') + ' on your week' : 'nothing on'} />
+          </div>
+
+          <section className="mb-5">
+            <SectionHead title={'Today · ' + (WEEKDAYS[todayNum - 1] ?? '')}
+              action={{ href: '/onyx/timetable', label: 'Your week' }} />
+            {today.length ? (
+              <RowList label="What you are teaching today">
+                {today.map((r) => (
+                  <ListRow
+                    key={r.key}
+                    icon={r.kind === 'register' ? 'users' : 'calendar'}
+                    tone={r.open ? 'late' : 'brand'}
+                    title={r.title}
+                    href={r.href}
+                    meta={
+                      <span className="tabular-nums">
+                        {r.time}{r.where ? ' · ' + r.where : ''}
+                      </span>
+                    }
+                    chips={r.kind === 'register'
+                      ? (r.open
+                        ? <span className="[&_i]:motion-reduce:animate-none">
+                          <State tone="live">Check-in open</State>
+                        </span>
+                        : <Pill tone="neutral">Closed</Pill>)
+                      : null}
+                    action={r.action}
+                  />
+                ))}
+              </RowList>
+            ) : (
+              <Card>
+                <Empty icon="calendar">
+                  Nothing is scheduled for you today.
+                  {nextSlot ? (
+                    <>
+                      {' '}Next:{' '}
+                      <strong className="font-semibold text-ink">
+                        {WEEKDAYS[nextSlot.day_of_week - 1] ?? 'Day ' + nextSlot.day_of_week}
+                        {' '}{hhmm(nextSlot.starts_at)}
+                      </strong>
+                      {' — '}
+                      {courseName.get(nextSlot.course_id) ?? 'Course #' + nextSlot.course_id}
+                      {roomName.get(nextSlot.room_id)
+                        ? ' in ' + roomName.get(nextSlot.room_id) : ''}.
+                    </>
+                  ) : null}
+                </Empty>
+              </Card>
+            )}
+          </section>
+
+          <section className="mb-5">
+            <SectionHead title="Your courses"
+              action={{ href: '/onyx/courses', label: 'All courses' }} />
+            {packs.length ? (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {packs.map((p) => {
+                  const a = p.attendance;
+                  const queue = queues
+                    .filter((q) => q.course.id === p.course.id)
+                    .reduce((n, q) => n + q.waiting, 0);
+                  return (
+                    // min-w-0 on the grid item, not just on the flex child
+                    // inside it: a grid item's automatic minimum size is its
+                    // min-content, and the course title is `truncate`, i.e.
+                    // white-space: nowrap. Without this the longest title sets
+                    // the track and the whole page scrolls sideways at 320px.
+                    <Card key={p.course.id} className="min-w-0 p-4">
+                      <div className="flex items-start gap-2.5">
+                        <div className="min-w-0 flex-1">
+                          <Link href={'/onyx/courses/' + p.course.id}
+                            className="block truncate text-[14.5px] font-bold hover:underline">
+                            {p.course.title}
+                          </Link>
+                          <p className="mt-0.5 truncate text-[12.5px] text-muted">
+                            {p.course.code}
+                            {p.course.credits ? ' · ' + p.course.credits + ' credits' : ''}
+                          </p>
+                        </div>
+                        <Pill tone="neutral">{plural(p.roster.length, 'enrolled', 'enrolled')}</Pill>
+                      </div>
+
+                      {/* Deliberately cohort attendance and not "class
+                          progress". `/courses/:id/outline` returns the
+                          *viewer's* lesson completions, so on a teacher's
+                          screen that number is how much of their own material
+                          they have clicked through -- which would read as the
+                          class's progress and be wrong. There is no per-cohort
+                          lesson-progress endpoint, so this shows the one
+                          cohort figure the API does return. */}
+                      {a && a.sessions > 0 ? (
+                        <div className="mt-3">
+                          <Meter percent={a.cohort.percent}
+                            label={'Cohort attendance on ' + p.course.title} />
+                          <div className="mt-1.5 flex flex-wrap items-baseline justify-between
+                                          gap-x-3 text-[12.5px]">
+                            <span className="font-bold tabular-nums">
+                              {a.cohort.percent}% cohort attendance
+                            </span>
+                            <span className="tabular-nums text-muted">
+                              {plural(a.sessions, 'session')} held
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="mt-3 text-[12.5px] text-muted">
+                          No register has been taken on this course yet.
+                        </p>
+                      )}
+
+                      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2
+                                      border-t border-line pt-3 text-[13px] font-semibold">
+                        <Link href={'/onyx/courses/' + p.course.id + '/attendance'}
+                          className="text-brand-600 hover:underline">Attendance</Link>
+                        <Link href={'/onyx/courses/' + p.course.id}
+                          className="text-brand-600 hover:underline">Course</Link>
+                        {queue > 0 ? (
+                          <span className="ml-auto"><Pill tone="soon">{queue} to mark</Pill></span>
+                        ) : null}
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            ) : (
+              <Card>
+                <Empty icon="book">
+                  You are not on any course yet. An administrator adds teaching staff to a
+                  course from{' '}
+                  <Link href="/onyx/courses" className="font-semibold text-brand-600 underline">
+                    the catalogue
+                  </Link>.
+                </Empty>
+              </Card>
+            )}
+          </section>
+
+          {toMark.length || toReturn.length || unanswered.length || stale.length
+            || shortfalls.length ? (
+              <section className="mb-5">
+                <SectionHead title="Needs attention" />
+                <RowList label="Things on your courses that need attention">
+                  {toMark.map((q) => (
+                    <ListRow
+                      key={'mark-' + q.assignment.id}
+                      icon="edit" tone="brand"
+                      title={q.assignment.title}
+                      href={'/onyx/assignments/' + q.assignment.id}
+                      meta={q.course.code + ' · ' + relativeDue(q.assignment.due_at).text}
+                      trailing={<Pill tone="soon">{plural(q.waiting, 'to mark', 'to mark')}</Pill>}
+                    />
+                  ))}
+                  {toReturn.map((q) => (
+                    <ListRow
+                      key={'return-' + q.assignment.id}
+                      icon="upload" tone="neutral"
+                      title={q.assignment.title}
+                      href={'/onyx/assignments/' + q.assignment.id}
+                      meta={q.course.code + ' · marked, but the learner cannot see it yet'}
+                      trailing={
+                        <Pill tone="neutral">{plural(q.held, 'to return', 'to return')}</Pill>
+                      }
+                    />
+                  ))}
+                  {stale.map(({ course, session }) => (
+                    <ListRow
+                      key={'open-' + session.id}
+                      icon="clock" tone="late"
+                      title={session.title}
+                      href={'/onyx/courses/' + course.id + '/attendance/' + session.id}
+                      meta={course.code + ' · register left open after the class'}
+                      trailing={<Pill tone="late">Open</Pill>}
+                    />
+                  ))}
+                  {unanswered.map(({ course, q }) => (
+                    <ListRow
+                      key={'q-' + q.id}
+                      icon="message" tone="neutral"
+                      title={q.title}
+                      href={'/onyx/discussions/' + q.id}
+                      meta={course.code + ' · nobody has replied'}
+                      trailing={<Pill tone="neutral">No reply</Pill>}
+                    />
+                  ))}
+                  {shortfalls.map((p) => (
+                    <ListRow
+                      key={'short-' + p.course.id}
+                      icon="alert" tone="late"
+                      title={p.course.title}
+                      href={'/onyx/courses/' + p.course.id + '/attendance'}
+                      meta={p.course.code + ' · below ' + p.attendance!.threshold
+                        + '% attendance'}
+                      trailing={
+                        <Pill tone="late">
+                          {plural(p.attendance!.cohort.below, 'learner')}
+                        </Pill>
+                      }
+                    />
+                  ))}
+                </RowList>
+              </section>
+            ) : null}
+        </div>
+
+        {/* ---------------- right rail ---------------- */}
+        <div className="min-w-0 space-y-5">
+          {slots.length ? (
+            <section>
+              <SectionHead title="Your week" />
+              <div className="grid grid-cols-2 gap-3">
+                <StatTile label="Contact hours" value={Math.round(contactMinutes / 60)}
+                  note="on the published grid" />
+                <StatTile label="Classes" value={slots.length}
+                  note={plural(daysTaught, 'day') + ' a week'} />
+              </div>
+            </section>
+          ) : null}
+
+          {deadlines.length ? (
+            <section>
+              <SectionHead title="Deadlines you set" />
+              <RowList label="Deadlines on your courses">
+                {deadlines.map((d) => {
+                  const when = relativeDue(d.assignment.due_at);
+                  return (
+                    <ListRow
+                      key={'due-' + d.assignment.id}
+                      icon="calendar"
+                      tone={when.tone === 'late' ? 'late' : when.tone === 'soon' ? 'brand' : 'neutral'}
+                      title={d.assignment.title}
+                      href={'/onyx/assignments/' + d.assignment.id}
+                      meta={d.course.code}
+                      trailing={<Pill tone={when.tone}>{when.text}</Pill>}
+                    />
+                  );
+                })}
+              </RowList>
+            </section>
+          ) : null}
+
+          <section>
+            <SectionHead title="Quick links" />
+            <RowList label="Quick links">
+              {([
+                ['/onyx/courses', 'Your courses', 'book'],
+                ['/onyx/timetable', 'Timetable', 'calendar'],
+                ['/onyx/assessments', 'Assessments', 'edit'],
+                ['/onyx/support', 'Mentor queue', 'help'],
+              ] as const).map(([href, label, icon]) => (
+                <li key={href}>
+                  <Link href={href}
+                    className="flex items-center gap-3 px-4 py-3 text-sm font-semibold
+                               hover:bg-brand-50/40 hover:text-brand-700">
+                    <span className="text-brand-600"><Icon name={icon} /></span>
+                    {label}
+                    <span className="ml-auto text-muted">
+                      <Icon name="chevron" className="h-4 w-4" />
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </RowList>
+          </section>
+
+          {catalog.length > SCAN ? (
+            <Banner tone="info" icon="alert">
+              This looks at the first {SCAN} courses in the catalogue for your teaching
+              assignments. Anything beyond that is on the course itself.
+            </Banner>
           ) : null}
 
           {me.memberships.length > 1 ? (

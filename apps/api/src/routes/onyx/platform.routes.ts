@@ -47,6 +47,38 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
     return ok(await ctx.onyxPlatform.tenant(idOf(req)));
   });
 
+  // The drill-in reads. Same guard as everything else in this file: a tenant
+  // token has no `platform` claim, so it cannot reach an institution it does
+  // not belong to through here -- and a platform token has no `tenant_id`, so
+  // it cannot reach the tenant surface either. `:id` scopes every query.
+  app.get('/api/onyx/platform/tenants/:id/people', async (req) => {
+    requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const q = validate(z.object({
+      role: z.enum(['student', 'faculty', 'exams', 'placement', 'employer', 'admin', 'guardian'])
+        .optional(),
+      limit: z.coerce.number().int().positive().max(200).optional(),
+    }), req.query ?? {});
+    return ok(await ctx.onyxPlatform.tenantPeople(idOf(req), q));
+  });
+
+  app.get('/api/onyx/platform/tenants/:id/academics', async (req) => {
+    requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const q = validate(z.object({
+      limit: z.coerce.number().int().positive().max(200).optional(),
+    }), req.query ?? {});
+    return ok(await ctx.onyxPlatform.tenantAcademics(idOf(req), q));
+  });
+
+  // Audited in the service, not here: the log entry belongs next to the read it
+  // describes, so no future caller can reach the data around the logging.
+  app.get('/api/onyx/platform/tenants/:id/grades', async (req) => {
+    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const q = validate(z.object({
+      limit: z.coerce.number().int().positive().max(200).optional(),
+    }), req.query ?? {});
+    return ok(await ctx.onyxPlatform.tenantGrades(idOf(req), claims.user_id, q));
+  });
+
   app.post('/api/onyx/platform/tenants', async (req) => {
     const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
