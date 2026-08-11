@@ -4,6 +4,7 @@ import { OnyxShell } from '@/components/onyx-shell';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, type Me } from '@/lib/onyx-session';
 import { isStaff } from '@/lib/onyx-learn';
+import { CreatePanel } from '@/components/onyx-create';
 import type { Problem } from '@/lib/onyx-codelab';
 
 export const metadata: Metadata = { title: 'Practice' };
@@ -34,6 +35,25 @@ export default async function OnyxPracticePage({ searchParams }: {
         ? 'The problem bank, drafts included.'
         : 'Work through problems and get graded instantly.'}
     >
+      {/* LAB-04: "curated problems organised by topic and difficulty".
+          Left as a draft on creation -- the API refuses to publish a problem
+          with no test cases, and at least one of them has to be visible. */}
+      {isStaff(me.role) ? (
+        <div className="mb-6">
+          <CreatePanel
+            title="New problem" cta="Add a problem" icon="code"
+            endpoint="problems"
+            fields={[
+              { name: 'title', label: 'Problem', required: true, wide: true,
+                placeholder: 'Two Sum' },
+              { name: 'statement', label: 'Statement', type: 'textarea', rows: 4,
+                required: true },
+              { name: 'difficulty', label: 'Difficulty', type: 'select', fallback: 'easy',
+                options: ['easy', 'medium', 'hard'].map((d) => ({ value: d, label: d })) },
+            ]}
+          />
+        </div>
+      ) : null}
       <div className="mb-4 flex flex-wrap gap-2 text-sm">
         <Link href="/onyx/practice"
           className="rounded-lg border border-slate-300 px-3 py-1 hover:bg-slate-50">All</Link>

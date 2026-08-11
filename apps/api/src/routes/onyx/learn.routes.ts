@@ -191,6 +191,31 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
       'Course updated.');
   });
 
+  /**
+   * Open a course to learners, and close it again.
+   *
+   * The same thing is expressible as PATCH { status }, but assignments and
+   * problems both publish through a named endpoint, and a course is the one
+   * people reach for first. Matching the shape means the authoring UI does
+   * not need a special case for the one resource that works differently.
+   */
+  app.post('/api/onyx/courses/:id/publish', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const course = await ctx.onyxAcademics.updateCourse(claims.tenant_id, idOf(req),
+      { status: 1 });
+    await ctx.onyxAudit.record(claims, {
+      action: 'enrolment.created', entityType: 'course', entityId: idOf(req),
+      after: { status: 1 }, ip: ipOf(req),
+    });
+    return ok(course, 'Course is open.');
+  });
+
+  app.post('/api/onyx/courses/:id/close', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    return ok(await ctx.onyxAcademics.updateCourse(claims.tenant_id, idOf(req),
+      { status: 0 }), 'Course closed.');
+  });
+
   app.post('/api/onyx/courses/:id/faculty', async (req) => {
     const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
     const body = validate(z.object({ user_id: z.number().int().positive() }), req.body);

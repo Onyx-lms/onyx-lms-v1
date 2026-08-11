@@ -29,9 +29,13 @@ async function forward(request: Request, path: string[], method: string) {
   const jar = await cookies();
   const token = jar.get(cookieFor(path))?.value;
   const search = new URL(request.url).search;
-  const body = ['GET', 'DELETE'].includes(method)
-    ? undefined
-    : await request.text();
+  // An empty string is not "no body". Forwarding '' made Fastify parse the
+  // request to `''`, and a route doing `req.body ?? {}` kept it -- `??` only
+  // catches null and undefined -- so zod was handed a string and refused it
+  // with "The given data was invalid". Every bodyless POST through here
+  // (enrol, publish, claim) hit that.
+  const raw = ['GET', 'DELETE'].includes(method) ? '' : await request.text();
+  const body = raw === '' ? undefined : raw;
 
   // Only declare a JSON body when there actually is one. Fastify rejects a
   // request that claims application/json but sends nothing, which would break

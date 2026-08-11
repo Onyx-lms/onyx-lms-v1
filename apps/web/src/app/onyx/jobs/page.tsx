@@ -4,6 +4,7 @@ import { OnyxShell } from '@/components/onyx-shell';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import { APPLICATION_LABELS, type Application, type JobPost } from '@/lib/onyx-career';
+import { CreatePanel } from '@/components/onyx-create';
 
 export const metadata: Metadata = { title: 'Jobs' };
 
@@ -20,6 +21,13 @@ export default async function OnyxJobsPage() {
     onyxApi<Me>('/api/onyx/me'),
     onyxApi<JobPost[]>('/api/onyx/jobs'),
   ]);
+  // CAR-04: a post belongs to an employer, and there was no way to record one.
+  // Only the placement office may read employer contacts, so this is fetched
+  // for them and quietly skipped for everybody else.
+  const canPost = me.role === 'placement' || me.role === 'admin' || me.role === 'employer';
+  const employers = canPost
+    ? await onyxApiSafe<{ id: number; name: string }[]>('/api/onyx/employers')
+    : null;
   const mine = claims.tenant_role === 'student'
     ? await onyxApiSafe<Application[]>('/api/onyx/my/applications')
     : null;
@@ -34,6 +42,39 @@ export default async function OnyxJobsPage() {
         ? 'Your posts at ' + me.tenant.name + '.'
         : 'Openings shared with this institution.'}
     >
+      {/* CAR-04: "employers must post jobs". The placement office keeps the
+          employer records, so both can open a post. */}
+      {canPost ? (
+        <div className="mb-6 grid gap-3 lg:grid-cols-2">
+          <CreatePanel
+            title="New employer" cta="Add an employer" icon="building" compact
+            endpoint="employers"
+            fields={[
+              { name: 'name', label: 'Company', required: true, wide: true,
+                placeholder: 'Acme Corp' },
+              { name: 'contact_name', label: 'Contact' },
+              { name: 'contact_email', label: 'Contact email' },
+              { name: 'website', label: 'Website', placeholder: 'https://acme.example' },
+            ]}
+          />
+          <CreatePanel
+            title="New opening" cta="Post a job" icon="briefcase" compact
+            endpoint="jobs"
+            fields={[
+              { name: 'employer_id', label: 'Employer', type: 'select', required: true,
+                numeric: true, wide: true,
+                options: (employers ?? []).map((e) => ({ value: String(e.id), label: e.name })) },
+              { name: 'title', label: 'Role', required: true, wide: true,
+                placeholder: 'Junior Developer' },
+              { name: 'description', label: 'Description', type: 'textarea', rows: 3 },
+              { name: 'location', label: 'Location', placeholder: 'Bengaluru' },
+              { name: 'openings', label: 'Openings', type: 'number', min: 1, max: 1000,
+                fallback: 1 },
+              { name: 'closes_at', label: 'Closes', type: 'datetime' },
+            ]}
+          />
+        </div>
+      ) : null}
       <div className="overflow-x-auto rounded-2xl border border-line">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">

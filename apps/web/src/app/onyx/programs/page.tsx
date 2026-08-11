@@ -3,6 +3,7 @@ import { OnyxShell } from '@/components/onyx-shell';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxPageRole, onyxApi, type Me } from '@/lib/onyx-session';
 import type { Batch, Program, Semester } from '@/lib/onyx-learn';
+import { CreatePanel } from '@/components/onyx-create';
 
 export const metadata: Metadata = { title: 'Programmes' };
 
@@ -29,6 +30,46 @@ export default async function OnyxProgramsPage() {
       title="Programmes"
       subtitle="What this institution teaches, and the cohorts taking it."
     >
+      {/* CMP-01: "manage programs, batches, timetables and faculty
+          allocation from a central console". The console listed them and
+          could create none of them. */}
+      <div className="mb-6 grid gap-3 lg:grid-cols-3">
+        <CreatePanel
+          title="New programme" cta="Add a programme" icon="building" compact
+          endpoint="programs"
+          fields={[
+            { name: 'name', label: 'Programme', required: true, wide: true,
+              placeholder: 'Computer Science' },
+            { name: 'code', label: 'Code', required: true, placeholder: 'CS' },
+            { name: 'duration_semesters', label: 'Semesters', type: 'number', min: 1,
+              max: 20, fallback: 6 },
+            { name: 'description', label: 'Description', type: 'textarea', rows: 2 },
+          ]}
+        />
+        <CreatePanel
+          title="New semester" cta="Add a semester" icon="calendar" compact
+          endpoint="semesters"
+          fields={[
+            { name: 'program_id', label: 'Programme', type: 'select', required: true, numeric: true,
+              options: programs.map((p) => ({ value: String(p.id), label: p.name })) },
+            { name: 'name', label: 'Name', required: true, placeholder: 'Term 1 2026' },
+            { name: 'number', label: 'Number', type: 'number', min: 1, max: 20, fallback: 1 },
+            { name: 'starts_on', label: 'Starts', type: 'date' },
+            { name: 'ends_on', label: 'Ends', type: 'date' },
+          ]}
+        />
+        <CreatePanel
+          title="New batch" cta="Add a batch" icon="users" compact
+          endpoint="batches"
+          fields={[
+            { name: 'program_id', label: 'Programme', type: 'select', required: true, numeric: true,
+              options: programs.map((p) => ({ value: String(p.id), label: p.name })) },
+            { name: 'name', label: 'Batch', required: true, placeholder: 'Batch A 2026' },
+            { name: 'code', label: 'Code', required: true, placeholder: 'BA26' },
+            { name: 'year', label: 'Year', type: 'number', min: 1900, max: 2200 },
+          ]}
+        />
+      </div>
       {programs.length === 0 ? (
         <p className="text-sm text-muted">No programmes yet.</p>
       ) : (

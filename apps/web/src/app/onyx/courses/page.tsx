@@ -4,6 +4,8 @@ import { OnyxShell } from '@/components/onyx-shell';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, type Me } from '@/lib/onyx-session';
 import { isStaff, type Course, type Program } from '@/lib/onyx-learn';
+import { CreatePanel, ActionButton } from '@/components/onyx-create';
+import { SectionHead } from '@/components/onyx-ui';
 
 export const metadata: Metadata = { title: 'Courses' };
 
@@ -29,6 +31,32 @@ export default async function OnyxCoursesPage() {
         ? 'Everything running at ' + me.tenant.name + '.'
         : 'What you are enrolled in, and what else is open.'}
     >
+      {/* LRN-01: "enroll themselves or be enrolled by administrators" -- which
+          first requires a course to exist. There was no way to create one from
+          the product at all; it had to be done through the API. */}
+      {isStaff(me.role) ? (
+        <div className="mb-6">
+          <CreatePanel
+            title="New course" cta="Create a course" icon="book"
+            endpoint="courses"
+            fields={[
+              { name: 'code', label: 'Course code', required: true, placeholder: 'CS101' },
+              { name: 'title', label: 'Title', required: true, placeholder: 'Introduction to Programming' },
+              { name: 'credits', label: 'Credits', type: 'number', min: 0, max: 60, fallback: 0 },
+              { name: 'program_id', label: 'Programme', type: 'select', numeric: true,
+                options: [{ value: '', label: 'Not part of a programme' },
+                  ...programs.map((pr) => ({ value: String(pr.id), label: pr.name }))] },
+              { name: 'description', label: 'Description', type: 'textarea',
+                placeholder: 'What this course covers.' },
+              { name: 'self_enroll', label: 'Learners may enrol themselves', type: 'checkbox' },
+            ]}
+            // Created as a draft, then opened -- a course nobody can see is
+            // not much use, and publishing is a separate right the API checks.
+            thenPost="courses/:id/publish"
+          />
+        </div>
+      ) : null}
+
       {mine.length ? (
         <section className="mb-8">
           <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
@@ -70,8 +98,13 @@ export default async function OnyxCoursesPage() {
                   {enrolled.has(c.id)
                     ? <span className="ml-2 text-xs text-emerald-700">enrolled</span>
                     : null}
-                  {c.self_enroll && !enrolled.has(c.id)
-                    ? <span className="ml-2 text-xs text-muted">open to join</span>
+                  {/* LRN-01: "enroll themselves". The catalogue said "open to
+                      join" and offered nothing to join with -- a learner was
+                      told a course was open and left with no way in. */}
+                  {c.self_enroll && !enrolled.has(c.id) && me.role === 'student'
+                    ? <span className="ml-2 inline-block align-middle">
+                      <ActionButton endpoint={'courses/' + c.id + '/enroll'} label="Join" />
+                    </span>
                     : null}
                 </td>
                 <td className="px-4 py-3 text-muted">
