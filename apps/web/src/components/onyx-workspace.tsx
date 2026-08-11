@@ -3,8 +3,35 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { OnyxEditor } from './onyx-editor';
-import { Icon } from './onyx-ui';
+import { Banner, Card, Empty, Icon, SectionHead } from './onyx-ui';
 import type { WorkspaceRunResult } from '@/lib/onyx-codelab';
+
+/**
+ * A past date, said the way a person says it.
+ *
+ * "8/17/2026, 12:00:00 AM" makes "is this snapshot the one from this morning"
+ * a calculation. The value is rendered with `suppressHydrationWarning` because
+ * the server and the browser evaluate `Date.now()` a moment apart.
+ */
+function since(iso: string, now = Date.now()): string {
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return '';
+  const mins = Math.round((now - t) / 60_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + (mins === 1 ? ' minute ago' : ' minutes ago');
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return hours + (hours === 1 ? ' hour ago' : ' hours ago');
+  const days = Math.round(hours / 24);
+  if (days === 1) return 'yesterday';
+  if (days < 7) return days + ' days ago';
+  const weeks = Math.round(days / 7);
+  if (weeks === 1) return 'last week';
+  if (weeks < 5) return weeks + ' weeks ago';
+  const months = Math.round(days / 30);
+  if (months < 12) return months === 1 ? 'a month ago' : months + ' months ago';
+  return new Date(t).toLocaleDateString(undefined,
+    { day: 'numeric', month: 'short', year: 'numeric' });
+}
 
 /** A file's extension, coloured -- the same shorthand every IDE file tree
  *  uses so a project reads at a glance rather than one filename at a time. */
@@ -136,24 +163,106 @@ export function OnyxWorkspace({ workspace, isOwner, canReview }: {
 
   return (
     <div className="space-y-6">
-      {notice ? <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</p> : null}
-      {error ? <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p> : null}
+      {notice ? <div role="status"><Banner tone="good" icon="check">{notice}</Banner></div> : null}
+      {error ? <div role="alert"><Banner tone="late" icon="alert">{error}</Banner></div> : null}
 
       {/* One dark instrument -- sidebar, toolbar, editor and console all the
           same surface, elevated off the page rather than bordered onto it. */}
       <div className="overflow-hidden rounded-2xl bg-slate-900 shadow-xl shadow-slate-900/25 ring-1 ring-slate-800">
-        <div className="grid lg:grid-cols-[220px_1fr]">
-          <aside className="flex flex-col gap-4 border-b border-slate-800 bg-slate-950/50 p-3
-                             lg:border-b-0 lg:border-r">
-            {/* Purely decorative window chrome -- three dots is the fastest
-                possible signal that what follows is a code surface. */}
-            <div aria-hidden="true" className="flex items-center gap-1.5 px-1 pt-0.5">
-              <span className="h-2.5 w-2.5 rounded-full bg-rose-500/80" />
-              <span className="h-2.5 w-2.5 rounded-full bg-amber-400/80" />
-              <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/80" />
-            </div>
+        {/* The project's own bar. Save, Snapshot and Run are controls on the
+            instrument, not on one file, so they sit here rather than on the
+            open tab -- and they stay on the same dark surface, because a white
+            toolbar bolted onto a black editor is the tell of an unfinished
+            screen. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-800
+                        bg-slate-950/40 px-3 py-2.5 sm:px-4">
+          {/* Purely decorative window chrome -- three dots is the fastest
+              possible signal that what follows is a code surface. */}
+          <span aria-hidden="true" className="flex shrink-0 items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-full bg-rose-500/80" />
+            <span className="h-2.5 w-2.5 rounded-full bg-amber-400/80" />
+            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/80" />
+          </span>
+          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-200">
+            {workspace.title}
+          </span>
+          <span className="shrink-0 rounded-full bg-slate-800 px-2 py-0.5 text-[10.5px]
+                            font-bold uppercase tracking-wide text-slate-400">
+            {workspace.language}
+          </span>
 
-            <div>
+          {isOwner ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button" disabled={pending}
+                onClick={() => call('/files', {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    files: files.map((f) => ({ path: f.path, content: f.content })),
+                  }),
+                }, 'Saved.')}
+                title="Save"
+                className="inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border
+                           border-slate-700 bg-slate-800/60 px-3 text-sm text-slate-300 transition
+                           hover:border-slate-600 hover:bg-slate-800 hover:text-white
+                           disabled:opacity-50"
+              >
+                <Icon name="save" className="h-3.5 w-3.5" />
+                Save
+              </button>
+              <button
+                type="button" disabled={pending}
+                onClick={() => {
+                  const label = window.prompt('Name this snapshot', 'Snapshot');
+                  if (label === null) return;
+                  call('/snapshots', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ label }),
+                  }, 'Snapshot taken.');
+                }}
+                title="Take a snapshot"
+                className="inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border
+                           border-slate-700 bg-slate-800/60 px-3 text-sm text-slate-300 transition
+                           hover:border-slate-600 hover:bg-slate-800 hover:text-white
+                           disabled:opacity-50"
+              >
+                <Icon name="camera" className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Snapshot</span>
+                <span className="sr-only sm:hidden">Snapshot</span>
+              </button>
+              <button
+                type="button" disabled={running}
+                onClick={run}
+                title="Save and run -- Ctrl / Cmd + Enter"
+                className="group inline-flex min-h-[34px] items-center gap-1.5 rounded-lg
+                           bg-gradient-to-b from-brand-500 to-brand-600 px-3.5 text-sm
+                           font-semibold text-white shadow-md shadow-brand-900/30 transition
+                           hover:-translate-y-px hover:shadow-lg hover:shadow-brand-900/40
+                           disabled:translate-y-0 disabled:opacity-60 disabled:shadow-none"
+              >
+                {running
+                  ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2
+                                      border-white/30 border-t-white" />
+                  : <Icon name="play" className="h-3.5 w-3.5" />}
+                {running ? 'Running…' : 'Run'}
+              </button>
+            </div>
+          ) : (
+            <span className="rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-400">
+              You are reviewing this project &mdash; leave a comment rather than editing
+            </span>
+          )}
+        </div>
+
+        {/* minmax(0,1fr) rather than 1fr: a grid item defaults to min-width
+            auto, so a long line in the editor would otherwise widen the whole
+            instrument and take a 320px page sideways with it. */}
+        <div className="grid lg:grid-cols-[210px_minmax(0,1fr)]">
+          <aside className="flex min-w-0 flex-col gap-4 border-b border-slate-800 bg-slate-950/50
+                             p-3 lg:border-b-0 lg:border-r">
+            <div className="min-w-0">
               <div className="px-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                 Files
               </div>
@@ -205,76 +314,18 @@ export function OnyxWorkspace({ workspace, isOwner, canReview }: {
           </aside>
 
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-3 border-b border-slate-800 bg-slate-900/95 px-4 py-2.5">
-              <span className={'h-2 w-2 shrink-0 rounded-full ' + extDot(active)} />
-              <span className="truncate font-mono text-xs text-slate-300">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-800
+                            bg-slate-900/95 px-4 py-2.5">
+              <span aria-hidden="true"
+                className={'h-2 w-2 shrink-0 rounded-full ' + extDot(active)} />
+              <span className="min-w-0 truncate font-mono text-xs text-slate-300">
                 {active || workspace.entry_path}
               </span>
-              <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-semibold
-                                uppercase tracking-wide text-slate-400">
-                {workspace.language}
-              </span>
-
               {isOwner ? (
-                <div className="ml-auto flex items-center gap-1.5">
-                  <button
-                    type="button" disabled={running}
-                    onClick={run}
-                    title="Save and run -- Ctrl / Cmd + Enter"
-                    className="group inline-flex items-center gap-1.5 rounded-lg bg-gradient-to-b
-                               from-brand-500 to-brand-600 px-3.5 py-1.5 text-sm font-medium text-white
-                               shadow-md shadow-brand-900/30 transition
-                               hover:-translate-y-px hover:shadow-lg hover:shadow-brand-900/40
-                               disabled:translate-y-0 disabled:opacity-60 disabled:shadow-none"
-                  >
-                    {running
-                      ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2
-                                          border-white/30 border-t-white" />
-                      : <Icon name="play" className="h-3.5 w-3.5" />}
-                    {running ? 'Running…' : 'Run'}
-                  </button>
-                  <button
-                    type="button" disabled={pending}
-                    onClick={() => call('/files', {
-                      method: 'PUT',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        files: files.map((f) => ({ path: f.path, content: f.content })),
-                      }),
-                    }, 'Saved.')}
-                    title="Save"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700
-                               bg-slate-800/60 px-3 py-1.5 text-sm text-slate-300 transition
-                               hover:border-slate-600 hover:bg-slate-800 hover:text-white disabled:opacity-50"
-                  >
-                    <Icon name="save" className="h-3.5 w-3.5" />
-                    Save
-                  </button>
-                  <button
-                    type="button" disabled={pending}
-                    onClick={() => {
-                      const label = window.prompt('Name this snapshot', 'Snapshot');
-                      if (label === null) return;
-                      call('/snapshots', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ label }),
-                      }, 'Snapshot taken.');
-                    }}
-                    title="Take a snapshot"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700
-                               bg-slate-800/60 px-3 py-1.5 text-sm text-slate-300 transition
-                               hover:border-slate-600 hover:bg-slate-800 hover:text-white disabled:opacity-50"
-                  >
-                    <Icon name="camera" className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Snapshot</span>
-                  </button>
-                </div>
-              ) : (
-                <span className="ml-auto rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-400">
-                  Reviewing -- leave a comment rather than editing
+                <span className="ml-auto hidden text-[11.5px] text-slate-500 sm:inline">
+                  Ctrl / Cmd + Enter to save and run
                 </span>
-              )}
+              ) : null}
             </div>
 
             <OnyxEditor
@@ -303,98 +354,138 @@ export function OnyxWorkspace({ workspace, isOwner, canReview }: {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded-2xl border border-line bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Snapshots</h2>
-          <ul className="mt-3 space-y-2.5 text-sm">
-            {workspace.snapshots.map((s) => (
-              <li key={s.id} className="flex items-center gap-3">
-                <span className="flex-1">
-                  {s.label}
-                  <span className="block text-xs text-muted">
-                    {new Date(s.created_at).toLocaleString()} · {s.file_count} files
+      {/* Snapshots and review are page furniture, not part of the instrument,
+          so they come back onto the ordinary white surface below it. */}
+      <div className="grid gap-5 lg:grid-cols-2 lg:items-start">
+        <div className="min-w-0">
+          <SectionHead title="Snapshots" />
+          <Card>
+            <ul className="divide-y divide-line">
+              {workspace.snapshots.map((s) => (
+                <li key={s.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold">{s.label}</span>
+                    <span className="mt-0.5 block text-[13px] text-muted"
+                      suppressHydrationWarning>
+                      {since(s.created_at)} · {s.file_count} files
+                    </span>
                   </span>
-                </span>
-                {isOwner ? (
-                  <button
-                    type="button" disabled={pending}
-                    onClick={() => {
-                      // Restoring deletes files added since the snapshot. That
-                      // is the promise, and it is also destructive.
-                      const sure = window.confirm(
-                        'Restore "' + s.label + '"? This replaces the file tree exactly as it '
-                        + 'was, including removing files added since.');
-                      if (!sure) return;
-                      call('/restore/' + s.id, { method: 'POST' }, 'Restored.');
-                    }}
-                    className="text-xs font-medium text-brand-600 hover:underline disabled:opacity-50"
-                  >
-                    Restore
-                  </button>
-                ) : null}
-              </li>
-            ))}
-            {workspace.snapshots.length === 0
-              ? <li className="text-muted">No snapshots yet.</li>
-              : null}
-          </ul>
-        </section>
+                  {isOwner ? (
+                    <button
+                      type="button" disabled={pending}
+                      onClick={() => {
+                        // Restoring deletes files added since the snapshot. That
+                        // is the promise, and it is also destructive.
+                        const sure = window.confirm(
+                          'Restore "' + s.label + '"? This replaces the file tree exactly as it '
+                          + 'was, including removing files added since.');
+                        if (!sure) return;
+                        call('/restore/' + s.id, { method: 'POST' }, 'Restored.');
+                      }}
+                      className="inline-flex min-h-[34px] shrink-0 items-center rounded-2xl border
+                                 border-line px-3 text-[13px] font-bold text-slate-700
+                                 hover:bg-brand-50 disabled:opacity-50"
+                    >
+                      Restore
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+              {workspace.snapshots.length === 0 ? (
+                <li><Empty icon="camera">No snapshots yet.</Empty></li>
+              ) : null}
+            </ul>
+            {/* Restoring is the feature and is also destructive: it replaces
+                the tree exactly, deleting files added since. Saying so here is
+                what stops it being a single unlabelled click. */}
+            {isOwner && workspace.snapshots.length ? (
+              <p className="border-t border-line px-4 py-3 text-[13px] text-muted">
+                Restoring replaces the file tree exactly as it was, including removing files
+                added since.
+              </p>
+            ) : null}
+          </Card>
+        </div>
 
-        <section className="rounded-2xl border border-line bg-white p-5 shadow-sm">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Review</h2>
-          <ul className="mt-3 space-y-2.5 text-sm">
-            {workspace.comments.map((c) => (
-              <li key={c.id} className={c.resolved_at ? 'text-muted' : 'text-slate-700'}>
-                {c.file_path ? (
-                  <span className="font-mono text-xs text-muted">
-                    {c.file_path}{c.line ? ':' + c.line : ''}{' '}
+        <div className="min-w-0">
+          <SectionHead title="Review" />
+          <Card>
+            <ul className="divide-y divide-line">
+              {workspace.comments.map((c) => (
+                <li key={c.id} className="px-4 py-3 text-sm">
+                  {c.file_path ? (
+                    <span className="block truncate font-mono text-xs text-muted">
+                      {c.file_path}{c.line ? ':' + c.line : ''}
+                    </span>
+                  ) : null}
+                  <span className={'mt-0.5 block ' + (c.resolved_at ? 'text-muted' : 'text-slate-700')}>
+                    {c.body}
                   </span>
-                ) : null}
-                {c.body}
-                {c.resolved_at ? <span className="ml-2 text-xs">resolved</span> : (
-                  <button
-                    type="button" disabled={pending}
-                    onClick={() => call('/comments/' + c.id + '/resolve', { method: 'POST' },
-                      'Resolved.')}
-                    className="ml-2 text-xs font-medium text-brand-600 hover:underline disabled:opacity-50"
-                  >
-                    resolve
-                  </button>
-                )}
-              </li>
-            ))}
-            {workspace.comments.length === 0
-              ? <li className="text-muted">Nothing yet.</li>
-              : null}
-          </ul>
+                  <span className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="text-xs text-muted" suppressHydrationWarning>
+                      {since(c.created_at)}
+                    </span>
+                    {c.resolved_at ? (
+                      // The state is a word, never a tint on its own.
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold
+                                       text-green-700">
+                        <span aria-hidden="true" className="h-2 w-2 rounded-full bg-green-600" />
+                        Resolved
+                      </span>
+                    ) : (
+                      <button
+                        type="button" disabled={pending}
+                        onClick={() => call('/comments/' + c.id + '/resolve', { method: 'POST' },
+                          'Resolved.')}
+                        className="text-xs font-bold text-brand-600 hover:underline
+                                   disabled:opacity-50"
+                      >
+                        Mark resolved
+                      </button>
+                    )}
+                  </span>
+                </li>
+              ))}
+              {workspace.comments.length === 0 ? (
+                <li>
+                  <Empty icon="message">
+                    Nothing yet. A mentor comments on this project; a mentor does not edit it.
+                  </Empty>
+                </li>
+              ) : null}
+            </ul>
 
-          {canReview || isOwner ? (
-            <form
-              className="mt-3 flex gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const form = e.currentTarget;
-                const body = String(new FormData(form).get('body') ?? '').trim();
-                if (!body) return;
-                call('/comments', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ body, file_path: active || null }),
-                }, 'Comment added.');
-                form.reset();
-              }}
-            >
-              <label className="sr-only" htmlFor="comment">Comment</label>
-              <input id="comment" name="body" placeholder={'Comment on ' + (active || 'this project')}
-                className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
-              <button type="submit" disabled={pending}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700
-                           hover:bg-slate-50 disabled:opacity-50">
-                Add
-              </button>
-            </form>
-          ) : null}
-        </section>
+            {canReview || isOwner ? (
+              <form
+                className="flex flex-wrap gap-2 border-t border-line p-3"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const form = e.currentTarget;
+                  const body = String(new FormData(form).get('body') ?? '').trim();
+                  if (!body) return;
+                  call('/comments', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ body, file_path: active || null }),
+                  }, 'Comment added.');
+                  form.reset();
+                }}
+              >
+                <label className="sr-only" htmlFor="comment">Comment</label>
+                <input id="comment" name="body"
+                  placeholder={'Comment on ' + (active || 'this project')}
+                  className="h-10 min-w-0 flex-1 basis-[180px] rounded-xl border border-line px-3
+                             text-sm outline-none focus:border-brand-500" />
+                <button type="submit" disabled={pending}
+                  className="inline-flex min-h-[40px] shrink-0 items-center rounded-2xl
+                             bg-brand-600 px-4 text-[13px] font-bold text-white
+                             hover:bg-brand-700 disabled:opacity-50">
+                  Add
+                </button>
+              </form>
+            ) : null}
+          </Card>
+        </div>
       </div>
     </div>
   );

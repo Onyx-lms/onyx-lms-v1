@@ -4,6 +4,7 @@ import { OnyxPeople, type Member } from '@/components/onyx-people';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxPageRole, onyxApi, type Me } from '@/lib/onyx-session';
 import { CreatePanel } from '@/components/onyx-create';
+import { SectionHead, StatTile } from '@/components/onyx-ui';
 
 export const metadata: Metadata = { title: 'People' };
 
@@ -15,6 +16,18 @@ export default async function OnyxPeoplePage() {
     onyxApi<Member[]>('/api/onyx/members'),
   ]);
 
+  /**
+   * A headcount by role, which is the question the strip answers.
+   *
+   * Deliberately not a filter: the roster below has its own search, and two
+   * controls answering "who is here" from the same data is how the same five
+   * numbers end up on a screen twice and disagreeing. The account-state tabs
+   * the design shows -- active, invited, suspended -- have nothing behind
+   * them: `/api/onyx/members` returns a role and a user, and no lifecycle.
+   */
+  const count = (...roles: Member['role'][]) =>
+    members.filter((m) => roles.includes(m.role)).length;
+
   return (
     <OnyxShell
       me={me}
@@ -22,6 +35,16 @@ export default async function OnyxPeoplePage() {
       title="People"
       subtitle={'Everyone at ' + me.tenant.name + '. Nobody from anywhere else.'}
     >
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatTile label="Students" value={count('student')} note="enrolled at this institution" />
+        <StatTile label="Teaching" value={count('faculty')} note="faculty accounts" />
+        <StatTile label="Staff" value={count('admin', 'exams', 'placement')}
+          note="registry, exams, careers" />
+        <StatTile label="Outside" value={count('guardian', 'employer')}
+          note="guardians and employers" />
+      </div>
+
+      <SectionHead title="Roster" />
       <OnyxPeople members={members} canEdit={claims.tenant_role === 'admin'} />
 
       {/* CMP-04: a guardian is a member of the institution in their own right,
@@ -29,7 +52,8 @@ export default async function OnyxPeoplePage() {
           confirms it themselves, so an administrator cannot quietly hand
           somebody's attendance and results to a third party. */}
       {claims.tenant_role === 'admin' ? (
-        <div className="mt-6">
+        <div className="mt-7">
+          <SectionHead title="Family links" />
           <CreatePanel
             title="Link a guardian to a student" cta="Link a guardian" icon="users" compact
             endpoint="guardians"

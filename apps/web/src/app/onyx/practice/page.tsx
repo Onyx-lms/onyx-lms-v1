@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
-import { Empty, ListRow, Pill, RowList } from '@/components/onyx-ui';
+import {
+  ActionLink, Buckets, Card, Empty, ListRow, Pill, RowList, SectionHead, Segmented, StackBar,
+} from '@/components/onyx-ui';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, type Me } from '@/lib/onyx-session';
 import { isStaff } from '@/lib/onyx-learn';
@@ -9,6 +11,20 @@ import { CreatePanel } from '@/components/onyx-create';
 import type { Problem } from '@/lib/onyx-codelab';
 
 export const metadata: Metadata = { title: 'Practice' };
+
+/** Easy first, hard last -- the order the bank is read in, not alphabetical. */
+const DIFFICULTIES = ['easy', 'medium', 'hard'] as const;
+
+/** One meaning per colour, and the same one the row chips use. */
+const DIFFICULTY_TONE: Record<string, 'good' | 'soon' | 'late'> = {
+  easy: 'good', medium: 'soon', hard: 'late',
+};
+
+const DIFFICULTY_BAR = {
+  easy: 'bg-green-600', medium: 'bg-accent-500', hard: 'bg-red-600',
+} as const;
+
+const cap = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 
 /** LAB-04 -- the problem bank, by topic and difficulty. */
 export default async function OnyxPracticePage({ searchParams }: {
@@ -27,6 +43,18 @@ export default async function OnyxPracticePage({ searchParams }: {
 
   const topics = [...new Set(problems.map((p) => p.topic).filter(Boolean))] as string[];
 
+  // The counts belong in the filter label -- you should know what is behind a
+  // filter before you spend a click finding out it was empty. They are only
+  // shown unfiltered, because a filtered response is the only thing this page
+  // is given and counting a subset would print a confidently wrong number.
+  const filtered = Boolean(q.difficulty || q.topic);
+  const showCounts = !filtered && problems.length > 0;
+  const byDifficulty = DIFFICULTIES.map((d) => ({
+    difficulty: d,
+    count: problems.filter((p) => p.difficulty === d).length,
+  }));
+  const banded = byDifficulty.reduce((n, b) => n + b.count, 0);
+
   return (
     <OnyxShell
       me={me}
@@ -35,6 +63,9 @@ export default async function OnyxPracticePage({ searchParams }: {
       subtitle={isStaff(me.role)
         ? 'The problem bank, drafts included.'
         : 'Work through problems and get graded instantly.'}
+      action={isStaff(me.role) ? null : (
+        <ActionLink href="/onyx/results" label="Your results" tone="quiet" />
+      )}
     >
       {/* LAB-04: "curated problems organised by topic and difficulty".
           Left as a draft on creation -- the API refuses to publish a problem
@@ -55,49 +86,104 @@ export default async function OnyxPracticePage({ searchParams }: {
           />
         </div>
       ) : null}
-      {/* Filters as pills, and the selected one carries the weight. The old
-          set drew every option with the same border, so which filter was on
-          was a question you answered by reading the URL. */}
-      <div className="mb-5 flex flex-wrap items-center gap-2">
-        <Filter href="/onyx/practice" label="All" on={!q.difficulty && !q.topic} />
-        {(['easy', 'medium', 'hard'] as const).map((d) => (
-          <Filter key={d} href={'/onyx/practice?difficulty=' + d}
-            label={d[0]!.toUpperCase() + d.slice(1)} on={q.difficulty === d} />
-        ))}
-        {topics.length ? <span className="mx-1 h-5 w-px bg-line" aria-hidden="true" /> : null}
-        {topics.map((t) => (
-          <Filter key={t} href={'/onyx/practice?topic=' + encodeURIComponent(t)}
-            label={t} on={q.topic === t} />
-        ))}
+
+      {/* What the bank is made of, before the list makes anyone count rows.
+          One bar and its breakdown share an order, so "most of this is medium"
+          is a glance rather than a subtraction. */}
+      {!filtered && banded > 0 ? (
+        <Card className="mb-5 p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <div className="text-[10.5px] font-bold uppercase tracking-[.08em] text-muted">
+              Problems in the bank
+            </div>
+            <div className="text-[26px] font-extrabold leading-none tabular-nums">
+              {problems.length}
+            </div>
+          </div>
+          <div className="mt-3">
+            <StackBar parts={byDifficulty.map((b) => ({
+              value: b.count, className: DIFFICULTY_BAR[b.difficulty],
+            }))} />
+          </div>
+          <Buckets rows={byDifficulty.map((b) => ({
+            label: cap(b.difficulty),
+            dotClass: DIFFICULTY_BAR[b.difficulty],
+            count: Math.round((b.count / banded) * 100) + '%',
+            amount: b.count,
+          }))} />
+        </Card>
+      ) : null}
+
+      {/* Filters in the order the question is asked: how hard, then what
+          topic. The selected one carries the weight -- the old set drew every
+          option with the same border, so which filter was on was a question
+          you answered by reading the URL. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <Segmented items={[
+          { label: 'All', href: '/onyx/practice', active: !q.difficulty && !q.topic,
+            count: showCounts ? problems.length : undefined },
+          ...byDifficulty.map((b) => ({
+            label: cap(b.difficulty),
+            href: '/onyx/practice?difficulty=' + b.difficulty,
+            active: q.difficulty === b.difficulty,
+            count: showCounts ? b.count : undefined,
+          })),
+        ]} />
       </div>
 
+      {topics.length ? (
+        <div className="mb-5 flex flex-wrap items-center gap-2">
+          <span className="text-[11.5px] font-bold uppercase tracking-[.085em] text-muted">
+            Topic
+          </span>
+          {topics.map((t) => (
+            <Topic key={t} href={'/onyx/practice?topic=' + encodeURIComponent(t)}
+              label={t} on={q.topic === t} />
+          ))}
+        </div>
+      ) : null}
+
+      <SectionHead title={'Problems · ' + problems.length} />
+
       <RowList label="Problems">
-        {problems.map((p) => (
-          <ListRow
-            key={p.id}
-            icon="code"
-            tone="brand"
-            title={p.title}
-            href={'/onyx/practice/' + p.id}
-            chips={
-              <>
-                {/* Difficulty is the thing a learner picks on, so it is a
-                    coloured chip and not a lowercase word in a grey column. */}
-                <Pill tone={p.difficulty === 'hard' ? 'late'
-                  : p.difficulty === 'medium' ? 'soon' : 'good'}>
-                  {p.difficulty[0]!.toUpperCase() + p.difficulty.slice(1)}
-                </Pill>
-                {p.status !== 'published' ? <Pill tone="neutral">Draft</Pill> : null}
-              </>
-            }
-            meta={p.topic ?? 'No topic'}
-            action={{ href: '/onyx/practice/' + p.id, label: 'Solve' }}
-          />
-        ))}
+        {problems.map((p) => {
+          const draft = p.status !== 'published';
+          const tone = DIFFICULTY_TONE[p.difficulty];
+          return (
+            <ListRow
+              key={p.id}
+              icon="code"
+              tone={draft ? 'neutral' : 'brand'}
+              title={p.title}
+              href={'/onyx/practice/' + p.id}
+              chips={
+                <>
+                  {/* Difficulty is the thing a learner picks on, so it is a
+                      coloured chip and not a lowercase word in a grey column. */}
+                  <Pill tone={tone ?? 'neutral'}>{cap(p.difficulty)}</Pill>
+                  {draft ? <Pill tone="neutral">Draft</Pill> : null}
+                </>
+              }
+              meta={
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <span>{p.topic ?? 'No topic'}</span>
+                  {(p.tags ?? []).slice(0, 3).map((t) => (
+                    <span key={t}>· {t}</span>
+                  ))}
+                  <span>· {(p.time_limit_ms / 1000).toFixed(1)}s per case</span>
+                  {(p.languages ?? []).length ? (
+                    <span>· {p.languages.join(', ')}</span>
+                  ) : null}
+                </span>
+              }
+              action={{ href: '/onyx/practice/' + p.id, label: 'Solve' }}
+            />
+          );
+        })}
         {problems.length === 0 ? (
           <li>
             <Empty icon="code">
-              {q.difficulty || q.topic
+              {filtered
                 ? 'No problems match that filter.'
                 : 'No problems have been published yet.'}
             </Empty>
@@ -108,10 +194,10 @@ export default async function OnyxPracticePage({ searchParams }: {
   );
 }
 
-/** One filter pill. Selected is filled, not merely outlined differently. */
-function Filter({ href, label, on }: { href: string; label: string; on: boolean }) {
+/** One topic chip. Selected is filled, not merely outlined differently. */
+function Topic({ href, label, on }: { href: string; label: string; on: boolean }) {
   return (
-    <Link href={href}
+    <Link href={href} aria-current={on ? 'page' : undefined}
       className={'inline-flex min-h-[32px] items-center rounded-2xl px-3 text-[13px] font-semibold '
         + (on
           ? 'bg-brand-600 text-white'

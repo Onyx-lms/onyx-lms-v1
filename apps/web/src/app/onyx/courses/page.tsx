@@ -9,6 +9,15 @@ import {
   Card, CardGrid, Empty, Icon, Meter, Pill, SectionHead,
 } from '@/components/onyx-ui';
 
+/**
+ * The two questions this page answers wear different shapes.
+ *
+ * "Where was I" is a learner resuming work: progress, and one button. "What
+ * else is there" is browsing: enough of a course to judge it by. The catalogue
+ * card's footer is the honest half -- a course you cannot join says who to ask
+ * instead of offering a button the API would refuse.
+ */
+
 export const metadata: Metadata = { title: 'Courses' };
 
 /**
@@ -84,13 +93,14 @@ export default async function OnyxCoursesPage() {
     >
       {mine.length ? (
         <section className="mb-9">
-          <SectionHead title={staff ? 'Courses you teach' : 'Continue'} />
+          <SectionHead title={staff ? 'Courses you teach' : 'Continue'}
+            action={{ href: '/onyx/dashboard', label: 'Your dashboard' }} />
           <CardGrid min="20rem">
             {mine.map((c) => {
               const p = progressFor.get(c.id);
               const done = p ? p.completed >= p.total && p.total > 0 : false;
               return (
-                <Card key={c.id} as="li" className="flex flex-col gap-3 p-4">
+                <Card key={c.id} className="flex min-w-0 flex-col gap-3 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <Link href={'/onyx/courses/' + c.id}
@@ -121,11 +131,13 @@ export default async function OnyxCoursesPage() {
                     </p>
                   )}
 
+                  {/* "Resume" on a course nobody has opened is a small lie, and
+                      the kind a learner notices. */}
                   <Link
                     href={'/onyx/courses/' + c.id}
-                    className="mt-auto inline-flex min-h-[38px] items-center justify-center gap-1.5
-                               rounded-2xl bg-brand-600 px-3.5 text-[13px] font-bold text-white
-                               hover:bg-brand-700"
+                    className="mt-auto inline-flex min-h-[40px] w-full items-center justify-center
+                               gap-1.5 rounded-2xl bg-brand-600 px-3.5 text-[13px] font-bold
+                               text-white hover:bg-brand-700"
                   >
                     <Icon name="play" className="h-3.5 w-3.5" />
                     {p && p.completed > 0 ? 'Resume' : 'Start'}
@@ -139,6 +151,11 @@ export default async function OnyxCoursesPage() {
 
       <section>
         <SectionHead title={staff ? 'Every course' : 'Catalogue'} />
+        {!staff && mine.length ? (
+          <p className="-mt-1 mb-3 text-[12.5px] text-muted">
+            Courses you are already taking are not repeated here.
+          </p>
+        ) : null}
         {rest.length === 0 ? (
           <Card className="p-2">
             <Empty icon="book">
@@ -150,7 +167,7 @@ export default async function OnyxCoursesPage() {
         ) : (
           <CardGrid>
             {rest.map((c) => (
-              <Card key={c.id} as="li" className="flex flex-col gap-2.5 p-4">
+              <Card key={c.id} className="flex min-w-0 flex-col gap-2.5 p-4">
                 <div className="flex items-center gap-2">
                   <span className="font-mono text-[12px] font-bold text-muted">{c.code}</span>
                   {enrolled.has(c.id) ? <Pill tone="good">Enrolled</Pill> : null}
@@ -185,9 +202,18 @@ export default async function OnyxCoursesPage() {
                 </div>
 
                 {/* LRN-01: "enroll themselves". The catalogue used to say a
-                    course was open to join and offer nothing to join it with. */}
-                {c.self_enroll && !enrolled.has(c.id) && me.role === 'student' ? (
-                  <ActionButton endpoint={'courses/' + c.id + '/enroll'} label="Join this course" />
+                    course was open to join and offer nothing to join it with --
+                    and where self-enrolment is off, it said nothing at all,
+                    which reads as a broken card rather than a closed door. */}
+                {me.role === 'student' && !enrolled.has(c.id) ? (
+                  c.self_enroll ? (
+                    <ActionButton endpoint={'courses/' + c.id + '/enroll'}
+                      label="Join this course" />
+                  ) : (
+                    <p className="text-[12.5px] text-muted">
+                      Enrolment for this course is handled by the programme office.
+                    </p>
+                  )
                 ) : null}
               </Card>
             ))}

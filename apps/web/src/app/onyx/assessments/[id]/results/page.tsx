@@ -4,8 +4,27 @@ import { OnyxShell } from '@/components/onyx-shell';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxPageRole, onyxApi, type Me } from '@/lib/onyx-session';
 import type { Assessment, ItemStat, ResultsReport } from '@/lib/onyx-assess';
+import {
+  ActionLink, Banner, Buckets, Card, CardGrid, DataTable, EmptyRow, Icon, Meter, Pill,
+  Score, SectionHead, StackBar, State, StatTile,
+} from '@/components/onyx-ui';
 
 export const metadata: Metadata = { title: 'Results' };
+
+/** A label/value line, at the one size the rail uses everywhere. */
+function Fact({ k, v }: { k: string; v: React.ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 border-b border-line py-2
+                    first:pt-0 last:border-0 last:pb-0">
+      <dt className="text-[13px] text-muted">{k}</dt>
+      <dd className="text-right text-[13.5px] font-semibold tabular-nums">{v}</dd>
+    </div>
+  );
+}
+
+const BANDS = ['0–39%', '40–49%', '50–59%', '60–69%', '70–79%', '80–100%'] as const;
+const bandOf = (p: number) =>
+  p < 40 ? 0 : p < 50 ? 1 : p < 60 ? 2 : p < 70 ? 3 : p < 80 ? 4 : 5;
 
 /**
  * ASS-04 -- the score report and the item analysis.
@@ -24,12 +43,29 @@ export default async function OnyxResultsPage({ params }: { params: Promise<{ id
     onyxApi<{ sat: number; items: ItemStat[] }>('/api/onyx/assessments/' + id + '/items'),
   ]);
 
-  const stat = (label: string, value: string | number) => (
-    <div className="rounded-2xl border border-line p-4">
-      <div className="text-xs uppercase tracking-wide text-muted">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums">{value}</div>
-    </div>
-  );
+  // The distribution is counted off the candidate rows already returned. Bars
+  // rather than a curve, because the questions a marking meeting asks -- how
+  // many failed, is the middle where we expected -- are length comparisons,
+  // and every bar carries its own count so nothing rests on the colour.
+  const rows = report.candidates;
+  const histogram = BANDS.map(() => 0);
+  rows.forEach((c) => { histogram[bandOf(c.percent)] += 1; });
+  const tallest = Math.max(1, ...histogram);
+
+  const failed = rows.filter((c) => c.passed === false).length;
+  const notFailed = rows.filter((c) => c.passed !== false);
+  const strong = notFailed.filter((c) => c.percent >= 70).length;
+  const middling = notFailed.length - strong;
+  const share = (n: number) => rows.length ? Math.round((n / rows.length) * 100) + '%' : '0%';
+
+  // The two verdicts item analysis hands back, and the one item that earns
+  // its place. Both are already in the payload; nothing new is fetched.
+  const suspect = items.items.filter((i) => i.suspect_key);
+  const flat = items.items.filter((i) => i.uninformative && !i.suspect_key);
+  const best = items.items
+    .filter((i) => i.discrimination !== null && i.discrimination >= 0.3 && !i.suspect_key)
+    .sort((a, b) => (b.discrimination ?? 0) - (a.discrimination ?? 0))
+    .slice(0, 2);
 
   return (
     <OnyxShell
@@ -40,83 +76,174 @@ export default async function OnyxResultsPage({ params }: { params: Promise<{ id
         ? 'Published to candidates.'
         : 'Not published — candidates cannot see any of this yet.'}
     >
-      <div className="flex flex-wrap items-center gap-3">
-        <Link href={'/onyx/assessments/' + id} className="text-sm text-muted hover:underline">
-          &larr; Back to the assessment
+      <nav aria-label="Breadcrumb"
+        className="mb-3 flex flex-wrap items-center gap-1.5 text-sm text-muted">
+        <Link href="/onyx/assessments" className="font-semibold text-brand-600 hover:underline">
+          Assessments
         </Link>
-        {/* Two formats because they are two jobs. The CSV is for whoever is
-            going to do arithmetic on it; the PDF carries the cohort
-            statistics and prints, which is what gets filed. */}
-        <a
-          href={'/api/proxy/onyx/assessments/' + id + '/results.csv'}
-          download
-          className="ml-auto rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
-        >
-          Export CSV
+        <Icon name="chevron" className="h-3.5 w-3.5 text-faint" />
+        <Link href={'/onyx/assessments/' + id}
+          className="truncate font-semibold text-brand-600 hover:underline">
+          {assessment.title}
+        </Link>
+        <Icon name="chevron" className="h-3.5 w-3.5 text-faint" />
+        <span>Results</span>
+      </nav>
+
+      {/* Two formats because they are two jobs. The CSV is for whoever is
+          going to do arithmetic on it; the PDF carries the cohort statistics
+          and prints, which is what gets filed. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <Link href={'/onyx/assessments/' + id + '/marking'}
+          className="inline-flex min-h-[38px] items-center gap-1.5 rounded-2xl bg-brand-600 px-3.5
+                     text-[13px] font-bold text-white hover:bg-brand-700">
+          <Icon name="edit" className="h-4 w-4" /> Marking queue
+        </Link>
+        <span className="flex-1" />
+        <a href={'/api/proxy/onyx/assessments/' + id + '/results.csv'} download
+          className="inline-flex min-h-[38px] items-center gap-1.5 rounded-2xl border border-line
+                     bg-white px-3.5 text-[13px] font-bold text-slate-700 hover:bg-brand-50">
+          <Icon name="download" className="h-4 w-4" /> Export CSV
         </a>
-        <a
-          href={'/api/proxy/onyx/assessments/' + id + '/results.pdf'}
-          download
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
-        >
-          Export PDF
+        <a href={'/api/proxy/onyx/assessments/' + id + '/results.pdf'} download
+          className="inline-flex min-h-[38px] items-center gap-1.5 rounded-2xl border border-line
+                     bg-white px-3.5 text-[13px] font-bold text-slate-700 hover:bg-brand-50">
+          <Icon name="file" className="h-4 w-4" /> Export PDF
         </a>
       </div>
 
-      <section className="mt-6">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Cohort</h2>
-        <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {stat('Sat', report.cohort.sat)}
-          {stat('Mean', report.cohort.mean + ' / ' + report.cohort.max_score)}
-          {stat('Median', report.cohort.median)}
-          {stat('Spread', report.cohort.stdev)}
-          {report.cohort.pass_rate !== null ? stat('Pass rate', report.cohort.pass_rate + '%') : null}
-          {stat('Highest', report.cohort.highest)}
-          {stat('Lowest', report.cohort.lowest)}
-          {stat('Flagged', report.cohort.flagged)}
-        </div>
-      </section>
+      {/* Said once, at the top, in words. */}
+      <Banner tone={report.published ? 'good' : 'warn'}
+        icon={report.published ? 'eye' : 'lock'}>
+        {report.published ? (
+          <>
+            <span className="font-bold">Published.</span> Every candidate can see their score,
+            their rubric comments and whether they passed.
+          </>
+        ) : (
+          <>
+            <span className="font-bold">Not published.</span> No candidate can see any of this
+            yet. Releasing closes marking for good and cannot be undone.
+          </>
+        )}
+      </Banner>
 
-      <section className="mt-8">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
-          Item analysis
-        </h2>
-        <p className="mt-1 text-xs text-muted">
-          Facility is the proportion who got it right. Discrimination compares the strongest
-          and weakest 27% &mdash; a negative value usually means the answer key is wrong,
-          not that the question was hard.
-        </p>
-        <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-white shadow-card">
-          <table className="w-full text-sm">
-            <thead className="border-b border-line bg-slate-50 text-left text-[11px] font-bold uppercase tracking-[.06em] text-muted">
-              <tr>
-                <th className="px-4 py-3">Question</th>
-                <th className="px-4 py-3">Answered</th>
-                <th className="px-4 py-3">Correct</th>
-                <th className="px-4 py-3">Facility</th>
-                <th className="px-4 py-3">Discrimination</th>
-              </tr>
-            </thead>
-            <tbody>
+      <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+        <div className="min-w-0 space-y-6">
+          <CardGrid min="11rem">
+            <StatTile label="Sat" value={report.cohort.sat} note="candidates" />
+            <StatTile label="Mean" value={report.cohort.mean}
+              note={'out of ' + report.cohort.max_score} />
+            <StatTile label="Median" value={report.cohort.median}
+              note={'out of ' + report.cohort.max_score} />
+            {report.cohort.pass_rate !== null ? (
+              <StatTile label="Pass rate" value={report.cohort.pass_rate + '%'}
+                note={(report.cohort.passed ?? 0) + ' of ' + report.cohort.sat + ' passed'} />
+            ) : (
+              <StatTile label="Spread" value={report.cohort.stdev} note="standard deviation" />
+            )}
+          </CardGrid>
+
+          <section>
+            <SectionHead title="Grade distribution" />
+            <Card className="p-4">
+              {rows.length === 0 ? (
+                <p className="text-sm text-muted">
+                  Nothing is marked yet, so there is no distribution to draw.
+                </p>
+              ) : (
+                <>
+                  <ul className="space-y-3">
+                    {BANDS.map((label, i) => (
+                      <li key={label}>
+                        <div className="flex items-baseline justify-between gap-3">
+                          <span className="text-[13px] font-bold">
+                            {label}
+                            {i === 0 ? (
+                              <span className="ml-1.5 font-normal text-muted">
+                                · below the pass mark
+                              </span>
+                            ) : null}
+                          </span>
+                          <span className="text-[13px] tabular-nums text-muted">
+                            {histogram[i]}
+                          </span>
+                        </div>
+                        <div className="mt-1.5">
+                          <Meter percent={(histogram[i] / tallest) * 100}
+                            label={histogram[i] + ' candidates scored ' + label} />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+
+                  {/* The same cohort as one bar, split at the pass mark. The
+                      histogram answers "what shape"; this answers "how many
+                      are in trouble", which is the number that leaves the
+                      room. Each row carries its count and its share. */}
+                  <div className="mt-5 border-t border-line pt-4">
+                    <StackBar parts={[
+                      { value: failed, className: 'bg-red-600' },
+                      { value: middling, className: 'bg-accent-500' },
+                      { value: strong, className: 'bg-green-600' },
+                    ]} />
+                    <Buckets rows={[
+                      { label: 'Did not pass', dotClass: 'bg-red-600',
+                        count: failed, amount: share(failed) },
+                      { label: 'Passed, under 70%', dotClass: 'bg-accent-500',
+                        count: middling, amount: share(middling) },
+                      { label: '70% and above — strong', dotClass: 'bg-green-600',
+                        count: strong, amount: share(strong) },
+                    ]} />
+                  </div>
+                </>
+              )}
+            </Card>
+          </section>
+
+          <section>
+            <SectionHead title="Item analysis" />
+            <p className="mb-2.5 text-[13px] text-muted">
+              Facility is the proportion who got it right. Discrimination compares the strongest
+              and weakest 27% &mdash; a negative value usually means the answer key is wrong,
+              not that the question was hard. Drawn from {items.sat}{' '}
+              {items.sat === 1 ? 'paper' : 'papers'}.
+            </p>
+            <DataTable
+              caption="Item analysis: facility and discrimination for every objective question"
+              head={<>
+                <th scope="col">Question</th>
+                <th scope="col">Answered</th>
+                <th scope="col">Correct</th>
+                <th scope="col">Facility</th>
+                <th scope="col">Discrimination</th>
+              </>}
+            >
               {items.items.map((i) => (
-                <tr key={i.question_id} className="border-t border-line align-top">
-                  <td className="px-4 py-3">
+                <tr key={i.question_id} className="align-top">
+                  <td>
                     <span className="line-clamp-2">{i.prompt}</span>
                     {i.suspect_key ? (
-                      <span className="mt-1 block text-xs text-rose-700">
-                        Weaker candidates did better &mdash; check the key.
+                      <span className="mt-1.5 flex items-center gap-1.5">
+                        <Pill tone="late">Check the key</Pill>
+                        <span className="text-[12.5px] text-muted">
+                          weaker candidates did better
+                        </span>
                       </span>
                     ) : null}
                     {i.uninformative ? (
-                      <span className="mt-1 block text-xs text-amber-700">
-                        {i.facility === 1 ? 'Everybody' : 'Nobody'} got this right.
+                      <span className="mt-1.5 flex items-center gap-1.5">
+                        <Pill tone="soon">Tells you nothing</Pill>
+                        <span className="text-[12.5px] text-muted">
+                          {i.facility === 1 ? 'everybody' : 'nobody'} got this right
+                        </span>
                       </span>
                     ) : null}
                   </td>
-                  <td className="px-4 py-3 tabular-nums">{i.responses}</td>
-                  <td className="px-4 py-3 tabular-nums">{i.correct}</td>
-                  <td className="px-4 py-3 tabular-nums">{i.facility}</td>
-                  <td className="px-4 py-3 tabular-nums">
+                  <td className="tabular-nums">{i.responses}</td>
+                  <td className="tabular-nums">{i.correct}</td>
+                  <td className="tabular-nums">{i.facility}</td>
+                  <td className="tabular-nums">
                     {i.discrimination === null
                       ? <span className="text-muted">too few papers</span>
                       : i.discrimination}
@@ -124,57 +251,151 @@ export default async function OnyxResultsPage({ params }: { params: Promise<{ id
                 </tr>
               ))}
               {items.items.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-muted">
-                    No objective questions have been answered yet.
-                  </td>
-                </tr>
+                <EmptyRow colSpan={5} icon="chart">
+                  No objective questions have been answered yet.
+                </EmptyRow>
               ) : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
+            </DataTable>
+          </section>
 
-      <section className="mt-8">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Candidates</h2>
-        <div className="mt-3 overflow-x-auto rounded-2xl border border-line bg-white shadow-card">
-          <table className="w-full text-sm">
-            <thead className="border-b border-line bg-slate-50 text-left text-[11px] font-bold uppercase tracking-[.06em] text-muted">
-              <tr>
-                <th className="px-4 py-3">Attempt</th>
-                <th className="px-4 py-3">Score</th>
-                <th className="px-4 py-3">Percent</th>
-                <th className="px-4 py-3">Outcome</th>
-                <th className="px-4 py-3">Integrity</th>
-              </tr>
-            </thead>
-            <tbody>
-              {report.candidates.map((c) => (
-                <tr key={c.attempt_id} className="border-t border-line">
-                  <td className="px-4 py-3">
+          <section>
+            <SectionHead title="Candidates" />
+            <DataTable
+              caption={'Per-candidate results for ' + assessment.title}
+              head={<>
+                <th scope="col">Attempt</th>
+                <th scope="col">Score</th>
+                <th scope="col">Percent</th>
+                <th scope="col">Outcome</th>
+                <th scope="col">Integrity</th>
+              </>}
+            >
+              {rows.map((c) => (
+                <tr key={c.attempt_id}>
+                  <td>
                     <Link href={'/onyx/attempts/' + c.attempt_id + '/mark'}
-                      className="hover:underline">
+                      className="font-semibold tabular-nums hover:underline">
                       {c.attempt_id}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 tabular-nums">{c.score} / {c.max_score}</td>
-                  <td className="px-4 py-3 tabular-nums">{c.percent}%</td>
-                  <td className="px-4 py-3">
-                    {c.passed === null ? '-' : (
-                      <span className={c.passed ? 'text-emerald-700' : 'text-rose-700'}>
-                        {c.passed ? 'passed' : 'not passed'}
-                      </span>
-                    )}
+                  {/* The band is never the only signal: the number lives
+                      inside the chip, so the chip is emphasis and not
+                      information anyone can be locked out of. */}
+                  <td><Score value={c.score} outOf={c.max_score}
+                    band={c.passed === false ? 'lo' : undefined} /></td>
+                  <td className="tabular-nums">{c.percent}%</td>
+                  <td>
+                    {c.passed === null
+                      ? <State tone="idle">Not decided</State>
+                      : <State tone={c.passed ? 'on' : 'off'}>
+                        {c.passed ? 'Passed' : 'Not passed'}
+                      </State>}
                   </td>
-                  <td className="px-4 py-3 capitalize text-muted">
-                    {c.integrity_flags > 0 ? c.integrity_status : 'clean'}
+                  <td>
+                    {c.integrity_flags > 0 ? (
+                      <Link href={'/onyx/attempts/' + c.attempt_id + '/integrity'}
+                        className="inline-flex items-center gap-1.5 whitespace-nowrap text-[13px]
+                                   font-semibold text-brand-600 hover:underline">
+                        <Icon name="shield" className="h-3.5 w-3.5" />
+                        {c.integrity_flags} · {c.integrity_status}
+                      </Link>
+                    ) : <span className="text-muted">Clean</span>}
                   </td>
                 </tr>
               ))}
-            </tbody>
-          </table>
+              {rows.length === 0 ? (
+                <EmptyRow colSpan={5} icon="users">
+                  Nothing is marked yet, so there are no results to show.
+                </EmptyRow>
+              ) : null}
+            </DataTable>
+          </section>
         </div>
-      </section>
+
+        <aside className="min-w-0 space-y-6">
+          <section>
+            <SectionHead title="Release" />
+            <Card className="p-4">
+              <p className="text-[13px] leading-relaxed text-muted">
+                {report.published
+                  ? 'These marks are out. Re-marking a published paper is an appeal, not an edit.'
+                  : 'Publishing shows every candidate their score, their rubric comments and '
+                    + 'whether they passed. Marking closes at the same moment.'}
+              </p>
+              <p className="mt-3">
+                <State tone={report.published ? 'on' : 'idle'}>
+                  {report.published ? 'Released' : 'Not released'}
+                </State>
+              </p>
+              {!report.published ? (
+                <div className="mt-3">
+                  <ActionLink href={'/onyx/assessments/' + id} label="Go to release" tone="quiet" />
+                </div>
+              ) : null}
+            </Card>
+          </section>
+
+          <section>
+            <SectionHead title="Cohort" />
+            <Card className="p-4">
+              <dl>
+                <Fact k="Sat the paper" v={report.cohort.sat} />
+                <Fact k="Spread (σ)" v={report.cohort.stdev} />
+                <Fact k="Highest"
+                  v={report.cohort.highest + ' / ' + report.cohort.max_score} />
+                <Fact k="Lowest"
+                  v={report.cohort.lowest + ' / ' + report.cohort.max_score} />
+                {report.cohort.passed !== null
+                  ? <Fact k="Passed" v={report.cohort.passed} /> : null}
+                <Fact k="Flagged for integrity" v={report.cohort.flagged} />
+              </dl>
+            </Card>
+          </section>
+
+          {suspect.length || flat.length || best.length ? (
+            <section>
+              <SectionHead title="Questions worth a look" />
+              <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line
+                             bg-white shadow-card">
+                {suspect.slice(0, 3).map((i) => (
+                  <li key={'s' + i.question_id} className="flex items-start gap-3 px-3.5 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="line-clamp-2 text-[13.5px] font-semibold">{i.prompt}</div>
+                      <div className="mt-0.5 text-[12.5px] tabular-nums text-muted">
+                        Facility {i.facility} · weaker candidates did better
+                      </div>
+                    </div>
+                    <Pill tone="late">Suspect</Pill>
+                  </li>
+                ))}
+                {flat.slice(0, 2).map((i) => (
+                  <li key={'f' + i.question_id} className="flex items-start gap-3 px-3.5 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="line-clamp-2 text-[13.5px] font-semibold">{i.prompt}</div>
+                      <div className="mt-0.5 text-[12.5px] tabular-nums text-muted">
+                        Facility {i.facility} ·{' '}
+                        {i.facility === 1 ? 'everybody' : 'nobody'} got it right
+                      </div>
+                    </div>
+                    <Pill tone="soon">Tells you nothing</Pill>
+                  </li>
+                ))}
+                {best.map((i) => (
+                  <li key={'b' + i.question_id} className="flex items-start gap-3 px-3.5 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="line-clamp-2 text-[13.5px] font-semibold">{i.prompt}</div>
+                      <div className="mt-0.5 text-[12.5px] tabular-nums text-muted">
+                        Discrimination {i.discrimination} · separates the cohort cleanly
+                      </div>
+                    </div>
+                    <Pill tone="good">Keep</Pill>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+        </aside>
+      </div>
     </OnyxShell>
   );
 }

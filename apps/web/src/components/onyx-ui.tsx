@@ -52,6 +52,27 @@ export const ICONS = {
   save: <><path d="M5 4h11l3 3v13H5z" /><path d="M8 4v5h8V4" /><path d="M8 20v-6h8v6" /></>,
   camera: <><path d="M4 8.5h3l1.5-2h7l1.5 2h3v11H4z" /><circle cx="12" cy="14" r="3.5" /></>,
   trash: <><path d="M5 7h14" /><path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7" /><path d="M7 7l1 13h8l1-13" /></>,
+  search: <><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4.5 4.5" /></>,
+  filter: <><path d="M3.5 6h17l-6.5 7.5V20l-4-2v-4.5z" /></>,
+  plus: <><path d="M12 5v14M5 12h14" /></>,
+  download: <><path d="M12 4v11" /><path d="m7.5 10.5 4.5 4.5 4.5-4.5" /><path d="M4.5 19.5h15" /></>,
+  upload: <><path d="M12 20V9" /><path d="m7.5 13.5 4.5-4.5 4.5 4.5" /><path d="M4.5 4.5h15" /></>,
+  mail: <><rect x="3" y="5.5" width="18" height="13" rx="2.5" /><path d="m3.5 7 8.5 6 8.5-6" /></>,
+  lock: <><rect x="5" y="10.5" width="14" height="9.5" rx="2.5" /><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" /></>,
+  eye: <><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z" /><circle cx="12" cy="12" r="3" /></>,
+  alert: <><path d="M12 4.5 21 19.5H3z" /><path d="M12 10v4" /><path d="M12 17v.1" /></>,
+  x: <><path d="M6 6l12 12M18 6 6 18" /></>,
+  arrow: <><path d="M4 12h15" /><path d="m14 7 5 5-5 5" /></>,
+  external: <><path d="M14 4h6v6" /><path d="m20 4-8.5 8.5" /><path d="M18 14v5.5a1.5 1.5 0 0 1-1.5 1.5h-12A1.5 1.5 0 0 1 3 19.5v-12A1.5 1.5 0 0 1 4.5 6H10" /></>,
+  star: <><path d="m12 4 2.4 5 5.6.8-4 3.9 1 5.5-5-2.7-5 2.7 1-5.5-4-3.9 5.6-.8z" /></>,
+  message: <><path d="M20.5 12.5a7.5 7.5 0 0 1-10.9 6.7L4 20.5l1.4-5.4A7.5 7.5 0 1 1 20.5 12.5z" /></>,
+  video: <><rect x="3" y="6" width="12.5" height="12" rx="2.5" /><path d="m15.5 11 5.5-3v8l-5.5-3z" /></>,
+  grid: <><rect x="3.5" y="3.5" width="7" height="7" rx="1.8" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.8" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.8" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.8" /></>,
+  list: <><path d="M8 6.5h12M8 12h12M8 17.5h12" /><path d="M4 6.5v.1M4 12v.1M4 17.5v.1" /></>,
+  refresh: <><path d="M20 12a8 8 0 1 1-2.5-5.8" /><path d="M20 4v5h-5" /></>,
+  card: <><rect x="2.5" y="5.5" width="19" height="13" rx="2.5" /><path d="M2.5 10h19" /></>,
+  file: <><path d="M13 3.5H7A1.5 1.5 0 0 0 5.5 5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V9z" /><path d="M13 3.5V9h5.5" /></>,
+  target: <><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /></>,
 } as const;
 
 export type IconName = keyof typeof ICONS;
@@ -404,10 +425,26 @@ export function DataTable({ caption, head, children, empty, scroll = true }: {
     </table>
   );
 
+  /*
+   * Two things here are load-bearing, both found by measuring at 320px.
+   *
+   * The shell and the scroller are separate elements. They used to be one, with
+   * `overflow-hidden` and `overflow-x-auto` set on it together — which is a
+   * conflict resolved by whichever rule Tailwind happens to emit last, not by
+   * intent, so the table sometimes clipped instead of scrolling.
+   *
+   * And `relative` is not decoration: <caption className="sr-only"> is
+   * absolutely positioned, so without a positioned ancestor it resolves against
+   * the initial containing block, lands at the wide table's far-right
+   * coordinate in DOCUMENT space, and drags page scroll width past the viewport
+   * while staying invisible. It cost three screens before it was traced.
+   */
   return (
-    <div className={'overflow-hidden rounded-2xl border border-line bg-white shadow-card '
-      + (scroll ? 'overflow-x-auto' : '')}>
-      {table}
+    <div className="relative min-w-0 overflow-hidden rounded-2xl border border-line
+                    bg-white shadow-card">
+      <div className={'relative min-w-0 ' + (scroll ? 'overflow-x-auto' : '')}>
+        {table}
+      </div>
       {empty}
     </div>
   );
@@ -447,5 +484,269 @@ export function StatusDot({ on, onLabel = 'Active', offLabel = 'Suspended' }: {
         className={'h-2 w-2 shrink-0 rounded-full ' + (on ? 'bg-green-600' : 'bg-red-600')} />
       <span className={on ? 'text-green-700' : 'text-red-700'}>{on ? onLabel : offLabel}</span>
     </span>
+  );
+}
+
+/* ===================================================================== */
+/* The primitives the screen designs added. Same rule as everything above:
+   a change here lands on every screen at once rather than being re-typed. */
+/* ===================================================================== */
+
+/**
+ * A four-state status, as a dot AND a word.
+ *
+ * `StatusDot` above only knows on/off. A session is running, an invigilator is
+ * idle, a register is missing — three states, and the same reason applies:
+ * colour alone cannot carry any of them.
+ */
+export function State({ tone, children }: {
+  tone: 'on' | 'off' | 'idle' | 'live'; children: React.ReactNode;
+}) {
+  const tones = {
+    on:   'text-green-700 [&>i]:bg-green-600',
+    off:  'text-red-700 [&>i]:bg-red-600',
+    idle: 'text-muted [&>i]:bg-faint',
+    live: 'text-red-700 [&>i]:bg-red-600 [&>i]:animate-pulse',
+  } as const;
+  return (
+    <span className={'inline-flex items-center gap-1.5 whitespace-nowrap text-[13px] '
+      + 'font-semibold ' + tones[tone]}>
+      <i aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" />
+      {children}
+    </span>
+  );
+}
+
+/**
+ * A mark, banded by value.
+ *
+ * The band is the fast read and the number is the accurate one, so both are
+ * always present — a colour-blind marker reading a column of these gets the
+ * same information, just a beat slower.
+ */
+export function Score({ value, outOf, band }: {
+  value: number | string; outOf?: number; band?: 'hi' | 'mid' | 'lo' | 'none';
+}) {
+  const pct = typeof value === 'number' && outOf ? (value / outOf) * 100 : null;
+  const auto = band ?? (pct === null ? 'none' : pct >= 70 ? 'hi' : pct >= 40 ? 'mid' : 'lo');
+  const tones = {
+    hi:   'bg-green-50 text-green-700',
+    mid:  'bg-accent-50 text-accent-700',
+    lo:   'bg-red-50 text-red-700',
+    none: 'bg-slate-100 text-muted',
+  } as const;
+  return (
+    <span className={'inline-grid min-w-[42px] place-items-center rounded-[9px] px-2 py-0.5 '
+      + 'text-[13px] font-extrabold tabular-nums ' + tones[auto]}>
+      {value}{outOf ? <span className="font-bold opacity-70">/{outOf}</span> : null}
+    </span>
+  );
+}
+
+/** A page-level message. Tone maps to meaning, never to decoration. */
+export function Banner({ tone = 'info', icon, action, children }: {
+  tone?: 'info' | 'warn' | 'late' | 'good';
+  icon?: IconName; action?: React.ReactNode; children: React.ReactNode;
+}) {
+  const tones = {
+    info: 'border-blue-200 bg-blue-50 text-blue-900',
+    warn: 'border-yellow-200 bg-yellow-50 text-yellow-900',
+    late: 'border-red-200 bg-red-50 text-red-900',
+    good: 'border-green-200 bg-green-50 text-green-900',
+  } as const;
+  return (
+    <div className={'flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm ' + tones[tone]}>
+      {icon ? <Icon name={icon} className="mt-0.5 h-[18px] w-[18px] shrink-0" /> : null}
+      <div className="min-w-0 flex-1">{children}</div>
+      {action ? <div className="shrink-0">{action}</div> : null}
+    </div>
+  );
+}
+
+/**
+ * Segmented filters that carry their own counts.
+ *
+ * The count belongs in the label: it tells you what is behind a filter before
+ * you spend a click finding out it was empty.
+ */
+export function Segmented({ items }: {
+  items: { label: string; href: string; count?: number; active?: boolean }[];
+}) {
+  return (
+    <div className="inline-flex flex-wrap gap-0.5 rounded-[13px] bg-slate-100 p-[3px]">
+      {items.map((i) => (
+        <Link key={i.href + i.label} href={i.href}
+          aria-current={i.active ? 'page' : undefined}
+          className={'whitespace-nowrap rounded-[10px] px-3 py-1.5 text-[13px] font-semibold '
+            + (i.active ? 'bg-white text-ink shadow-card' : 'text-muted hover:text-ink')}>
+          {i.label}
+          {i.count !== undefined
+            ? <span className="ml-1 tabular-nums opacity-60">{i.count}</span> : null}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+/** The strip above a table: search, filters, then the actions. */
+export function Toolbar({ children }: { children: React.ReactNode }) {
+  return <div className="mb-3 flex flex-wrap items-center gap-2">{children}</div>;
+}
+
+export function SearchBox({ placeholder = 'Search…', name = 'search', defaultValue }: {
+  placeholder?: string; name?: string; defaultValue?: string;
+}) {
+  return (
+    <label className="flex h-10 max-w-[340px] flex-1 basis-[220px] items-center gap-2
+                      rounded-xl border border-line bg-white px-3">
+      <Icon name="search" className="h-4 w-4 shrink-0 text-muted" />
+      <span className="sr-only">{placeholder}</span>
+      <input name={name} defaultValue={defaultValue} placeholder={placeholder}
+        className="min-w-0 flex-1 border-0 bg-transparent text-sm outline-none" />
+    </label>
+  );
+}
+
+/**
+ * A lifecycle, shown as the thing it is.
+ *
+ * Draft > Published > Closed > Marked > Released is a sequence, and a status
+ * chip alone throws away where in that sequence you are and what comes next.
+ */
+export function Stepper({ steps }: {
+  steps: { label: string; state: 'done' | 'current' | 'todo' }[];
+}) {
+  const tones = {
+    done:    'bg-green-50 text-green-700',
+    current: 'bg-brand-600 text-white',
+    todo:    'bg-slate-100 text-muted',
+  } as const;
+  return (
+    <ol className="flex flex-wrap items-center gap-1 text-[13px]">
+      {steps.map((s, i) => (
+        <li key={s.label} className="flex items-center gap-1">
+          <span className={'inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 '
+            + 'font-semibold ' + tones[s.state]}>
+            {s.state === 'done' ? <Icon name="check" className="h-3.5 w-3.5" /> : null}
+            {s.label}
+          </span>
+          {i < steps.length - 1
+            ? <Icon name="chevron" className="h-3 w-3 text-faint" /> : null}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/**
+ * A total split into where it sits — the shape Stripe uses for collections.
+ *
+ * Four disconnected tiles cannot answer "how much of it is late"; one bar with
+ * its breakdown underneath can, and the bar and the rows share an order.
+ */
+export function StackBar({ parts }: { parts: { value: number; className: string }[] }) {
+  const total = parts.reduce((n, p) => n + p.value, 0) || 1;
+  return (
+    <div className="flex h-2.5 overflow-hidden rounded-full bg-line">
+      {parts.map((p, i) => (
+        <span key={i} className={p.className} style={{ width: (p.value / total) * 100 + '%' }} />
+      ))}
+    </div>
+  );
+}
+
+export function Buckets({ rows }: {
+  rows: { label: string; dotClass: string; count?: React.ReactNode; amount: React.ReactNode }[];
+}) {
+  return (
+    <ul className="mt-3 divide-y divide-line">
+      {rows.map((r) => (
+        <li key={r.label} className="flex items-center gap-2.5 py-2.5 text-[13.5px]">
+          <span aria-hidden className={'h-2.5 w-2.5 shrink-0 rounded-full ' + r.dotClass} />
+          <span className="min-w-0 flex-1">{r.label}</span>
+          {r.count !== undefined
+            ? <span className="tabular-nums text-muted">{r.count}</span> : null}
+          <span className="min-w-[84px] text-right font-bold tabular-nums">{r.amount}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * The dark band a learner lands on.
+ *
+ * Progress alone says where you are, not what to do — so the action names the
+ * next thing rather than saying "continue" and making you click to find out.
+ */
+export function Hero({ eyebrow, title, sub, actions, children }: {
+  eyebrow?: string; title: React.ReactNode; sub?: React.ReactNode;
+  actions?: React.ReactNode; children?: React.ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-2xl bg-gradient-to-br from-brand-700 to-brand-900
+                        p-5 text-white shadow-lift sm:p-6">
+      <div className="flex flex-wrap items-start gap-4">
+        <div className="min-w-0">
+          {eyebrow ? (
+            <p className="text-[11px] font-bold uppercase tracking-[.11em] text-white/70">
+              {eyebrow}
+            </p>
+          ) : null}
+          <h2 className="mt-1 text-[19px] font-extrabold leading-snug sm:text-[22px]">{title}</h2>
+          {sub ? <p className="mt-1 text-sm text-white/80">{sub}</p> : null}
+        </div>
+        {actions ? <div className="ml-auto flex shrink-0 flex-wrap gap-2">{actions}</div> : null}
+      </div>
+      {children ? <div className="mt-4">{children}</div> : null}
+    </section>
+  );
+}
+
+/**
+ * The theatre frame a video lesson sits in.
+ *
+ * Video wants black behind it, not a white card — and the controls that sit on
+ * that black have to be light-on-dark or they vanish.
+ */
+export function Theatre({ label, meta, children, actions }: {
+  label?: React.ReactNode; meta?: React.ReactNode;
+  children: React.ReactNode; actions?: React.ReactNode;
+}) {
+  return (
+    <div className="overflow-hidden rounded-2xl bg-ink shadow-lift">
+      {(label || meta) ? (
+        <div className="flex items-center gap-3 px-4 py-2.5 text-[12.5px] font-semibold text-white/75">
+          <span className="flex min-w-0 items-center gap-2 truncate">{label}</span>
+          <span className="ml-auto flex shrink-0 items-center gap-2">{meta}</span>
+        </div>
+      ) : null}
+      <div className="px-2 pb-2 sm:px-3 sm:pb-3">{children}</div>
+      {actions ? (
+        <div className="flex flex-wrap items-center gap-2.5 px-3 pb-3 text-[13px]">{actions}</div>
+      ) : null}
+    </div>
+  );
+}
+
+/** A read-only code panel. */
+export function CodeBlock({ filename, children }: {
+  filename?: string; children: React.ReactNode;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl bg-[#0B1F28] font-mono text-[12.8px] leading-relaxed text-slate-300">
+      {filename ? (
+        <div className="flex items-center gap-2 border-b border-white/10 bg-[#0A1A22] px-3 py-2
+                        text-[12px] font-semibold text-white/70">
+          <span aria-hidden className="flex gap-1.5">
+            <i className="h-2.5 w-2.5 rounded-full bg-white/20" />
+            <i className="h-2.5 w-2.5 rounded-full bg-white/20" />
+            <i className="h-2.5 w-2.5 rounded-full bg-white/20" />
+          </span>
+          {filename}
+        </div>
+      ) : null}
+      <pre className="overflow-x-auto px-3.5 py-3"><code>{children}</code></pre>
+    </div>
   );
 }

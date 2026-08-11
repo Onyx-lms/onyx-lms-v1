@@ -4,10 +4,11 @@ import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
 import { ROLE_LABELS } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
-import { isStaff, type Assignment, type Course, type Outline } from '@/lib/onyx-learn';
+import { formatDuration, isStaff, type Assignment, type Course, type Outline } from '@/lib/onyx-learn';
 import { OnyxNudges } from '@/components/onyx-engage';
 import {
-  Card, SectionHead, StatTile, Pill, Ring, Meter, Icon, Empty, relativeDue,
+  Banner, Buckets, Card, Hero, Icon, ListRow, Meter, Pill, Ring, RowList,
+  SectionHead, StackBar, StatTile, Empty, relativeDue,
 } from '@/components/onyx-ui';
 import type { ProgressSummary } from '@/lib/onyx-campus';
 
@@ -26,6 +27,12 @@ interface AttendanceLine {
  * version opened on four counters -- which is what a person looks at *after*
  * they know what to do, not instead of it.
  *
+ * An operator's home screen is the opposite shape, and the admin design says
+ * so: the institution in a few numbers, then the one breakdown behind them.
+ * Everything the design shows beyond that -- integrity queues, fee arrears,
+ * live sittings -- has no endpoint on this page, and inventing one is worse
+ * than leaving it out.
+ *
  * `employer` and `guardian` never render this page: they are outsiders whose
  * whole account is a view derived from links other people control, with no
  * course and no progress of their own.
@@ -33,6 +40,20 @@ interface AttendanceLine {
 const REDIRECT: Partial<Record<string, string>> = {
   employer: '/onyx/jobs',
   guardian: '/onyx/family',
+};
+
+/** The role split, in the order an administrator reads it. */
+const ROLE_ORDER = ['student', 'faculty', 'exams', 'placement', 'employer', 'admin'] as const;
+
+/* Six marks that stay distinguishable in greyscale: the label is always
+   beside the dot, so the colour is a locator and never the signal. */
+const ROLE_MARKS: Record<(typeof ROLE_ORDER)[number], string> = {
+  student:   'bg-brand-600',
+  faculty:   'bg-brand-400',
+  exams:     'bg-accent-500',
+  placement: 'bg-brand-200',
+  employer:  'bg-slate-400',
+  admin:     'bg-ink',
 };
 
 export default async function OnyxDashboard() {
@@ -83,6 +104,7 @@ export default async function OnyxDashboard() {
     acc[m.role] = (acc[m.role] ?? 0) + 1;
     return acc;
   }, {});
+  const headcount = (roster ?? []).length;
   const shortfall = (attendance ?? []).filter((a) => a.below_threshold);
 
   const firstName = (me.email ?? '').split('@')[0]!.split(/[._]/)[0]!;
@@ -102,48 +124,72 @@ export default async function OnyxDashboard() {
           {isLearner ? <ResumeCard courses={mine} outlines={outlines} /> : null}
 
           {staff ? (
-            <section className="mb-5">
-              <SectionHead title="People" />
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {(['student', 'faculty', 'exams', 'placement', 'employer', 'admin'] as const)
-                  .map((role) => (
-                    <StatTile key={role} label={ROLE_LABELS[role]} value={counts[role] ?? 0} />
-                  ))}
+            <>
+              {/* The institution in four numbers. A count on its own is a fact;
+                  what makes it a signal is what it is a share of, which is why
+                  each tile carries its denominator rather than floating alone. */}
+              <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <StatTile label="Students" value={counts.student ?? 0}
+                  note={headcount ? 'of ' + headcount + ' people' : undefined} />
+                <StatTile label="Faculty" value={counts.faculty ?? 0}
+                  note={headcount ? 'of ' + headcount + ' people' : undefined} />
+                <StatTile label="Your courses" value={mine.length}
+                  note={mine.length === 1 ? 'you teach 1' : 'you teach ' + mine.length} />
+                <StatTile label="People" value={headcount} note="on the register" />
               </div>
-            </section>
+
+              <section className="mb-5">
+                <SectionHead title="People"
+                  action={{ href: '/onyx/people', label: 'Manage people' }} />
+                {/* One bar, then where it sits. Six disconnected tiles cannot
+                    answer "how much of this institution is staff"; a total with
+                    its breakdown under it can, and the bar and the rows share
+                    an order so the eye can move between them. */}
+                <Card className="p-4">
+                  {headcount ? (
+                    <>
+                      <StackBar parts={ROLE_ORDER.map((r) => ({
+                        value: counts[r] ?? 0, className: ROLE_MARKS[r],
+                      }))} />
+                      <Buckets rows={ROLE_ORDER.map((r) => ({
+                        label: ROLE_LABELS[r],
+                        dotClass: ROLE_MARKS[r],
+                        amount: counts[r] ?? 0,
+                      }))} />
+                    </>
+                  ) : (
+                    <Empty icon="users">
+                      Nobody has been added to {me.tenant.name} yet.
+                    </Empty>
+                  )}
+                </Card>
+              </section>
+            </>
           ) : null}
 
           {due.length ? (
             <section className="mb-5">
               <SectionHead title="Due next" id="due-h"
                 action={{ href: '/onyx/courses', label: 'All courses' }} />
-              <Card>
-                <ul>
-                  {due.map((a, i) => {
-                    const when = relativeDue(a.due_at);
-                    return (
-                      <li key={a.id} className={i ? 'border-t border-line' : ''}>
-                        <Link href={'/onyx/assignments/' + a.id}
-                          className="flex items-center gap-3 px-4 py-3.5 hover:bg-brand-50/40">
-                          <span aria-hidden="true"
-                            className={'h-2.5 w-2.5 shrink-0 rounded-full '
-                              + (when.tone === 'late' ? 'bg-red-600'
-                                : when.tone === 'soon' ? 'bg-accent-500' : 'bg-faint')} />
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[14.5px] font-semibold">
-                              {a.title}
-                            </span>
-                            <span className="block truncate text-[12.5px] text-muted">
-                              {a.course.code} · {a.course.title}
-                            </span>
-                          </span>
-                          <Pill tone={when.tone}>{when.text}</Pill>
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </Card>
+              {/* A list, not a table: a learner is picking one thing to open
+                  rather than comparing a column. Dates are relative because
+                  what anyone scans this for is what is urgent. */}
+              <RowList label="What is due next">
+                {due.map((a) => {
+                  const when = relativeDue(a.due_at);
+                  return (
+                    <ListRow
+                      key={a.id}
+                      icon="edit"
+                      tone={when.tone === 'late' ? 'late' : when.tone === 'soon' ? 'brand' : 'neutral'}
+                      title={a.title}
+                      href={'/onyx/assignments/' + a.id}
+                      meta={a.course.code + ' · ' + a.course.title}
+                      trailing={<Pill tone={when.tone}>{when.text}</Pill>}
+                    />
+                  );
+                })}
+              </RowList>
             </section>
           ) : null}
 
@@ -185,16 +231,26 @@ export default async function OnyxDashboard() {
               <div className="space-y-2">
                 {shortfall.map((a) => {
                   const course = mine.find((c) => c.id === a.course_id);
+                  const short = a.held - a.attended;
                   return (
-                    <div key={a.course_id}
-                      className="flex items-center gap-3 rounded-2xl border border-accent-100
-                                 bg-accent-50 px-4 py-3 text-sm text-accent-700">
-                      <Icon name="flag" className="h-5 w-5" />
-                      <span>
-                        <strong>{course?.title ?? 'A course'}</strong> — {a.percent}%
-                        ({a.attended} of {a.held} sessions)
+                    <Banner key={a.course_id} tone="warn" icon="flag"
+                      action={
+                        <Link href="/onyx/timetable"
+                          className="inline-flex min-h-[36px] items-center rounded-2xl border
+                                     border-yellow-300 px-3 text-[13px] font-bold text-yellow-900
+                                     hover:bg-yellow-100">
+                          Timetable
+                        </Link>
+                      }
+                    >
+                      <strong>{course?.title ?? 'A course'}</strong> — {a.percent}%
+                      {' '}({a.attended} of {a.held} sessions).
+                      <span className="mt-0.5 block text-[13px]">
+                        {short === 1
+                          ? 'One session missed is what put this below the requirement.'
+                          : `${short} sessions missed. This is below the requirement for this course.`}
                       </span>
-                    </div>
+                    </Banner>
                   );
                 })}
               </div>
@@ -232,36 +288,34 @@ export default async function OnyxDashboard() {
           {isLearner ? (
             <section>
               <SectionHead title="Quick links" />
-              <Card>
-                <ul>
-                  {([
-                    ['/onyx/timetable', 'Timetable', 'calendar'],
-                    ['/onyx/results', 'Results', 'award'],
-                    ['/onyx/fees', 'Fees', 'wallet'],
-                    ['/onyx/support', 'Ask for help', 'help'],
-                  ] as const).map(([href, label, icon], i) => (
-                    <li key={href} className={i ? 'border-t border-line' : ''}>
-                      <Link href={href}
-                        className="flex items-center gap-3 px-4 py-3 text-sm font-medium
-                                   hover:bg-brand-50/40 hover:text-brand-700">
-                        <span className="text-brand-600"><Icon name={icon} /></span>
-                        {label}
-                        <span className="ml-auto text-muted">
-                          <Icon name="chevron" className="h-4 w-4" />
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </Card>
+              <RowList label="Quick links">
+                {([
+                  ['/onyx/timetable', 'Timetable', 'calendar'],
+                  ['/onyx/results', 'Results', 'award'],
+                  ['/onyx/fees', 'Fees', 'wallet'],
+                  ['/onyx/support', 'Ask for help', 'help'],
+                ] as const).map(([href, label, icon]) => (
+                  <li key={href}>
+                    <Link href={href}
+                      className="flex items-center gap-3 px-4 py-3 text-sm font-semibold
+                                 hover:bg-brand-50/40 hover:text-brand-700">
+                      <span className="text-brand-600"><Icon name={icon} /></span>
+                      {label}
+                      <span className="ml-auto text-muted">
+                        <Icon name="chevron" className="h-4 w-4" />
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </RowList>
             </section>
           ) : null}
 
           {me.memberships.length > 1 ? (
-            <p className="text-sm text-muted">
+            <Banner tone="info" icon="building">
               You belong to {me.memberships.length} institutions. Use the switcher to move
               between them &mdash; each shows only its own people and records.
-            </p>
+            </Banner>
           ) : null}
         </div>
       </div>
@@ -287,6 +341,10 @@ function progressLine(p: ProgressSummary | null): string {
  * Every serious learning product opens on this -- Uxcel, Coursera, Codecademy
  * and Mindvalley all lead with a resume card. Onyx previously had no resume
  * affordance at all, so a student landed on counters and went hunting.
+ *
+ * The `<section aria-labelledby>` around the band is not decoration: it is how
+ * this region is announced and how it is addressable, so it stays even though
+ * the band itself is now the shared `Hero`.
  */
 function ResumeCard({ courses, outlines }: {
   courses: Course[]; outlines: (Outline | null)[];
@@ -313,116 +371,113 @@ function ResumeCard({ courses, outlines }: {
     ? `/onyx/courses/${course.id}/lessons/${nextLesson.id}`
     : `/onyx/courses/${course.id}`;
 
-  return (
-    <section
-      className="mb-5 overflow-hidden rounded-[20px] bg-gradient-to-br from-brand-600
-                 to-brand-900 p-5 text-white shadow-lift sm:p-6"
-      aria-labelledby="resume-h"
-    >
-      <span className="inline-flex items-center rounded-full border border-white/25
-                       bg-white/15 px-2.5 py-1 text-[10.5px] font-bold uppercase
-                       tracking-[.1em]">
-        {percent > 0 ? 'Pick up where you left off' : 'Start here'}
-      </span>
-      <h2 id="resume-h" className="mt-3 text-xl font-extrabold sm:text-2xl">{course.title}</h2>
-      <p className="mt-1 text-sm text-white/80">
-        {nextLesson ? nextLesson.title : course.code}
-        {nextLesson ? '' : course.credits ? ` · ${course.credits} credits` : ''}
-      </p>
+  // The band names the lesson rather than saying "continue" and making
+  // somebody click to find out what continuing means.
+  const sub = nextLesson
+    ? nextLesson.title
+      + (nextLesson.duration_seconds ? ' — ' + formatDuration(nextLesson.duration_seconds) : '')
+    : course.code + (course.credits ? ` · ${course.credits} credits` : '');
 
-      <div className="mt-4">
+  return (
+    <section className="mb-5" aria-labelledby="resume-h">
+      <Hero
+        eyebrow={percent > 0 ? 'Pick up where you left off' : 'Start here'}
+        title={<span id="resume-h">{course.title}</span>}
+        sub={sub}
+        actions={
+          <>
+            <Link href={href}
+              className="inline-flex min-h-[44px] items-center gap-2 rounded-2xl bg-white px-4
+                         text-[14.5px] font-bold text-brand-700 hover:bg-brand-50
+                         focus-visible:outline-white">
+              <Icon name="play" className="h-4 w-4" />
+              {percent > 0 ? 'Resume lesson' : 'Start course'}
+            </Link>
+            <Link href="/onyx/courses"
+              className="inline-flex min-h-[44px] items-center rounded-2xl border border-white/30
+                         bg-white/10 px-4 text-[14.5px] font-bold text-white hover:bg-white/20
+                         focus-visible:outline-white">
+              All courses
+            </Link>
+          </>
+        }
+      >
         <Meter percent={percent} label="Course progress" tone="light" />
-        <div className="mt-2 flex items-center justify-between text-[12.5px] text-white/85">
-          <span>{percent}% complete</span>
-          <span>
+        <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 text-[12.5px]">
+          <span className="font-bold tabular-nums">{percent}% complete</span>
+          <span className="tabular-nums text-white/80">
             {outline ? `${outline.progress.completed} of ${outline.progress.total} lessons` : ''}
           </span>
         </div>
-      </div>
-
-      <div className="mt-4 flex flex-wrap gap-2.5">
-        <Link href={href}
-          className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5
-                     text-[14.5px] font-bold text-brand-700 hover:bg-brand-50
-                     focus-visible:outline-white">
-          <Icon name="play" className="h-4 w-4" />
-          {percent > 0 ? 'Resume lesson' : 'Start course'}
-        </Link>
-        <Link href="/onyx/courses"
-          className="inline-flex items-center rounded-xl border border-white/30 bg-white/10
-                     px-4 py-2.5 text-[14.5px] font-bold text-white hover:bg-white/20
-                     focus-visible:outline-white">
-          All courses
-        </Link>
-      </div>
+      </Hero>
     </section>
   );
 }
 
 /**
- * The one deliberately coloured card.
+ * The streak, drawn as the week.
  *
- * Duolingo colours exactly one stat and leaves the rest white; that is what
- * keeps a high-energy dashboard from turning into confetti. The day circles
- * are the pattern every learning product converged on -- Nibble, Brilliant,
- * Vocabulary and Coursera all draw the week the same way -- and they read at
- * a glance in a way "longest 0 · nothing today" never did.
+ * The days are pills rather than bare dots because colour is not allowed to be
+ * the whole signal: a finished day carries a tick AND its letter, today is the
+ * one solid pill, and the rest are plainly empty. Every learning product worth
+ * copying draws the week this way, and it reads at a glance in a way
+ * "longest 0 · nothing today" never did.
  */
 function StreakCard({ progress }: { progress: ProgressSummary }) {
   const today = new Date().getDay();          // 0 = Sunday
   const monday = (today + 6) % 7;             // 0 = Monday, matching the labels
   const labels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  const names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const current = progress.streak.current;
 
   return (
-    <section aria-labelledby="streak-h"
-      className="rounded-[20px] border border-accent-100 bg-gradient-to-br from-[#FFF3E0]
-                 to-[#FCE3BE] p-4.5 p-[18px]">
-      <div className="flex items-center gap-3">
-        <span className="text-[40px] font-extrabold leading-none tabular-nums text-accent-700">
-          {current}
-        </span>
-        <span>
-          <span id="streak-h" className="block text-[13px] font-bold text-accent-700">
-            day streak
+    <section aria-labelledby="streak-h">
+      <Card className="p-4">
+        <div className="flex items-center gap-3">
+          <span className="text-[40px] font-extrabold leading-none tabular-nums text-accent-700">
+            {current}
           </span>
-          <span className="block text-[12.5px] text-[#8A5A22]">
-            {progress.streak.longest > current
-              ? `Best yet: ${progress.streak.longest} days`
-              : progress.streak.active_today ? 'Counted for today' : 'Nothing today yet'}
+          <span>
+            <span id="streak-h" className="block text-[13.5px] font-bold">day streak</span>
+            <span className="block text-[12.5px] text-muted">
+              {progress.streak.longest > current
+                ? `Best yet: ${progress.streak.longest} days`
+                : progress.streak.active_today ? 'Counted for today' : 'Nothing today yet'}
+            </span>
           </span>
-        </span>
-      </div>
+        </div>
 
-      <div className="mt-4 flex justify-between gap-1.5">
-        {labels.map((l, i) => {
-          // Days before today in this week are "done" only as far back as the
-          // streak actually reaches -- an 11-day best does not fill Monday if
-          // the current run is 2.
-          const done = i <= monday && (monday - i) < current;
-          const isToday = i === monday;
-          return (
-            <div key={i} className="flex-1 text-center">
-              <span className="mb-1.5 block text-[10.5px] font-bold uppercase text-[#8A5A22]">
-                {l}
-              </span>
-              <span aria-hidden="true"
-                className={'mx-auto grid h-[30px] w-[30px] place-items-center rounded-full '
-                  + 'text-[13px] '
+        <ul className="mt-4 flex flex-wrap gap-1.5">
+          {labels.map((l, i) => {
+            // Days before today in this week are "done" only as far back as the
+            // streak actually reaches -- an 11-day best does not fill Monday if
+            // the current run is 2.
+            const done = i <= monday && (monday - i) < current;
+            const isToday = i === monday;
+            return (
+              <li key={i}
+                className={'inline-flex min-w-[34px] items-center justify-center gap-1 '
+                  + 'rounded-full px-2 py-1 text-[12.5px] font-bold '
                   + (done
-                    ? 'bg-accent-500 text-white'
-                    : 'border-[1.5px] border-accent-600/20 bg-white/70 text-accent-500')
-                  + (isToday ? ' ring-2 ring-accent-700 ring-offset-2 ring-offset-[#FCE3BE]' : '')}>
+                    ? 'bg-green-50 text-green-700'
+                    : isToday
+                      ? 'bg-brand-600 text-white'
+                      : 'bg-slate-100 text-muted')}>
                 {done ? <Icon name="check" className="h-3.5 w-3.5" /> : null}
-              </span>
-              <span className="sr-only">
-                {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][i]}
-                {isToday ? ', today' : ''}{done ? ', done' : ''}
-              </span>
-            </div>
-          );
-        })}
-      </div>
+                <span aria-hidden="true">{l}</span>
+                <span className="sr-only">
+                  {names[i]}{isToday ? ', today' : ''}{done ? ', done' : ', nothing yet'}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+
+        <p className="mt-3 text-[12.5px] text-muted">
+          Counted from lessons finished, work submitted and code run &mdash; not from
+          signing in.
+        </p>
+      </Card>
     </section>
   );
 }

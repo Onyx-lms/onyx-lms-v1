@@ -1,17 +1,45 @@
 import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
+import {
+  Card, DataTable, Empty, Icon, Pill, Ring, Score, SectionHead, StatTile,
+  relativeDue,
+} from '@/components/onyx-ui';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxPageRole, onyxApi, type Me } from '@/lib/onyx-session';
 import { money, type FamilyChild } from '@/lib/onyx-campus';
 
 export const metadata: Metadata = { title: 'Your family' };
 
+/** Two letters from a name, for the mark beside it. */
+function initials(name: string | null, fallback: number): string {
+  if (!name) return '#' + String(fallback).slice(-2);
+  return name.split(/\s+/).filter(Boolean).slice(0, 2)
+    .map((w) => w[0]!.toUpperCase()).join('') || '?';
+}
+
+/**
+ * The four things a guardian is never shown, whatever a learner turns on.
+ *
+ * Written down rather than left to inference. A parent portal that says what
+ * it does NOT show is the difference between a portal and surveillance, and
+ * the person who decides the first three is the learner -- not the university
+ * and not this account.
+ */
+const NEVER = [
+  'Coursework and submissions',
+  'Discussions and messages',
+  'Job applications',
+  'Support tickets and wellbeing',
+];
+
 /**
  * CMP-04 -- a guardian's whole world.
  *
- * Every switch a child has not turned on shows as "not shared" rather than
+ * Every switch a child has not turned on shows as "Not shared" rather than
  * being left off the page, so a parent never mistakes silence for nothing to
- * report -- the page says which it is.
+ * report -- the page says which it is. Shared and not-shared are carried by a
+ * glyph and a word as well as a colour, because roughly one man in twelve
+ * reads the green and the grey as much the same thing.
  */
 export default async function OnyxFamilyPage() {
   await requireOnyxPageRole('guardian');
@@ -23,76 +51,234 @@ export default async function OnyxFamilyPage() {
   return (
     <OnyxShell me={me} nav={navFor(me.role)} title="Your family"
       subtitle="Only what each learner has chosen to share.">
-      <div className="space-y-8">
-        {family.children.map((c) => (
-          <section key={c.link_id} className="rounded-2xl border border-line p-4">
-            <h2 className="text-lg font-semibold">{c.name ?? 'Learner #' + c.student_user_id}</h2>
-            <p className="text-xs text-muted">{c.relationship}</p>
+      <div className="space-y-10">
+        {family.children.map((c) => {
+          const name = c.name ?? 'Learner #' + c.student_user_id;
+          const results = c.shares.results ? (c.results?.results ?? []) : [];
+          const attendance = c.shares.attendance ? c.attendance : null;
+          const fees = c.shares.fees ? c.fees : null;
+          const owed = fees?.outstanding_minor ?? 0;
+          const average = results.length
+            ? Math.round(results.reduce((n, r) => n + (r.final_marks / r.max_marks) * 100, 0)
+              / results.length)
+            : null;
 
-            <div className="mt-4 grid gap-4 sm:grid-cols-3">
-              <div>
-                <div className="text-xs uppercase tracking-wide text-muted">Attendance</div>
-                {c.shares.attendance && c.attendance ? (
-                  <div className="mt-1 text-sm">
-                    {c.attendance.percent}% ({c.attendance.attended} of {c.attendance.total})
+          return (
+            <section key={c.link_id} aria-label={name}>
+              <Card className="p-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span aria-hidden="true"
+                    className="grid h-12 w-12 shrink-0 place-items-center rounded-xl2
+                               bg-gradient-to-br from-brand-500 to-brand-700 text-sm
+                               font-bold text-white">
+                    {initials(c.name, c.student_user_id)}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="truncate text-[17px] font-extrabold">{name}</h2>
+                    <p className="text-[13px] capitalize text-muted">{c.relationship}</p>
                   </div>
-                ) : (
-                  <div className="mt-1 text-sm text-muted">Not shared</div>
-                )}
+                </div>
+              </Card>
+
+              {/* The three numbers a parent rings the university about. Fees is
+                  the only one that is also a deadline, so it is the only one
+                  that ever reads as urgent. */}
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <StatTile label="Attendance"
+                  value={attendance ? attendance.percent + '%' : 'Not shared'}
+                  note={attendance
+                    ? attendance.attended + ' of ' + attendance.total + ' sessions'
+                    : 'This learner has not shared it'} />
+                <StatTile label="Published results"
+                  value={c.shares.results ? results.length : 'Not shared'}
+                  note={c.shares.results
+                    ? (average !== null ? 'Average ' + average + '%' : 'Nothing published yet')
+                    : 'This learner has not shared it'} />
+                <StatTile label="Fees outstanding"
+                  value={fees ? (owed > 0 ? money(owed) : 'Nothing owed') : 'Not shared'}
+                  note={fees
+                    ? (owed > 0 ? 'Across the invoices below' : 'Every invoice is settled')
+                    : 'This learner has not shared it'} />
               </div>
 
-              <div>
-                <div className="text-xs uppercase tracking-wide text-muted">Results</div>
-                {c.shares.results && c.results ? (
-                  <div className="mt-1 text-sm">
-                    {c.results.results.length} published
-                  </div>
-                ) : (
-                  <div className="mt-1 text-sm text-muted">Not shared</div>
-                )}
-              </div>
+              <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+                <div className="min-w-0 space-y-6">
+                  {/* Fees first: it is the only thing on this page a guardian
+                      can do something about, and the something expires. */}
+                  {fees ? (
+                    <section>
+                      <SectionHead title="Fees" />
+                      <Card className="p-4">
+                        <div className="flex flex-wrap items-end justify-between gap-3">
+                          <div>
+                            <div className="text-[10.5px] font-bold uppercase tracking-[.08em]
+                                            text-muted">
+                              Outstanding
+                            </div>
+                            <div className={'mt-1 text-[28px] font-extrabold leading-none '
+                              + 'tabular-nums ' + (owed > 0 ? 'text-red-700' : '')}>
+                              {owed > 0 ? money(owed) : money(0)}
+                            </div>
+                          </div>
+                          {owed > 0 ? <Pill tone="late">Payment due</Pill> : (
+                            <Pill tone="good">Settled</Pill>
+                          )}
+                        </div>
 
-              <div>
-                <div className="text-xs uppercase tracking-wide text-muted">Fees</div>
-                {c.shares.fees && c.fees ? (
-                  <div className="mt-1 text-sm">
-                    {c.fees.outstanding_minor > 0
-                      ? money(c.fees.outstanding_minor) + ' outstanding'
-                      : 'Nothing outstanding'}
-                  </div>
-                ) : (
-                  <div className="mt-1 text-sm text-muted">Not shared</div>
-                )}
-              </div>
-            </div>
+                        {fees.invoices.length ? (
+                          <ul className="mt-4 divide-y divide-line border-t border-line">
+                            {fees.invoices.map((inv) => {
+                              const due = relativeDue(inv.due_at);
+                              const paid = inv.status === 'paid';
+                              return (
+                                <li key={inv.id}
+                                  className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2.5
+                                             text-[13px]">
+                                  <span className="min-w-0 flex-1">
+                                    <span className="font-bold">{inv.number}</span>
+                                    <span className="text-muted">
+                                      {' · '}{inv.due_at ? due.text : 'no due date'}
+                                    </span>
+                                  </span>
+                                  <Pill tone={paid ? 'good'
+                                    : inv.status === 'void' ? 'neutral' : due.tone}>
+                                    {paid ? 'Paid'
+                                      : inv.status === 'part_paid' ? 'Part paid'
+                                        : inv.status === 'void' ? 'Void' : 'Due'}
+                                  </Pill>
+                                  <span className="min-w-[92px] text-right font-bold tabular-nums">
+                                    {money(inv.total_minor, inv.currency)}
+                                  </span>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        ) : (
+                          <p className="mt-3 text-sm text-muted">No invoices have been issued.</p>
+                        )}
 
-            {c.shares.results && c.results && c.results.results.length > 0 ? (
-              <table className="mt-4 w-full text-sm">
-                <caption className="sr-only">{(c.name ?? 'This learner') + '’s results'}</caption>
-                <thead>
-                  <tr className="text-left text-xs text-muted">
-                    <th scope="col" className="py-1 pr-3">Exam</th>
-                    <th scope="col" className="py-1 pr-3">Mark</th>
-                    <th scope="col" className="py-1">Grade</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {c.results.results.map((r) => (
-                    <tr key={r.exam_id}>
-                      <td className="py-1.5 pr-3">{r.title}</td>
-                      <td className="py-1.5 pr-3 tabular-nums">{r.final_marks} / {r.max_marks}</td>
-                      <td className="py-1.5">{r.grade ?? '--'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : null}
-          </section>
-        ))}
+                        <p className="mt-4 border-t border-line pt-3 text-xs text-muted">
+                          Paying an invoice does not give you access to anything else on
+                          this account.
+                        </p>
+                      </Card>
+                    </section>
+                  ) : null}
+
+                  {/* Grades as a table: a parent reads down the Mark column
+                      looking for the outlier, which is what a table is for.
+                      The band on the score chip always carries its number. */}
+                  {c.shares.results ? (
+                    <section>
+                      <SectionHead title="Results so far" />
+                      <DataTable
+                        caption={name + '’s published results'}
+                        head={
+                          <>
+                            <th scope="col">Assessment</th>
+                            <th scope="col">Mark</th>
+                            <th scope="col">Band</th>
+                            <th scope="col">Grade</th>
+                          </>
+                        }
+                      >
+                        {results.map((r) => (
+                          <tr key={r.exam_id}>
+                            <td>{r.title}</td>
+                            <td className="tabular-nums text-muted">
+                              {r.final_marks} / {r.max_marks}
+                            </td>
+                            <td><Score value={r.final_marks} outOf={r.max_marks} /></td>
+                            <td>{r.grade ?? <span className="text-muted">&mdash;</span>}</td>
+                          </tr>
+                        ))}
+                        {results.length === 0 ? (
+                          <tr className="hover:!bg-transparent">
+                            <td colSpan={4} className="!p-0">
+                              <Empty icon="award">
+                                Nothing has been published yet. Marks that are still being
+                                moderated are not shown to anyone, including {name}.
+                              </Empty>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </DataTable>
+                    </section>
+                  ) : null}
+                </div>
+
+                {/* -------------------------------------------------- rail */}
+                <div className="min-w-0 space-y-6">
+                  {attendance ? (
+                    <section>
+                      <SectionHead title="Attendance" />
+                      <Card className="p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-[28px] font-extrabold leading-none tabular-nums">
+                              {attendance.percent}%
+                            </div>
+                            <div className="mt-1.5 text-xs text-muted">
+                              {attendance.attended} of {attendance.total} sessions
+                            </div>
+                          </div>
+                          <Ring percent={attendance.percent} size={58}
+                            label={attendance.percent + ' percent attendance'} />
+                        </div>
+                      </Card>
+                    </section>
+                  ) : null}
+
+                  <section>
+                    <SectionHead title="What you can see" />
+                    <Card className="p-4">
+                      <ul className="space-y-2.5">
+                        {([
+                          ['Attendance', c.shares.attendance],
+                          ['Published results', c.shares.results],
+                          ['Fees and invoices', c.shares.fees],
+                        ] as const).map(([label, on]) => (
+                          <li key={label} className="flex items-center gap-2 text-[13.5px]">
+                            <span className={on ? 'text-green-700' : 'text-muted'}>
+                              <Icon name={on ? 'check' : 'x'} className="h-4 w-4" />
+                            </span>
+                            <span className={'min-w-0 flex-1 ' + (on ? '' : 'text-muted')}>
+                              {label}
+                            </span>
+                            <Pill tone={on ? 'good' : 'neutral'}>
+                              {on ? 'Shared' : 'Not shared'}
+                            </Pill>
+                          </li>
+                        ))}
+                        {NEVER.map((label) => (
+                          <li key={label} className="flex items-center gap-2 text-[13.5px]">
+                            <span className="text-muted">
+                              <Icon name="x" className="h-4 w-4" />
+                            </span>
+                            <span className="min-w-0 flex-1 text-muted">{label}</span>
+                            <Pill tone="neutral">Never</Pill>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="mt-4 border-t border-line pt-3 text-xs text-muted">
+                        {name.split(' ')[0]} turns each of the first three on or off. You are
+                        told when one changes; you cannot change it from here.
+                      </p>
+                    </Card>
+                  </section>
+                </div>
+              </div>
+            </section>
+          );
+        })}
+
         {family.children.length === 0 ? (
-          <p className="text-sm text-muted">
-            No learner has linked you as a guardian yet.
-          </p>
+          <Card>
+            <Empty icon="users">
+              No learner has linked you as a guardian yet. A link is made by the learner
+              and shows here once they have confirmed it.
+            </Empty>
+          </Card>
         ) : null}
       </div>
     </OnyxShell>

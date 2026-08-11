@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxPageRole, onyxApi, type Me } from '@/lib/onyx-session';
-import { DataTable, EmptyRow, Pill, StatTile } from '@/components/onyx-ui';
+import { DataTable, EmptyRow, Icon, Pill, StatTile } from '@/components/onyx-ui';
 
 export const metadata: Metadata = { title: 'Audit log' };
 
@@ -64,6 +64,20 @@ function actionTone(action: string): 'good' | 'soon' | 'late' | 'brand' | 'neutr
   return 'neutral';
 }
 
+/**
+ * Whether this entry is one somebody would come here looking for after a
+ * scare -- a sign-in, a session, a permission, a suspension, a key.
+ *
+ * It is marked three ways in the table: the shield in the first column, the
+ * word inside the action pill, and the tone of the pill. Anyone who reads the
+ * red and the grey as the same colour still has two of the three, which is the
+ * whole point of not letting colour carry a state alone.
+ */
+function securityRelevant(action: string): boolean {
+  return /^(auth|session|permission|gateway|token)\./.test(action)
+    || /\.(suspended|removed|revoked|granted|role_changed|configured|deleted)$/.test(action);
+}
+
 const DAY = (iso: string) => new Date(iso).toLocaleDateString(undefined,
   { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
@@ -96,6 +110,7 @@ export default async function OnyxAuditPage() {
   }
 
   const actors = new Set(entries.map((e) => e.actor?.id ?? 0)).size;
+  const security = entries.filter((e) => securityRelevant(e.action)).length;
 
   return (
     <OnyxShell
@@ -104,19 +119,26 @@ export default async function OnyxAuditPage() {
       title="Audit log"
       subtitle="Sensitive actions across this institution, newest first."
     >
-      <div className="mb-6 grid gap-3 sm:grid-cols-3">
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile label="Entries" value={entries.length}
           note={entries.length === 200 ? 'the most recent 200' : 'everything on record'} />
         <StatTile label="People" value={actors} note="acted in this window" />
         <StatTile label="Days" value={days.length} note="with activity" />
+        <StatTile label="Security relevant" value={security}
+          note="permissions, sign-ins, suspensions" />
       </div>
 
       <div className="space-y-7">
         {days.map(({ day, rows }) => (
           <section key={day}>
-            <h2 className="mb-2.5 text-[11.5px] font-bold uppercase tracking-[.085em] text-muted">
-              {day}
-            </h2>
+            <div className="mb-2.5 flex items-baseline justify-between gap-3">
+              <h2 className="text-[11.5px] font-bold uppercase tracking-[.085em] text-muted">
+                {day}
+              </h2>
+              <span className="text-[12.5px] tabular-nums text-muted">
+                {rows.length} {rows.length === 1 ? 'entry' : 'entries'}
+              </span>
+            </div>
             {/* tabIndex makes the horizontal scroll reachable by keyboard: a
                 region that only scrolls with a wheel or a trackpad swipe
                 strands anyone on a keyboard at whatever columns happen to fit. */}
@@ -125,18 +147,39 @@ export default async function OnyxAuditPage() {
                 caption={'Audit entries for ' + day}
                 head={
                   <>
+                    {/* `relative` is load-bearing: `sr-only` is absolutely
+                        positioned, and without a positioned ancestor it takes
+                        its static position far along a sideways-scrolling
+                        table and drags the page's scroll width out with it. */}
+                    <th scope="col" className="relative !px-2">
+                      <span className="sr-only">Security relevant</span>
+                    </th>
                     <th scope="col">Time</th>
                     <th scope="col">Who</th>
                     <th scope="col">Action</th>
                     <th scope="col">Subject</th>
                     <th scope="col">What changed</th>
+                    <th scope="col">IP</th>
                   </>
                 }
               >
                 {rows.map((e) => {
                   const fields = changedFields(e);
+                  const sensitive = securityRelevant(e.action);
                   return (
                     <tr key={e.id} className="align-top">
+                      <td className="!px-2">
+                        {sensitive ? (
+                          // `relative` for the same reason as the header cell:
+                          // an absolutely positioned label with no positioned
+                          // ancestor takes its static position far along a
+                          // sideways-scrolling table.
+                          <span className="relative inline-flex text-red-700">
+                            <Icon name="shield" className="h-[15px] w-[15px]" />
+                            <span className="sr-only">Security relevant</span>
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="whitespace-nowrap font-semibold tabular-nums">
                         {TIME(e.created_at)}
                       </td>
@@ -178,6 +221,9 @@ export default async function OnyxAuditPage() {
                             ))}
                           </ul>
                         )}
+                      </td>
+                      <td className="whitespace-nowrap font-mono text-[12px] text-muted">
+                        {e.ip ?? '—'}
                       </td>
                     </tr>
                   );

@@ -4,8 +4,35 @@ import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxPageRole, onyxApi, type Me } from '@/lib/onyx-session';
 import type { Batch, Program, Semester } from '@/lib/onyx-learn';
 import { CreatePanel } from '@/components/onyx-create';
+import {
+  Card, Empty, Icon, Meter, Pill, SectionHead, StatTile, State,
+} from '@/components/onyx-ui';
 
 export const metadata: Metadata = { title: 'Programmes' };
+
+/**
+ * The chip a semester or a batch is listed as.
+ *
+ * A programme is not one value to compare down a column, so this screen is
+ * cards rather than a table -- and inside a card a cohort is a thing you scan,
+ * not a row. Neutral by default: nothing here is a state, so nothing here
+ * should be carrying a state's colour.
+ */
+function Chip({ children, count }: { children: React.ReactNode; count?: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-slate-100
+                     px-2.5 py-1 text-[12.5px] font-semibold text-slate-700">
+      {children}
+      {count !== undefined && count !== null
+        ? <span className="tabular-nums text-muted">{count}</span> : null}
+    </span>
+  );
+}
+
+/** "from 5 Jan 2026" reads; "2026-01-05" is a thing you decode. */
+const on = (iso: string | null) => (iso
+  ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+  : null);
 
 /**
  * LRN-01a -- the academic structure.
@@ -23,6 +50,11 @@ export default async function OnyxProgramsPage() {
     onyxApi<Batch[]>('/api/onyx/batches'),
   ]);
 
+  // `status` is the only lifecycle the API carries for a programme: anything
+  // else on this page ("places filled", "admissions close") would be invented.
+  const live = programs.filter((p) => p.status).length;
+  const drafts = programs.length - live;
+
   return (
     <OnyxShell
       me={me}
@@ -30,10 +62,20 @@ export default async function OnyxProgramsPage() {
       title="Programmes"
       subtitle="What this institution teaches, and the cohorts taking it."
     >
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatTile label="Programmes" value={programs.length}
+          note={live + ' live · ' + drafts + ' draft'} />
+        <StatTile label="Semesters" value={semesters.length} note="defined across all programmes" />
+        <StatTile label="Batches" value={batches.length} note="cohorts on the books" />
+        <StatTile label="Not yet live" value={drafts}
+          note={drafts === 0 ? 'everything is published' : 'still invisible to learners'} />
+      </div>
+
       {/* CMP-01: "manage programs, batches, timetables and faculty
           allocation from a central console". The console listed them and
           could create none of them. */}
-      <div className="mb-6 grid gap-3 lg:grid-cols-3">
+      <SectionHead title="Add to the structure" />
+      <div className="mb-7 grid gap-3 lg:grid-cols-3">
         <CreatePanel
           title="New programme" cta="Add a programme" icon="building" compact
           endpoint="programs"
@@ -70,61 +112,123 @@ export default async function OnyxProgramsPage() {
           ]}
         />
       </div>
-      {programs.length === 0 ? (
-        <p className="text-sm text-muted">No programmes yet.</p>
-      ) : (
-        <ul className="space-y-6">
-          {programs.map((p) => {
-            const theirs = semesters.filter((s) => s.program_id === p.id);
-            const cohorts = batches.filter((b) => b.program_id === p.id);
-            return (
-              <li key={p.id} className="rounded-2xl border border-line p-4">
-                <div className="flex items-baseline justify-between gap-3">
-                  <h2 className="font-medium">{p.name}</h2>
-                  <span className="font-mono text-xs text-muted">{p.code}</span>
-                </div>
-                {p.description ? (
-                  <p className="mt-1 text-sm text-muted">{p.description}</p>
-                ) : null}
-                <p className="mt-1 text-xs text-muted">
-                  {p.duration_semesters} semester{p.duration_semesters === 1 ? '' : 's'}
-                </p>
 
-                <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <div className="text-xs uppercase tracking-wide text-muted">Semesters</div>
-                    <ul className="mt-1 space-y-1 text-sm">
-                      {theirs.map((s) => (
-                        <li key={s.id}>
-                          {s.number}. {s.name}
-                          {s.starts_on ? (
-                            <span className="ml-2 text-xs text-muted">
-                              from {s.starts_on}
-                            </span>
-                          ) : null}
-                        </li>
-                      ))}
-                      {theirs.length === 0
-                        ? <li className="text-muted">None defined.</li>
-                        : null}
-                    </ul>
-                  </div>
-                  <div>
-                    <div className="text-xs uppercase tracking-wide text-muted">Batches</div>
-                    <ul className="mt-1 space-y-1 text-sm">
-                      {cohorts.map((b) => (
-                        <li key={b.id}>
-                          {b.name}
-                          <span className="ml-2 font-mono text-xs text-muted">{b.code}</span>
-                        </li>
-                      ))}
-                      {cohorts.length === 0
-                        ? <li className="text-muted">None yet.</li>
-                        : null}
-                    </ul>
+      <SectionHead title="Programmes" />
+      {programs.length === 0 ? (
+        <Card>
+          <Empty icon="building">
+            A programme needs a name, a code and how many semesters it runs for. Semesters and
+            batches can follow once it exists.
+          </Empty>
+        </Card>
+      ) : (
+        <ul className="space-y-4">
+          {programs.map((p) => {
+            const theirs = [...semesters.filter((s) => s.program_id === p.id)]
+              .sort((a, b) => a.number - b.number);
+            const cohorts = batches.filter((b) => b.program_id === p.id);
+            // The one honest progress figure on this page: how much of the
+            // declared shape has actually been built. "Places filled" needs an
+            // enrolment cap, and the API does not carry one.
+            const built = p.duration_semesters
+              ? Math.min(100, (theirs.length / p.duration_semesters) * 100)
+              : 0;
+
+            return (
+              <Card as="li" key={p.id} className="overflow-hidden">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line
+                                bg-slate-50/70 px-4 py-3">
+                  <h3 className="min-w-0 truncate text-[15.5px] font-bold">{p.name}</h3>
+                  <Pill tone={p.status ? 'brand' : 'neutral'}>{p.code}</Pill>
+                  <span className="ml-auto">
+                    {p.status
+                      ? <State tone="on">Live</State>
+                      : <State tone="idle">Draft</State>}
+                  </span>
+                </div>
+
+                <div className="p-4">
+                  {p.description ? (
+                    <p className="text-[13.5px] text-muted">{p.description}</p>
+                  ) : null}
+
+                  <div className="mt-3 grid min-w-0 gap-5 sm:grid-cols-2">
+                    <div className="min-w-0">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="text-[13px] font-bold">Calendar built</span>
+                        <span className="text-[13px] tabular-nums text-muted">
+                          {theirs.length} of {p.duration_semesters} semester
+                          {p.duration_semesters === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                      <div className="mt-1.5">
+                        <Meter percent={built}
+                          label={theirs.length + ' of ' + p.duration_semesters
+                            + ' semesters defined for ' + p.name} />
+                      </div>
+                      <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1
+                                      text-[12.5px] text-muted">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Icon name="calendar" className="h-[15px] w-[15px]" />
+                          {p.duration_semesters} semester{p.duration_semesters === 1 ? '' : 's'} long
+                        </span>
+                        <span className="inline-flex items-center gap-1.5">
+                          <Icon name="users" className="h-[15px] w-[15px]" />
+                          {cohorts.length === 0 ? 'no batches'
+                            : cohorts.length + ' batch' + (cohorts.length === 1 ? '' : 'es')}
+                        </span>
+                      </div>
+
+                      {/* A draft with nothing under it is the state that needs
+                          a decision, so the card says what is missing rather
+                          than leaving it to be worked out from two empty
+                          lists. */}
+                      {!p.status ? (
+                        <ul className="mt-3 space-y-1 text-[12.5px] text-muted">
+                          {[
+                            { ok: theirs.length > 0, text: 'Semesters defined' },
+                            { ok: cohorts.length > 0, text: 'At least one batch' },
+                          ].map((c) => (
+                            <li key={c.text} className="flex items-center gap-1.5">
+                              <span className={c.ok ? 'text-green-700' : 'text-muted'}>
+                                <Icon name={c.ok ? 'check' : 'x'} className="h-[14px] w-[14px]" />
+                              </span>
+                              {c.text}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+
+                    <div className="min-w-0">
+                      <h4 className="text-[10.5px] font-bold uppercase tracking-[.08em] text-muted">
+                        Semesters
+                      </h4>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {theirs.map((s) => (
+                          <Chip key={s.id} count={on(s.starts_on) ?? undefined}>
+                            {s.number}. {s.name}
+                          </Chip>
+                        ))}
+                        {theirs.length === 0
+                          ? <span className="text-[13px] text-muted">None defined.</span> : null}
+                      </div>
+
+                      <h4 className="mt-3 text-[10.5px] font-bold uppercase tracking-[.08em]
+                                     text-muted">
+                        Batches
+                      </h4>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {cohorts.map((b) => (
+                          <Chip key={b.id} count={b.year ?? undefined}>{b.name}</Chip>
+                        ))}
+                        {cohorts.length === 0
+                          ? <span className="text-[13px] text-muted">None yet.</span> : null}
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </li>
+              </Card>
             );
           })}
         </ul>

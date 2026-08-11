@@ -5,7 +5,9 @@ import { OnyxPlayer, ResourceLink } from '@/components/onyx-player';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, type Me } from '@/lib/onyx-session';
 import { formatDuration, type LessonDetail, type Outline } from '@/lib/onyx-learn';
-import { Card, Icon, Meter, Pill, RowList, type IconName } from '@/components/onyx-ui';
+import {
+  Card, Icon, Meter, Pill, RowList, SectionHead, Theatre, type IconName,
+} from '@/components/onyx-ui';
 
 export const metadata: Metadata = { title: 'Lesson' };
 
@@ -16,6 +18,14 @@ const lessonIcon = (type: string): IconName =>
 const TYPE_LABEL: Record<string, string> = {
   video: 'Video', text: 'Reading', document: 'Document', link: 'Link',
 };
+
+/** "640 KB", not "655360". Nobody has ever sized a download in bytes. */
+function fileSize(bytes: number | null): string | null {
+  if (!bytes || bytes < 0) return null;
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
 
 /**
  * LRN-02a -- one lesson, resuming where the learner left off.
@@ -66,25 +76,46 @@ export default async function OnyxLessonPage(
               a document, a link) gets the same white card as the rest of
               the product. */}
           {isVideo ? (
-            <div className="overflow-hidden rounded-2xl bg-ink shadow-lift">
-              <div className="flex items-center justify-between gap-3 px-4 py-2.5">
-                <span className="flex min-w-0 items-center gap-2 text-[12.5px] font-semibold text-white/75">
+            /* The bar carries the three things you need while the picture is
+               playing: which module this is, how long it runs, and whether it
+               is open to people who have not enrolled. */
+            <Theatre
+              label={
+                <>
                   <Icon name="play" className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate">{currentModule?.title ?? 'Lesson'}</span>
-                </span>
-                <span className="flex shrink-0 items-center gap-2">
+                </>
+              }
+              meta={
+                <>
                   {lesson.duration_seconds ? (
-                    <span className="text-[12.5px] tabular-nums text-white/50">
+                    <span className="tabular-nums text-white/55">
                       {formatDuration(lesson.duration_seconds)}
                     </span>
                   ) : null}
                   {lesson.is_preview ? <Pill tone="brand">Preview</Pill> : null}
-                </span>
-              </div>
-              <div className="px-2 pb-2 sm:px-3 sm:pb-3">
-                <OnyxPlayer lesson={lesson} />
-              </div>
-            </div>
+                </>
+              }
+              actions={
+                <>
+                  {index >= 0 ? (
+                    <span className="rounded-full bg-white/10 px-3 py-1.5 font-semibold
+                                     text-white/80">
+                      Lesson {index + 1} of {flat.length}
+                    </span>
+                  ) : null}
+                  <Link href={'/onyx/courses/' + id}
+                    className="ml-auto inline-flex min-h-[36px] items-center gap-1.5 rounded-full
+                               border border-white/25 px-3.5 font-semibold text-white/90
+                               hover:border-white/50 hover:bg-white/10">
+                    <Icon name="list" className="h-3.5 w-3.5" />
+                    Course outline
+                  </Link>
+                </>
+              }
+            >
+              <OnyxPlayer lesson={lesson} />
+            </Theatre>
           ) : (
             <Card className="p-5 sm:p-6">
               <div className="mb-4 flex items-center justify-between gap-3">
@@ -114,20 +145,30 @@ export default async function OnyxLessonPage(
 
           {lesson.resources.length ? (
             <section>
-              <h2 className="mb-2.5 text-[11.5px] font-bold uppercase tracking-[.085em] text-muted">
-                For this lesson
-              </h2>
+              <SectionHead title="For this lesson" />
               <RowList label="Lesson resources">
-                {lesson.resources.map((r) => (
-                  <li key={r.id} className="flex items-center gap-3 px-4 py-3">
-                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl
-                                     bg-brand-50 text-brand-700">
-                      <Icon name="save" className="h-[17px] w-[17px]" />
-                    </span>
-                    <ResourceLink resource={r} />
-                  </li>
-                ))}
+                {lesson.resources.map((r) => {
+                  const size = fileSize(r.size_bytes);
+                  const meta = [size, r.mime].filter(Boolean).join(' · ');
+                  return (
+                    <li key={r.id} className="flex items-center gap-3 px-4 py-3">
+                      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl
+                                       bg-brand-50 text-brand-700">
+                        <Icon name="file" className="h-[18px] w-[18px]" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <ResourceLink resource={r} />
+                        {meta ? (
+                          <span className="mt-0.5 block text-[12.5px] text-muted">{meta}</span>
+                        ) : null}
+                      </span>
+                    </li>
+                  );
+                })}
               </RowList>
+              <p className="mt-2 text-xs text-muted">
+                Download links are issued when you click and expire in five minutes.
+              </p>
             </section>
           ) : null}
 

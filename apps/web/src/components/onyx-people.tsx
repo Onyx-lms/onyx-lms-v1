@@ -123,7 +123,13 @@ export function OnyxPeople({ members, canEdit }: { members: Member[]; canEdit: b
           instead, where it costs no width.
           tabIndex/role keep the scroll reachable by keyboard on the widths
           that still need it. */}
-      <div className="max-w-full overflow-x-auto rounded-2xl border border-line bg-white shadow-card"
+      {/* `relative` is load-bearing: the sr-only caption and the sr-only
+          "Actions" header are absolutely positioned, and without a positioned
+          ancestor they resolve against the initial containing block, land at
+          the wide table's far-right coordinate in document space, and drag
+          page scroll width past the viewport at 320px while staying invisible. */}
+      <div className="relative min-w-0 max-w-full overflow-x-auto rounded-2xl border border-line
+                      bg-white shadow-card"
         tabIndex={0} role="region" aria-label="Members of this institution">
         <table className="w-full text-sm">
           <caption className="sr-only">Everyone at this institution</caption>
