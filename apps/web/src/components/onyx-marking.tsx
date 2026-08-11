@@ -193,7 +193,12 @@ export function OnyxIntegrityTimeline({ timeline }: { timeline: ProctorTimeline 
           <span className="ml-2 tabular-nums">{timeline.integrity_flags}</span>
         </span>
         <span className="capitalize">{timeline.integrity_status}</span>
-        <span className="text-xs text-muted">
+        {/* The consent stamp is written in the reader's own locale and time
+            zone, which is what an invigilator needs and is also, by definition,
+            not what the server rendered. `suppressHydrationWarning` says so
+            deliberately: without it React tears this subtree down on every load
+            and logs a hydration failure over a difference that is the point. */}
+        <span className="text-xs text-muted" suppressHydrationWarning>
           {timeline.consented_at
             ? 'Consented ' + new Date(timeline.consented_at).toLocaleString()
             : 'No consent recorded'}
