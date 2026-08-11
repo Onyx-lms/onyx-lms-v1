@@ -23,11 +23,11 @@ test('a message sent by the other person appears without a reload', async ({ pag
   test.setTimeout(120_000);
 
   // Sign in as the learner through the real form, exactly as a reader would.
-  await page.goto('/login');
+  await page.goto('/login/store');
   await page.getByLabel(/email/i).first().fill(STUDENT.email);
   await page.getByLabel(/password/i).first().fill(STUDENT.password);
   await page.getByRole('button', { name: /sign in|log ?in/i }).first().click();
-  await page.waitForURL((u) => !u.pathname.endsWith('/login'), { timeout: 30_000 });
+  await page.waitForURL((u) => !u.pathname.endsWith('/login/store'), { timeout: 30_000 });
 
   // The conversation has to exist before it can be opened.
   const adminToken = await login(ADMIN.email, ADMIN.password);

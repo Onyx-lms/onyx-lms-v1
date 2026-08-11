@@ -18,14 +18,14 @@ export default async function RegisterPage() {
       footer={
         <>
           Already registered?{' '}
-          <Link href="/login" className="text-brand-600 hover:underline">Sign in</Link>
+          <Link href="/login/store" className="text-brand-600 hover:underline">Sign in</Link>
         </>
       }
     >
       <AuthForm
         action="register"
         submitLabel="Create account"
-        redirectTo="/login"
+        redirectTo="/login/store"
         onDone="message"
         fields={[
           { name: 'name', label: 'Full name', autoComplete: 'name' },

@@ -49,7 +49,7 @@ export function BlogEngagement({ blogId, comments, likes, liked, viewerId, isAdm
   }
 
   async function toggleLike() {
-    if (!viewerId) { router.push('/login'); return; }
+    if (!viewerId) { router.push('/login/store'); return; }
     const { ok, payload } = await send(`/blogs/${blogId}/like`, 'POST');
     if (ok) { setCount(payload.data.count); setMine(payload.data.liked); }
   }
@@ -87,7 +87,7 @@ export function BlogEngagement({ blogId, comments, likes, liked, viewerId, isAdm
         </form>
       ) : (
         <p className="mt-6 text-sm text-slate-500">
-          <a href="/login" className="text-brand-700 underline">Sign in</a> to join the discussion.
+          <a href="/login/store" className="text-brand-700 underline">Sign in</a> to join the discussion.
         </p>
       )}
 

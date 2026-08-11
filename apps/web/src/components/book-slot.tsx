@@ -12,7 +12,7 @@ export function BookSlot({ scheduleId, isSignedIn }: {
   const [message, setMessage] = useState('');
 
   if (!isSignedIn) {
-    return <a href="/login" className="btn-ghost px-3 py-1 text-xs">Sign in to book</a>;
+    return <a href="/login/store" className="btn-ghost px-3 py-1 text-xs">Sign in to book</a>;
   }
 
   return (

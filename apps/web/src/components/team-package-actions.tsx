@@ -15,7 +15,7 @@ export function TeamPackageActions({ packageId, isPaid, isSignedIn, purchased }:
     return <a href="/my-team-packages" className="btn-primary w-full">Open my classroom</a>;
   }
   if (!isSignedIn) {
-    return <a href="/login" className="btn-primary w-full">Sign in to get this package</a>;
+    return <a href="/login/store" className="btn-primary w-full">Sign in to get this package</a>;
   }
 
   return (

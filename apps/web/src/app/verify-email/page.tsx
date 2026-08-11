@@ -11,7 +11,7 @@ export default async function VerifyEmailPage(
   const { token = '' } = await searchParams;
   return (
     <AuthCard title="Verify your email"
-      footer={<Link href="/login" className="text-brand-600 hover:underline">Go to sign in</Link>}>
+      footer={<Link href="/login/store" className="text-brand-600 hover:underline">Go to sign in</Link>}>
       <VerifyEmailClient token={token} />
     </AuthCard>
   );

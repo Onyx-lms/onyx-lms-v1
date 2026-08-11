@@ -9,7 +9,7 @@ export function LogoutButton() {
       className="btn-ghost w-full"
       onClick={async () => {
         await fetch('/api/auth/logout', { method: 'DELETE' });
-        router.push('/login');
+        router.push('/login/store');
         router.refresh();
       }}
     >

@@ -24,7 +24,7 @@ export function BootcampActions({ bootcampId, slug, isPaid, isSignedIn, purchase
   }
   if (!isSignedIn) {
     return (
-      <a href="/login" className="btn-primary w-full">
+      <a href="/login/store" className="btn-primary w-full">
         Sign in to {isPaid ? 'buy this workshop' : 'enrol'}
       </a>
     );

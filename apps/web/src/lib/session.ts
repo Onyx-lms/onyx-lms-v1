@@ -59,7 +59,12 @@ export async function apiAuthSafe<T>(path: string): Promise<T | null> {
 
 export async function requireSession(): Promise<Claims> {
   const session = await getSession();
-  if (!session) redirect('/login');
+  // The STOREFRONT's sign-in, not Onyx's. This guard protects storefront pages
+  // -- cart, checkout, purchases, messages -- and they run on this session,
+  // which Onyx's cookie is not. Sending them to /login would bounce them to
+  // Onyx, where a correct storefront password is refused and the page they
+  // wanted stays out of reach.
+  if (!session) redirect('/login/store');
   return session;
 }
 

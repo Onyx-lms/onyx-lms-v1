@@ -42,7 +42,9 @@ export async function SiteHeader({ settings, categories }: {
             Dashboard
           </Link>
         ) : (
-          <Link href="/login" className="btn-primary ml-auto md:ml-0">Sign in</Link>
+          // Straight to Onyx rather than through /login's redirect: the
+          // destination shows on hover, and it is one navigation fewer.
+          <Link href="/onyx/login" className="btn-primary ml-auto md:ml-0">Sign in</Link>
         )}
       </div>
 

@@ -22,11 +22,11 @@ export default async function ResetPasswordPage(
 
   return (
     <AuthCard title="Choose a new password" subtitle="Reset links expire after 60 minutes."
-      footer={<Link href="/login" className="text-brand-600 hover:underline">Back to sign in</Link>}>
+      footer={<Link href="/login/store" className="text-brand-600 hover:underline">Back to sign in</Link>}>
       <AuthForm
         action="reset"
         submitLabel="Update password"
-        redirectTo="/login"
+        redirectTo="/login/store"
         onDone="message"
         fields={[
           { name: 'email', label: 'Email address', type: 'email', defaultValue: email },

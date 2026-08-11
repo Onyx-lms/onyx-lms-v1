@@ -10,7 +10,7 @@ export default function ForgotPasswordPage() {
     <AuthCard
       title="Forgot your password?"
       subtitle="We will email you a link to choose a new one."
-      footer={<Link href="/login" className="text-brand-600 hover:underline">Back to sign in</Link>}
+      footer={<Link href="/login/store" className="text-brand-600 hover:underline">Back to sign in</Link>}
     >
       {/* The response is identical whether or not the address exists, so this
           form cannot be used to discover who has an account. */}
