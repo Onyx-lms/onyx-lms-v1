@@ -104,6 +104,21 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
     return ok(revoked, 'Revoked.');
   });
 
+  /**
+   * What this institution has issued.
+   *
+   * The same roles that may issue may read the register -- revoking a
+   * credential you cannot find is not a workflow, and it was the only thing
+   * standing between the API and a screen.
+   */
+  app.get('/api/onyx/certificates', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...ISSUERS);
+    const q = req.query as { user_id?: string };
+    const userId = q.user_id ? Number(q.user_id) : undefined;
+    return ok(await ctx.onyxCareer.issuedCertificates(claims.tenant_id,
+      Number.isFinite(userId) && userId ? { userId } : {}));
+  });
+
   app.get('/api/onyx/my/certificates', async (req) => {
     const claims = requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxCareer.certificates(claims.tenant_id, claims.user_id));

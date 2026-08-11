@@ -54,8 +54,11 @@ does not extend the port's 61 tables. See `ONYX_SPRINT_PLAN.csv` and
 | **O03** Code Lab: IDE, queue, evaluator, bank, workspaces | 6/6 | 4/4 | **done, live** |
 | **O04** Assess: banks, timed engine, proctoring, marking, analytics | 9/9 | 7/7 | **done, live** |
 | **O05** Career: certificates, passport, placement, contests, interviews | 8/8 | 10/10 | **done, live** |
-| O06 Learn engagement (LRN-05, LRN-06) | | | next |
-| O07--O08 | Campus operations, hardening | | not started |
+| **O06** Learn engagement: progress, nudges, discussion, tickets | 2/2 | 4/4 | **done, live** |
+| **O07** Campus: timetable, examinations, finance, guardians | 4/4 | 8/8 | **done, live** |
+| **Platform** superadmin: tenants, cross-tenant audit | 1/1 | 2/2 | **done, live** |
+| **Gap closure** the seven partial requirements, finished | -- | -- | **done** |
+| O08 | Hardening: SEC-01/02, SCL-01--03, DOC-01 | | not started |
 | *(pulled forward from O08)* SEC-03 accessibility, DR-01 backups | -- | 6 e2e | **done** |
 
 The last row is two O08 tasks done early. The proposal's non-functional
@@ -66,9 +69,34 @@ tends to stay nobody's until launch. Both are built and tested:
 (SEC-01/02 audits, SCL-01--03, DOC-01) is not started; SCL-01's queue exists
 already because O03 needed it.
 
-**Onyx Learn is six requirements, not four.** O02 delivered LRN-01 to LRN-04.
-**LRN-05** (progress dashboard) and **LRN-06** (discussion and doubt resolution)
-are scheduled for O06 and are not built.
+**Onyx Learn is six requirements, not four.** O02 delivered LRN-01 to LRN-04;
+O06 added **LRN-05** (progress and nudges, derived at read time -- there is no
+nudge table) and **LRN-06** (discussion threads and doubt tickets).
+
+**The seven requirements that were partial are finished.** An audit against the
+proposal found every pillar shipped and seven requirements complete in the API
+and incomplete in the product. Each is now closed:
+
+| Was | Now |
+| --- | --- |
+| **LRN-03** QR check-in refused codes still on the projector | Judged against the request's arrival time, with RFC 6238 one-step tolerance and a 15s default window |
+| **LRN-03c** analytics and export were API-only | `/onyx/courses/[id]/attendance` — per-learner percentages, shortfall flags, CSV |
+| **ASS-02** camera and screen were never captured | `onyx-proctor.tsx` holds both, raises the four events that could not fire, and uploads no media |
+| **ASS-04b** CSV only | `results.pdf`, from a zero-dependency PDF writer (`format/pdf.ts`) |
+| **CMP-02b** seating was an on-screen table | `seating.pdf` — the plan and an attendance sheet with a signature column |
+| **CMP-01a** faculty allocation had no screen | `/onyx/allocations` — allocate teaching, and the load per person per term |
+| **CMP-03b** invoices could not be paid | Checkout, webhook and a Pay control, on the port's nine-gateway engine with per-tenant credentials |
+| **CAR-03** certificates could not be issued | `/onyx/certificates` — issue, register, revoke with a reason |
+| **LAB-02** no sandbox to point at | `deploy/judge0/` plus `verify-sandbox.mjs`, which submits a fork bomb and refuses to certify a host that does not stop it |
+
+**Every requirement is reachable from a browser, not only from the API.** That
+is a separate claim from "the endpoint exists", and it is the one that keeps
+slipping: an exam could be scheduled with no way to seat it, a fee structure
+had no screen, a question bank could not be filled. `tests/browser/
+e2e-authoring.spec.ts` proves the create side and `e2e-downstream.spec.ts`
+proves what follows it -- seat, mark, moderate, publish, transcribe; structure,
+invoice; bank, questions, paper; test cases; employer, post, apply, shortlist --
+each through the real UI and then checked in the database.
 
 ## Three schema inconsistencies preserved
 
@@ -89,9 +117,10 @@ one-per-person. A counter would let a single account click forever.
 npm run verify:all      # everything below, in order
 
 npm run verify:parity   # generated SQL vs the Laravel schema
-npm test                # 578 unit tests, no database needed
+npm test                # 631 unit tests, no database needed
 npm run db:audit        # live types, RLS, sequences, seed, storage
-npm run e2e             # 292 tests against a running api + web + Supabase
+npm run e2e             # 314 tests against a running api + web + Supabase
+npm run browser         # 92 tests in real Chromium against the same servers
 npm run db:backup       # per-tenant export, --verify, --restore --into <slug>
 python tools/grading-differential.py        # quiz scoring vs the PHP algorithm
 ```

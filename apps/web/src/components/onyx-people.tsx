@@ -19,7 +19,12 @@ export interface Member {
   user: { id: number; name: string; email: string } | null;
 }
 
-const ROLES: Role[] = ['student', 'faculty', 'exams', 'placement', 'employer', 'admin'];
+// Guardian belongs here too: CMP-04 gives a parent their own account, and
+// leaving the role out of this list meant an administrator could link a
+// guardian to a student but never create one to link.
+const ROLES: Role[] = [
+  'student', 'faculty', 'exams', 'placement', 'employer', 'guardian', 'admin',
+];
 
 const field = 'rounded-lg border border-slate-300 px-3 py-2 text-sm '
   + 'focus:border-slate-900 focus:outline-none';

@@ -72,7 +72,15 @@ export function Messenger({ threads, active, messages, viewerId, basePath }: {
         auth: { persistSession: false },
         realtime: { params: { eventsPerSecond: 5 } },
       });
-      client.realtime.setAuth(grant.token);
+      // Awaited, and it matters. `setAuth` is async: it hands the token to
+      // the socket, and the join below carries whatever token is set when it
+      // goes out. Not awaiting it is a race that loses quietly -- the channel
+      // joins as `anon`, Realtime records the listener with no user_id, the
+      // RLS policy on `messages` (sender or receiver = the caller) can never
+      // match, and not one change is ever delivered. No error, no failed
+      // subscribe: the inbox just sits there until the reader refreshes.
+      await client.realtime.setAuth(grant.token);
+      if (cancelled) return;
 
       channel = client
         .channel('thread:' + active.id)
@@ -95,7 +103,32 @@ export function Messenger({ threads, active, messages, viewerId, basePath }: {
             router.refresh();
           }
         })
-        .subscribe((status) => setConnected(status === 'SUBSCRIBED'));
+        .subscribe((status) => {
+          setConnected(status === 'SUBSCRIBED');
+          // Catch up on whatever was said while this socket was opening.
+          //
+          // The list on screen was rendered by the server before this
+          // component mounted, and the listener is not registered until some
+          // time after the page loads -- a token request, a dynamic import, a
+          // websocket connect, a join, and then the server's own write of the
+          // subscription, which is measurably ~0.5s behind the SUBSCRIBED ack
+          // even on an idle project. Nothing sent inside that window arrives:
+          // it is too late for the render and too early for the channel, so
+          // it appears only on a refresh, which is the exact thing this
+          // component exists to avoid. Reconciling once the channel is
+          // genuinely live closes the window however long it turns out to be.
+          if (status !== 'SUBSCRIBED' || cancelled) return;
+          void (async () => {
+            const back = await fetch('/api/proxy/messages/threads/' + active.code);
+            if (!back.ok || cancelled) return;
+            const missed = ((await back.json()).data?.messages ?? []) as Message[];
+            setLive((prev) => {
+              const known = new Set(prev.map((m) => m.id));
+              const extra = missed.filter((m) => !known.has(m.id));
+              return extra.length ? [...prev, ...extra] : prev;
+            });
+          })();
+        });
     })();
 
     return () => {

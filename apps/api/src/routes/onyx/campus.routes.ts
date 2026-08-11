@@ -27,6 +27,8 @@ const asReq = (req: FastifyRequest) => ({
 const idOf = (req: FastifyRequest, key = 'id') =>
   Number((req.params as Record<string, string>)[key]);
 
+const ipOf = (req: FastifyRequest) => (req as unknown as { ip?: string }).ip ?? null;
+
 /** The registry: who builds the term. */
 const REGISTRY = ['admin'] as const;
 /** The examinations office. */
@@ -235,6 +237,26 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
     return ok(await ctx.onyxExams.seatingPlan(claims.tenant_id, idOf(req)));
   });
 
+  /**
+   * CMP-02b -- the plan as paper.
+   *
+   * The route above returns the plan; this returns the thing that gets pinned
+   * to a door and carried by an invigilator, with a column to sign in. Same
+   * staff-only guard: it is every candidate's name and seat.
+   */
+  app.get('/api/onyx/exams/:id/seating.pdf', async (req, reply) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...EXAMS);
+    const tenant = await ctx.onyxTenancy.tenant(claims.tenant_id);
+    const pdf = await ctx.onyxExams.seatingPdf(claims.tenant_id, idOf(req), {
+      issuer: tenant?.name ?? null,
+    });
+
+    reply.header('Content-Type', 'application/pdf');
+    reply.header('Content-Disposition',
+      'attachment; filename="exam-' + idOf(req) + '-seating.pdf"');
+    return reply.send(pdf);
+  });
+
   /** Where you sit. Yours only, from the token. */
   app.get('/api/onyx/exams/:id/seat', async (req) => {
     const { claims } = viewerOf(req);
@@ -423,6 +445,108 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
       raw: z.unknown().optional(),
     }), req.body);
     return ok(await ctx.onyxFinance.recordPayment(claims.tenant_id, body));
+  });
+
+  // =========================================================================
+  // CMP-03b -- paying online
+  // =========================================================================
+
+  /**
+   * Which gateways an institution has switched on.
+   *
+   * Readable by anyone signed in, because a learner about to pay has to be
+   * offered a choice. Identifier, title and currency only -- no credentials
+   * and no test-mode flag, neither of which is a payer's business.
+   */
+  app.get('/api/onyx/gateways', async (req) => {
+    const { claims } = viewerOf(req);
+    return ok(await ctx.onyxCheckout.enabledGateways(claims.tenant_id));
+  });
+
+  /** The institution's own merchant configuration. Administrators only. */
+  app.get('/api/onyx/admin/gateways', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...REGISTRY);
+    return ok(await ctx.onyxCheckout.gateways(claims.tenant_id));
+  });
+
+  app.put('/api/onyx/admin/gateways', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...REGISTRY);
+    const body = validate(z.object({
+      identifier: z.string().min(1).max(30),
+      title: z.string().max(120).optional(),
+      // Values are write-only. Nothing reads them back out to a caller.
+      keys: z.record(z.string(), z.string()).optional(),
+      currency: z.string().length(3).optional(),
+      test_mode: z.boolean().optional(),
+      status: z.boolean().optional(),
+    }), req.body);
+
+    const saved = await ctx.onyxCheckout.saveGateway(claims.tenant_id, body);
+    await ctx.onyxAudit.record(claims, {
+      action: 'gateway.configured', entityType: 'payment_gateway', entityId: saved.id,
+      // The names of the credentials that changed, never the values -- an audit
+      // log that records a live secret key is a second place it can leak from.
+      after: {
+        identifier: saved.identifier, test_mode: saved.test_mode, status: saved.status,
+        keys_set: Object.keys(body.keys ?? {}),
+      },
+      ip: ipOf(req),
+    });
+    return ok(saved, 'Saved.');
+  });
+
+  /**
+   * Start paying an invoice.
+   *
+   * The amount is the outstanding balance computed server-side; there is no
+   * parameter for it, so a request cannot pay one rupee against a fee.
+   */
+  app.post('/api/onyx/invoices/:id/checkout', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    const body = validate(z.object({
+      gateway: z.string().min(1).max(30),
+    }), req.body);
+    return ok(await ctx.onyxCheckout.begin(claims.tenant_id, idOf(req), viewer, {
+      gateway: body.gateway, email: claims.email ?? null,
+    }));
+  });
+
+  /**
+   * The redirect back from a gateway.
+   *
+   * Signed-in, because it is the payer's own browser returning -- but the
+   * outcome is asked of the provider rather than read from the query string.
+   */
+  app.post('/api/onyx/payments/confirm', async (req) => {
+    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const body = validate(z.object({
+      reference: z.string().min(1).max(4000),
+      provider_ref: z.string().max(255).optional(),
+      query: z.record(z.string(), z.string()).optional(),
+    }), req.body);
+    return ok(await ctx.onyxCheckout.confirm(
+      body.reference, body.provider_ref ?? '', body.query ?? {},
+      { tenantId: claims.tenant_id }));
+  });
+
+  /**
+   * A gateway calling us. No token, and none possible.
+   *
+   * The tenant is in the path because a signature can only be checked against
+   * one institution's secret and the body cannot be trusted to name it. It
+   * grants nothing on its own: the reference inside the body is HMAC-signed by
+   * us and carries the real tenant, and the two must agree.
+   *
+   * Always 200. A gateway that receives an error retries, and retrying is the
+   * wrong answer to both "already processed" and "not for us".
+   */
+  app.post('/api/onyx/payments/webhook/:tenantId/:gateway', async (req) => {
+    const params = req.params as { tenantId: string; gateway: string };
+    const result = await ctx.onyxCheckout.webhook(params.gateway, {
+      rawBody: (req as unknown as { rawBody?: string }).rawBody ?? '',
+      headers: req.headers as Record<string, string | string[] | undefined>,
+    }, Number(params.tenantId) || undefined);
+    return ok(result);
   });
 
   // =========================================================================

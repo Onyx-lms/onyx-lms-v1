@@ -31,7 +31,11 @@ export type AuditAction =
   // O07 -- campus operations
   | 'timetable.published' | 'exam.scheduled' | 'seating.allocated'
   | 'marks.entered' | 'marks.moderated'
-  | 'invoice.issued' | 'guardian.linked' | 'guardian.consent_changed';
+  | 'invoice.issued' | 'guardian.linked' | 'guardian.consent_changed'
+  // Changing where an institution's fees settle to is a finance-grade event,
+  // so it is logged like one. The entry names which credentials were written,
+  // never their values.
+  | 'gateway.configured';
 
 export interface AuditEntry {
   action: AuditAction;

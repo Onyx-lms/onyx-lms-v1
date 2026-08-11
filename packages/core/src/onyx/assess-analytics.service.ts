@@ -23,6 +23,8 @@
  */
 import type { OnyxDb } from './db.ts';
 import { HttpError } from '../http/errors.ts';
+import { csvDocument } from '../format/csv.ts';
+import { pdfTable } from '../format/pdf.ts';
 import { isObjective, type PaperEntry } from './assess.service.ts';
 
 const ATTEMPT_COLUMNS = 'id, tenant_id, assessment_id, user_id, attempt, paper, status, submitted_at, auto_score, manual_score, score, max_score, integrity_flags, integrity_status';
@@ -257,7 +259,71 @@ export class AssessAnalyticsService {
         c.integrity_flags, c.integrity_status,
       ];
     });
-    return [header, ...rows].map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+    return csvDocument(header, rows);
+  }
+
+  /**
+   * The same report as a document somebody can print, sign and file.
+   *
+   * ASS-04b asks for CSV *and* PDF, and they are not the same deliverable: the
+   * CSV is for the person who is going to do arithmetic on it, this is for the
+   * board paper. So it carries the cohort statistics the CSV does not -- a
+   * result sheet whose reader has to compute the mean themselves is a
+   * spreadsheet with a header.
+   */
+  async exportPdf(tenantId: number, assessmentId: number, opts: {
+    names?: Map<number, { name: string; email: string }>;
+    issuer?: string | null;
+    issuedAt?: number;
+  } = {}): Promise<Buffer> {
+    const report = await this.results(tenantId, assessmentId);
+    const c = report.cohort;
+
+    const meta = [
+      'Sat by ' + c.sat + (c.sat === 1 ? ' candidate' : ' candidates')
+        + ' · highest ' + c.highest + ', lowest ' + c.lowest + ' of ' + c.max_score,
+      'Mean ' + c.mean + ' · median ' + c.median + ' · standard deviation ' + c.stdev,
+      c.pass_rate === null
+        ? 'No pass mark is set for this assessment.'
+        : 'Passed ' + c.passed + ' of ' + c.sat + ' (' + c.pass_rate + '%)',
+      // Stated on the page, because a printed result sheet outlives the screen
+      // that said whether the results were published.
+      report.published
+        ? 'Results are published to candidates.'
+        : 'PROVISIONAL — results are not yet published to candidates.',
+    ];
+
+    return pdfTable({
+      title: report.title,
+      subtitle: 'Results and item performance',
+      meta,
+      columns: [
+        { header: 'Candidate', width: 230 },
+        { header: 'Email', width: 220 },
+        { header: 'Score', width: 70, align: 'right' },
+        { header: 'Percent', width: 70, align: 'right' },
+        { header: 'Passed', width: 60 },
+        { header: 'Integrity', width: 120 },
+      ],
+      rows: report.candidates.map((cand) => {
+        const who = opts.names?.get(cand.user_id);
+        return [
+          who?.name ?? 'User ' + cand.user_id,
+          who?.email ?? '',
+          cand.score + ' of ' + cand.max_score,
+          cand.percent + '%',
+          cand.passed === null ? '—' : (cand.passed ? 'Yes' : 'No'),
+          cand.integrity_flags === 0
+            ? 'Clear'
+            : cand.integrity_flags + ' flags · ' + cand.integrity_status,
+        ];
+      }),
+      // This service holds no clock -- it computes statistics from rows and
+      // nothing else. The stamp is the caller's, defaulted here rather than
+      // threading a clock through a class that has no other use for one.
+      footer: (opts.issuer ?? 'Onyx LMS')
+        + ' · generated ' + new Date(opts.issuedAt ?? Date.now()).toISOString().slice(0, 10),
+    });
   }
 
   /** Attempts that have been sat and marked. In-progress papers are not data. */
@@ -298,8 +364,3 @@ function round(n: number, places = 2): number {
   return Math.round(n * f) / f;
 }
 
-/** Quotes only where it matters, and doubles embedded quotes as CSV requires. */
-function csvCell(value: unknown): string {
-  const s = String(value ?? '');
-  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-}

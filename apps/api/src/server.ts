@@ -104,6 +104,37 @@ export async function buildServer() {
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'))) {
   const port = Number(process.env.PORT ?? 4000);
   const app = await buildServer();
+
+  /**
+   * Say something before dying.
+   *
+   * The API was disappearing part-way through full end-to-end runs -- at a
+   * different endpoint each time, and silently: nothing on stdout, nothing on
+   * stderr, every remaining test failing with connection-refused and no way to
+   * tell a crash from a kill. Node's default handler prints an unhandled
+   * rejection and exits, but only for rejections it can see; anything raised
+   * outside a request's own promise chain left no trace at all.
+   *
+   * These do not swallow the fault. The process still exits non-zero -- an API
+   * that has hit an unhandled exception has an unknown amount of state behind
+   * it and should be replaced, not nursed. What changes is that the next person
+   * reading the log finds out what happened.
+   */
+  const die = (kind: string) => (err: unknown) => {
+    try {
+      app.log.fatal({ err, kind }, 'onyx api is exiting on an ' + kind);
+    } catch {
+      // The logger is part of what might be broken. Getting the reason onto
+      // the terminal matters more than getting it formatted.
+      console.error('[api] exiting on an ' + kind, err);
+    }
+    process.exitCode = 1;
+    // Enough of a beat for a piped stderr to flush before the process goes.
+    setTimeout(() => process.exit(1), 100).unref();
+  };
+  process.on('uncaughtException', die('uncaught exception'));
+  process.on('unhandledRejection', die('unhandled rejection'));
+
   app.listen({ port, host: '0.0.0.0' })
     .catch((err) => { app.log.error(err); process.exit(1); });
 

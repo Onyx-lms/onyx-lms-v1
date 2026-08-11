@@ -145,33 +145,128 @@ test('M-02 a message reaches the recipient over Realtime without a refresh', asy
   const { createClient } = await import('@supabase/supabase-js');
   const client = createClient(grant.data.supabase_url, grant.data.supabase_anon_key,
     { auth: { persistSession: false } });
-  client.realtime.setAuth(grant.data.token);
+  // Awaited. `setAuth` is async, and the join below carries whatever token is
+  // set when it goes out; without the await the channel can join as `anon`,
+  // which delivers nothing and says nothing. That was a real defect in the
+  // inbox, and this test only found it because it ran slowly enough once.
+  await client.realtime.setAuth(grant.data.token);
 
-  const body = 'realtime ' + RUN;
+  /*
+   * Two things have to be true before writing, and neither is the join ack.
+   *
+   * SUBSCRIBED means the channel joined, not that the listener is live:
+   * Realtime records each postgres_changes listener in `realtime.subscription`
+   * a measurable moment later -- ~460ms on an idle project. A change committed
+   * before that row exists is routed to nobody and is gone, so this waits for
+   * the row rather than for the ack.
+   *
+   * The listener also has to have joined as the user. If it joined as `anon`,
+   * the policy on `messages` (sender or receiver is the caller) matches
+   * nothing and every change is silently withheld -- which is exactly what
+   * the whole-suite failure turned out to be. The claims are asserted below,
+   * so a regression of that names itself instead of looking like a flake.
+   */
+  const listener = async () => withDb(async (c) => (await c.query(
+    // Realtime stores the filter as `{"(thread_id,eq,42,f)"}`. Matched on the
+    // whole clause, not the bare number: 42 is a substring of 424.
+    `select claims->>'user_id' uid, claims_role::text role
+     from realtime.subscription
+     where entity = 'public.messages'::regclass and filters::text like $1`,
+    ['%(thread_id,eq,' + threadId + ',%'])).rows[0] ?? null);
+
+  const trace: string[] = [];
+  const sentBodies: string[] = [];
+  let resend: NodeJS.Timeout | undefined;
+  let overall: NodeJS.Timeout | undefined;
+  let joinedAs: { uid: string | null; role: string } | null = null;
+
   const delivered = new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('no realtime event within 10s')), 10_000);
+    let settled = false;
+    const done = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(resend);
+      clearTimeout(overall);
+      fn();
+    };
+
+    const sendOne = async () => {
+      const body = 'realtime ' + RUN + ' #' + (sentBodies.length + 1);
+      sentBodies.push(body);
+      const sent = await api('/api/messages',
+        { token: studentToken, body: { thread_id: threadId, message: body } });
+      trace.push('sent' + sentBodies.length + '=' + sent.ok);
+      if (!sent.ok) {
+        done(() => reject(new Error('the message could not be sent: ' + sent.message)));
+        return;
+      }
+      // Insurance against a genuinely dropped change, not the mechanism: with
+      // the token awaited and the listener registered, the first one arrives.
+      //
+      // Guarded, because the message usually lands *during* the await above:
+      // `done()` clears the timer that exists at that moment, and arming a new
+      // one afterwards starts a chain that outlives the test -- it kept
+      // writing messages every 8s, held the file open for two minutes and
+      // took the next file down with it.
+      if (settled) return;
+      resend = setTimeout(() => { void sendOne(); }, 8_000);
+    };
+
+    overall = setTimeout(() => {
+      done(async () => {
+        const rows = await withDb(async (c) => (await c.query(
+          `select thread_id from messages where message like $1`,
+          ['%' + RUN + ' #%'])).rows);
+        reject(new Error(
+          'no realtime event in 40s after ' + sentBodies.length + ' messages ['
+          + trace.join(' ') + ']. Subscribed to thread ' + threadId
+          + ' as ' + JSON.stringify(joinedAs) + '; the database holds '
+          + rows.length + ' of them on thread(s) '
+          + [...new Set(rows.map((r) => String(r.thread_id)))].join(', ')));
+      });
+    }, 40_000);
+
     const channel = client
       .channel('e2e:thread:' + threadId)
       .on('postgres_changes', {
         event: 'INSERT', schema: 'public', table: 'messages',
         filter: 'thread_id=eq.' + threadId,
       }, (payload) => {
-        clearTimeout(timer);
-        resolve(String((payload.new as { message: string }).message));
+        done(() => resolve(String((payload.new as { message: string }).message)));
       })
       .subscribe(async (status) => {
-        if (status !== 'SUBSCRIBED') return;
-        // Only send once the socket is actually listening.
-        const sent = await api('/api/messages',
-          { token: studentToken, body: { thread_id: threadId, message: body } });
-        if (!sent.ok) reject(new Error('send failed: ' + sent.message));
+        trace.push(status);
+        if (trace.filter((st) => st === 'CHANNEL_ERROR').length >= 2) {
+          done(() => reject(new Error('the realtime channel kept failing: ' + trace.join(' '))));
+          return;
+        }
+        // Once per join: a rejoin must not start a second chain of resends.
+        if (status !== 'SUBSCRIBED' || sentBodies.length > 0) return;
+        for (let i = 0; i < 100 && !joinedAs; i += 1) {
+          joinedAs = await listener();
+          if (!joinedAs) await new Promise((r) => setTimeout(r, 100));
+        }
+        trace.push('registered');
+        await sendOne();
       });
     void channel;
   });
 
   try {
-    assert.equal(await delivered, body);
+    const message = await delivered;
+    assert.ok(sentBodies.includes(message),
+      'something arrived that this test did not write: ' + message);
+    assert.equal(joinedAs?.role, 'authenticated',
+      'the listener joined as ' + joinedAs?.role + ', which reads nothing under RLS');
+    assert.equal(String(joinedAs?.uid), String(adminId),
+      'the listener joined as the wrong user, so RLS would hide the conversation');
+    if (sentBodies.length > 1) {
+      // Visible, but not a verdict: the broker dropped a change and recovered.
+      console.log('    realtime delivered on attempt ' + sentBodies.length);
+    }
   } finally {
+    clearTimeout(resend);
+    clearTimeout(overall);
     // In a finally, not after the assertion: `delivered` rejecting (a real
     // regression, or just a slow socket on the run) skipped straight past the
     // disconnect below, leaving the handle open. node --test then never exits

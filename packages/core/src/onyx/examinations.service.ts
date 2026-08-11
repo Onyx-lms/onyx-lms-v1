@@ -27,6 +27,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { OnyxDb } from './db.ts';
 import type { Role, MarkStatus } from '@onyx/types';
 import { HttpError } from '../http/errors.ts';
+import { pdfTable } from '../format/pdf.ts';
 import type { AuditService } from './audit.service.ts';
 
 const EXAM_COLUMNS = 'id, tenant_id, semester_id, course_id, assessment_id, title, starts_at, duration_minutes, max_marks, pass_marks, status, created_by, created_at, updated_at';
@@ -346,6 +347,65 @@ export class ExaminationsService {
     }
 
     return { exam_id: examId, total: seats.length, halls: [...byHall.values()] };
+  }
+
+  /**
+   * The seating plan and the attendance sheet, as paper.
+   *
+   * CMP-02b's words are "printable seating plans and attendance sheets", and
+   * the emphasis is the point: this is the one artefact in the product whose
+   * destination is a door and an invigilator's clipboard, not a screen. An HTML
+   * table is not that, which is why it needed a real document.
+   *
+   * One document per hall, because that is how it is used -- the sheet for Main
+   * Hall goes to Main Hall. The signature column is empty on purpose: it is
+   * what an invigilator writes in, and it is the reason the sheet exists rather
+   * than the roster already on the screen.
+   */
+  async seatingPdf(tenantId: number, examId: number, opts: {
+    issuer?: string | null; issuedAt?: number;
+  } = {}): Promise<Buffer> {
+    const exam = await this.exam(tenantId, examId);
+    const plan = await this.seatingPlan(tenantId, examId);
+
+    const rows: (string | number)[][] = [];
+    for (const hall of plan.halls) {
+      for (const seat of hall.seats as { seat_label: string; user_id: number; name: string | null }[]) {
+        rows.push([
+          hall.hall,
+          seat.seat_label,
+          seat.name ?? 'User ' + seat.user_id,
+          String(seat.user_id),
+          // Two empty columns: present, and a signature. Paper that cannot be
+          // written on is a printout, not an attendance sheet.
+          '',
+          '',
+        ]);
+      }
+    }
+
+    return pdfTable({
+      title: exam.title,
+      subtitle: 'Seating plan and attendance sheet',
+      meta: [
+        new Date(String(exam.starts_at)).toUTCString()
+          + ' · ' + exam.duration_minutes + ' minutes',
+        plan.total + (plan.total === 1 ? ' candidate' : ' candidates')
+          + ' across ' + plan.halls.length + (plan.halls.length === 1 ? ' hall' : ' halls'),
+        'Invigilator __________________________   Signed __________________________',
+      ],
+      columns: [
+        { header: 'Hall', width: 180 },
+        { header: 'Seat', width: 70 },
+        { header: 'Candidate', width: 220 },
+        { header: 'Id', width: 60, align: 'right' },
+        { header: 'Present', width: 70 },
+        { header: 'Signature', width: 170 },
+      ],
+      rows,
+      footer: (opts.issuer ?? 'Onyx LMS')
+        + ' · generated ' + new Date(opts.issuedAt ?? this.#now()).toISOString().slice(0, 10),
+    });
   }
 
   /** Where one candidate sits. What the learner's own page asks for. */

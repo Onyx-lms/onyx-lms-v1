@@ -44,11 +44,22 @@ export default async function OnyxResultsPage({ params }: { params: Promise<{ id
         <Link href={'/onyx/assessments/' + id} className="text-sm text-muted hover:underline">
           &larr; Back to the assessment
         </Link>
+        {/* Two formats because they are two jobs. The CSV is for whoever is
+            going to do arithmetic on it; the PDF carries the cohort
+            statistics and prints, which is what gets filed. */}
         <a
           href={'/api/proxy/onyx/assessments/' + id + '/results.csv'}
+          download
           className="ml-auto rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
         >
           Export CSV
+        </a>
+        <a
+          href={'/api/proxy/onyx/assessments/' + id + '/results.pdf'}
+          download
+          className="rounded-lg border border-slate-300 px-4 py-2 text-sm hover:bg-slate-50"
+        >
+          Export PDF
         </a>
       </div>
 

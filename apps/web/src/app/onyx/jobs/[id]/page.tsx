@@ -5,6 +5,7 @@ import { OnyxApplicants, OnyxApply } from '@/components/onyx-career';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import { isPlacementStaff, type Application, type JobPost } from '@/lib/onyx-career';
+import { ActionButton } from '@/components/onyx-create';
 
 export const metadata: Metadata = { title: 'Job' };
 
@@ -44,6 +45,21 @@ export default async function OnyxJobPage({ params }: { params: Promise<{ id: st
       <Link href="/onyx/jobs" className="text-sm text-muted hover:underline">
         &larr; All jobs
       </Link>
+
+      {/* CAR-04b: a post that was left a draft, or one that has filled up. */}
+      {canSeePipeline ? (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-[13px] font-semibold
+                           capitalize text-muted">{job.status}</span>
+          {job.status === 'draft' ? (
+            <ActionButton endpoint={'jobs/' + id + '/publish'} label="Open applications" />
+          ) : null}
+          {job.status === 'open' ? (
+            <ActionButton endpoint={'jobs/' + id + '/close'} label="Close applications"
+              tone="quiet" confirm="Close this post? Nobody else can apply." />
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="mt-4 grid gap-8 lg:grid-cols-[1fr_340px]">
         <div className="space-y-6">

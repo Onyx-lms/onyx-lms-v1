@@ -48,7 +48,7 @@ export function OnyxShell({ me, title, subtitle, children, action }: {
         <MobileMenu me={me} groups={groups} onClose={() => setMenuOpen(false)} />
       ) : null}
 
-      <div className="mx-auto grid max-w-[1240px] gap-7 px-4 pb-24 pt-5
+      <div className="grid gap-7 px-4 pb-24 pt-5
                       lg:grid-cols-[216px_minmax(0,1fr)] lg:items-start lg:px-7 lg:pb-10 lg:pt-7">
         <aside className="hidden lg:sticky lg:top-[84px] lg:block">
           <TenantCard tenant={me.tenant} role={me.role}

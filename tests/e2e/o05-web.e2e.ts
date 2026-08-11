@@ -130,9 +130,17 @@ test('CAR-03a the verification page works with no session and names only the hol
   assert.match(visible, new RegExp(T.name));
   assert.match(visible, /student/);
 
-  // Neither in the DOM nor in the RSC payload.
+  // Neither in the DOM nor in the RSC payload -- the payload matters as much
+  // as the markup, so this looks at the whole document rather than the
+  // rendered part. Asset URLs are the exception: they carry content hashes
+  // that change every build, and a four-digit id turns up inside one often
+  // enough that a bare substring test fails at random. So drop the URLs and
+  // match the id as a number rather than as a run of digits inside a hash --
+  // an id that genuinely reaches the page still fails this.
+  const payload = html.replace(/(?:src|href)="[^"]*"/g, '');
   assert.equal(html.includes(mail('student')), false, 'an email reached the public page');
-  assert.equal(html.includes(String(w.ids.student)), false, 'a user id reached the public page');
+  assert.ok(!new RegExp(`\\b${w.ids.student}\\b`).test(payload),
+    'a user id reached the public page');
   // What the issuer chose to publish does appear.
   assert.match(visible, /92/);
 

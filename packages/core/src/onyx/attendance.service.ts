@@ -9,11 +9,17 @@
  *   * The code is never stored. It is an HMAC of a per-session secret and the
  *     current time window, recomputed on both sides. A leaked database gives
  *     an attacker no codes, only secrets that stop working when a session ends.
- *   * It rotates every `qr_window_seconds` (30 by default), so a photograph of
+ *   * It rotates every `qr_window_seconds` (15 by default), so a photograph of
  *     the projector is worthless half a minute later.
- *   * Only the CURRENT window is accepted. A grace window would double the
- *     useful life of a shared screenshot for no real benefit -- the code on
- *     screen is always current.
+ *   * The current window and the one immediately before it are accepted --
+ *     RFC 6238's one-step tolerance, for the reason that RFC gives: a person
+ *     reads the code near the end of a window and the request lands after the
+ *     boundary. This replaced a current-window-only rule that looked stricter
+ *     and was not: it also refused codes that were still on the screen, and it
+ *     charged the learner for the server's own round trips. The guarantee is
+ *     stated as a number rather than a rule -- **a code is dead at most
+ *     `2 x qr_window_seconds` after it appeared**, which is the same half a
+ *     minute the old 30-second single window gave.
  *   * The endpoint takes no learner id. Who is marked present comes from the
  *     token, so one learner physically cannot mark another.
  *
@@ -25,6 +31,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { OnyxDb } from './db.ts';
 import type { AttendanceStatus } from '@onyx/types';
 import { HttpError } from '../http/errors.ts';
+import { csvDocument } from '../format/csv.ts';
 import type { AcademicsService } from './academics.service.ts';
 
 const SESSION_COLUMNS = 'id, tenant_id, course_id, title, scheduled_at, duration_minutes, status, qr_window_seconds, created_by, created_at';
@@ -53,7 +60,9 @@ export class AttendanceService {
     title: string; scheduled_at: string; duration_minutes?: number; qr_window_seconds?: number;
   }) {
     await this.#academics.course(tenantId, courseId);
-    const window = input.qr_window_seconds ?? 30;
+    // 15, not 30: a code is valid for its own window and the one after it, so
+    // 15 keeps the longest life of a photographed code at about half a minute.
+    const window = input.qr_window_seconds ?? 15;
     if (window < 10 || window > 300) {
       throw new HttpError(422, 'A code window must be between 10 and 300 seconds.');
     }
@@ -181,17 +190,21 @@ export class AttendanceService {
    * from anywhere.
    */
   async currentCode(tenantId: number, sessionId: number) {
+    // Stamped once, before any I/O. Reading the clock again after two database
+    // round trips dated the code from a moment that had already passed, so the
+    // countdown was short by however long the round trips took.
+    const at = this.#now();
     const session = await this.session(tenantId, sessionId);
     if (session.status !== 'open') throw new HttpError(422, 'This session is closed.');
 
     const secret = await this.#secret(tenantId, sessionId);
     const window = Number(session.qr_window_seconds);
-    const counter = Math.floor(this.#now() / 1000 / window);
+    const seconds = Math.floor(at / 1000);
     return {
-      code: this.#code(secret, sessionId, counter),
+      code: this.#code(secret, sessionId, Math.floor(seconds / window)),
       // How long the code on screen stays valid, so the display can count down
       // rather than refresh at an arbitrary moment.
-      expires_in_seconds: window - Math.floor((this.#now() / 1000) % window),
+      expires_in_seconds: window - (seconds % window),
       window_seconds: window,
     };
   }
@@ -203,15 +216,30 @@ export class AttendanceService {
    * "a learner cannot mark another learner" is structural rather than checked.
    */
   async checkIn(tenantId: number, sessionId: number, userId: number, code: string) {
+    // The window this code is judged against is fixed by when the request
+    // ARRIVED, not by when the three lookups below happen to finish. Deriving
+    // it afterwards charged the learner for the server's own latency: against a
+    // remote database the round trips alone could push a code that was still on
+    // the projector into the next window, and it was refused as expired.
+    const at = this.#now();
     const session = await this.session(tenantId, sessionId);
     if (session.status !== 'open') throw new HttpError(422, 'This session is closed.');
     await this.#academics.assertEnrolled(tenantId, Number(session.course_id), userId);
 
     const secret = await this.#secret(tenantId, sessionId);
     const window = Number(session.qr_window_seconds);
-    const counter = Math.floor(this.#now() / 1000 / window);
-    const expected = this.#code(secret, sessionId, counter);
-    if (!constantTimeEqual(code.trim(), expected)) {
+    const counter = Math.floor(at / 1000 / window);
+
+    // The current window and the one immediately before it, which is RFC 6238's
+    // one-step tolerance and exists for the same reason: a person reads a code
+    // near the end of its window and the request lands after the boundary. The
+    // exposure that buys back is bounded and paid for -- the default window is
+    // 15 seconds rather than 30, so the longest a photographed code can live is
+    // still about half a minute. Both are compared, and neither comparison is
+    // allowed to short-circuit the other.
+    const currentOk = constantTimeEqual(code.trim(), this.#code(secret, sessionId, counter));
+    const previousOk = constantTimeEqual(code.trim(), this.#code(secret, sessionId, counter - 1));
+    if (!currentOk && !previousOk) {
       // Deliberately the same message for a wrong code and an expired one:
       // distinguishing them tells someone with an old screenshot that they are
       // otherwise on the right track.
@@ -227,8 +255,9 @@ export class AttendanceService {
       throw new HttpError(422, 'You are already marked for this session.');
     }
 
-    const at = new Date(this.#now()).toISOString();
-    const late = this.#isLate(session, this.#now());
+    // The same arrival stamp the code was judged against, so a learner is never
+    // marked late by the latency of their own check-in.
+    const late = this.#isLate(session, at);
     const { data, error } = await this.#db.from('onyx_attendance_records').insert({
       tenant_id: tenantId, session_id: sessionId, user_id: userId,
       status: late ? 'late' : 'present',
@@ -236,7 +265,7 @@ export class AttendanceService {
       // marked_by is the learner themselves. Recording that is the difference
       // between a record and an assertion.
       marked_by: userId,
-      marked_at: at,
+      marked_at: new Date(at).toISOString(),
     }).select(RECORD_COLUMNS).maybeSingle();
     if (error?.code === '23505') throw new HttpError(422, 'You are already marked for this session.');
     if (error) throw new HttpError(500, 'Could not record your attendance: ' + error.message);
@@ -339,6 +368,28 @@ export class AttendanceService {
         status: record?.status ?? 'absent',
         method: record?.method ?? null,
       };
+    }));
+  }
+
+  /**
+   * The same export as a CSV file.
+   *
+   * LRN-03c asks for an export, and a registrar's export is a file they open in
+   * a spreadsheet, not a JSON array. The names come from the caller rather than
+   * a join here: this service knows nothing about who a user is, and the one
+   * place that does already loads the roster for other reasons.
+   */
+  async exportCsv(tenantId: number, courseId: number, opts: {
+    names?: Map<number, { name: string; email: string }>;
+  } = {}): Promise<string> {
+    const rows = await this.exportRows(tenantId, courseId);
+    const header = ['session_id', 'session', 'scheduled_at', 'user_id', 'name', 'email', 'status', 'method'];
+    return csvDocument(header, rows.map((r) => {
+      const who = opts.names?.get(r.user_id);
+      return [
+        r.session_id, r.session, r.scheduled_at, r.user_id,
+        who?.name ?? '', who?.email ?? '', r.status, r.method ?? '',
+      ];
     }));
   }
 

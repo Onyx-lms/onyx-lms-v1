@@ -47,6 +47,21 @@ async function forward(request: Request, path: string[], method: string) {
   const res = await fetch(`${API}/api/${path.join('/')}${search}`, {
     method, headers, body,
   });
+
+  // Not everything the API returns is JSON. The exports -- attendance and
+  // assessment results as CSV, a result sheet as PDF -- are files, and parsing
+  // one as JSON turned every download into "Bad response". Anything that is not
+  // JSON is handed back as it arrived, carrying the two headers that decide
+  // whether a browser opens it or saves it under the name the API chose.
+  const type = res.headers.get('content-type') ?? '';
+  if (!type.includes('application/json')) {
+    const passthrough = new Headers();
+    passthrough.set('Content-Type', type || 'application/octet-stream');
+    const filename = res.headers.get('content-disposition');
+    if (filename) passthrough.set('Content-Disposition', filename);
+    return new NextResponse(res.body, { status: res.status, headers: passthrough });
+  }
+
   const payload = await res.json().catch(() => ({ ok: false, message: 'Bad response' }));
   return NextResponse.json(payload, { status: res.status });
 }

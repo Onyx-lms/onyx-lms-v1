@@ -2,8 +2,10 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
 import { navFor } from '@/lib/onyx-nav';
-import { requireOnyxPageRole, onyxApi, type Me } from '@/lib/onyx-session';
+import { requireOnyxPageRole, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import type { Drive, Employer, JobPost } from '@/lib/onyx-career';
+import { CreatePanel } from '@/components/onyx-create';
+import { BuildDrive } from '@/components/onyx-manage';
 
 export const metadata: Metadata = { title: 'Placement' };
 
@@ -24,6 +26,15 @@ export default async function OnyxPlacementPage() {
   ]);
   const byEmployer = new Map(employers.map((e) => [e.id, e]));
 
+  // CAR-02: a skill on the passport is awarded by somebody, against a source.
+  // Both lists come from the institution rather than being typed as ids.
+  const [skills, members] = await Promise.all([
+    onyxApiSafe<{ id: number; name: string }[]>('/api/onyx/skills'),
+    onyxApiSafe<{ user_id: number; role: string; user: { name: string } | null }[]>(
+      '/api/onyx/members'),
+  ]);
+  const learners = (members ?? []).filter((m) => m.role === 'student');
+
   return (
     <OnyxShell
       me={me}
@@ -31,6 +42,40 @@ export default async function OnyxPlacementPage() {
       title="Placement"
       subtitle="Employers, posts and drives at this institution."
     >
+      <div className="mb-6 flex flex-wrap items-start gap-3">
+        <BuildDrive employers={employers.map((e) => ({ id: e.id, name: e.name }))}
+          jobs={jobs.map((j) => ({ id: j.id, title: j.title }))} />
+        <CreatePanel
+          title="New skill" cta="Add a skill" icon="award" compact
+          endpoint="skills"
+          fields={[
+            { name: 'name', label: 'Skill', required: true, wide: true,
+              placeholder: 'SQL' },
+            { name: 'category', label: 'Category', placeholder: 'Data' },
+          ]}
+        />
+        <CreatePanel
+          title="Award a skill" cta="Award a skill" icon="award" compact
+          endpoint="skills/award"
+          fields={[
+            { name: 'user_id', label: 'Learner', type: 'select', required: true,
+              numeric: true, wide: true,
+              options: learners.map((m) => ({ value: String(m.user_id),
+                label: m.user?.name ?? 'User ' + m.user_id })) },
+            { name: 'skill_id', label: 'Skill', type: 'select', required: true,
+              numeric: true, wide: true,
+              options: (skills ?? []).map((s) => ({ value: String(s.id), label: s.name })) },
+            { name: 'source_type', label: 'Earned through', type: 'select',
+              fallback: 'course',
+              options: ['course', 'assessment', 'problem', 'workspace', 'certificate', 'contest']
+                .map((t) => ({ value: t, label: t })) },
+            { name: 'strength', label: 'Strength', type: 'number', min: 0, max: 100,
+              fallback: 60,
+              help: 'What the passport shows, and what a job post checks against.' },
+          ]}
+        />
+      </div>
+
       <section>
         <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Employers</h2>
         <div className="mt-3 overflow-x-auto rounded-2xl border border-line">

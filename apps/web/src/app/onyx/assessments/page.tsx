@@ -4,6 +4,9 @@ import { OnyxShell } from '@/components/onyx-shell';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import { isExamsStaff, type Assessment, type MyAttempt } from '@/lib/onyx-assess';
+import type { Course } from '@/lib/onyx-learn';
+import { CreatePanel } from '@/components/onyx-create';
+import { BuildAssessment } from '@/components/onyx-manage';
 
 export const metadata: Metadata = { title: 'Assessments' };
 
@@ -18,6 +21,14 @@ export default async function OnyxAssessmentsPage() {
   const mine = staff ? null : await onyxApiSafe<MyAttempt[]>('/api/onyx/my/assessments');
   const now = Date.now();
 
+  // ASS-01: a paper is drawn from banks, so setting one needs the banks and
+  // the courses it can belong to. Learners are shown neither.
+  const [banks, courses] = await Promise.all([
+    staff ? onyxApiSafe<{ id: number; name: string; description: string | null }[]>(
+      '/api/onyx/banks') : null,
+    staff ? onyxApiSafe<Course[]>('/api/onyx/courses') : null,
+  ]);
+
   return (
     <OnyxShell
       me={me}
@@ -25,6 +36,45 @@ export default async function OnyxAssessmentsPage() {
       title="Assessments"
       subtitle={staff ? 'Papers set at this institution.' : 'Your tests, and your results.'}
     >
+      {staff ? (
+        <section className="mb-6">
+          <div className="flex flex-wrap items-start gap-3">
+            <BuildAssessment banks={banks ?? []}
+              courses={(courses ?? []).map((c) => ({ id: c.id, title: c.title }))} />
+            <CreatePanel
+              title="New question bank" cta="New question bank" icon="edit" compact
+              endpoint="banks"
+              fields={[
+                { name: 'name', label: 'Name', required: true, wide: true,
+                  placeholder: 'Data structures — term 1' },
+                { name: 'course_id', label: 'Course', type: 'select', numeric: true, wide: true,
+                  options: [{ value: '', label: 'Not tied to a course' }].concat(
+                    (courses ?? []).map((c) => ({ value: String(c.id), label: c.title }))) },
+                { name: 'description', label: 'Description', type: 'textarea' },
+              ]}
+            />
+          </div>
+
+          {banks?.length ? (
+            <ul className="mt-4 flex flex-wrap gap-2">
+              {banks.map((b) => (
+                <li key={b.id}>
+                  <Link href={'/onyx/banks/' + b.id}
+                    className="inline-flex rounded-xl border border-line bg-white px-3 py-2
+                               text-[13px] font-semibold hover:bg-brand-50">
+                    {b.name}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-muted">
+              No question banks yet. A paper draws its questions from one, so build a bank first.
+            </p>
+          )}
+        </section>
+      ) : null}
+
       <div className="overflow-x-auto rounded-2xl border border-line">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">

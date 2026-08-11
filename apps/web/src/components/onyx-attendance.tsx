@@ -205,3 +205,51 @@ export function OnyxRosterMarking({ session, roster }: {
     </div>
   );
 }
+
+/**
+ * LRN-03c -- the shortfall threshold.
+ *
+ * A number rather than a policy switch, because the number is not ours: a
+ * university with a 75% rule and one with an 85% rule are both looking at the
+ * same records. It lives in the query string so a registrar can send somebody
+ * the exact report they are reading, and so a reload does not lose it.
+ */
+export function ThresholdForm({ courseId, threshold }: {
+  courseId: number; threshold: number;
+}) {
+  const router = useRouter();
+  const [value, setValue] = useState(String(threshold));
+
+  return (
+    <form
+      className="flex flex-wrap items-end gap-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const n = Number(value);
+        if (!Number.isFinite(n) || n < 0 || n > 100) return;
+        router.push('/onyx/courses/' + courseId + '/attendance?threshold=' + n);
+      }}
+    >
+      <div>
+        <label htmlFor="threshold" className="block text-xs font-medium text-muted">
+          Shortfall below
+        </label>
+        <input
+          id="threshold" name="threshold" type="number" min={0} max={100} step={1}
+          value={value} onChange={(e) => setValue(e.target.value)}
+          className={field + ' mt-1 w-24 tabular-nums'}
+        />
+      </div>
+      <button
+        type="submit"
+        className="min-h-[34px] rounded-2xl border border-line px-3 text-sm font-medium
+                   text-slate-700 hover:bg-brand-50"
+      >
+        Apply
+      </button>
+      <p className="text-xs text-muted">
+        Percent attendance a learner must reach before they are flagged.
+      </p>
+    </form>
+  );
+}

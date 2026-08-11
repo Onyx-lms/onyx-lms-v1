@@ -307,8 +307,11 @@ test('LRN-03b the QR code rotates, and only the current one is accepted', async 
   assert.equal((await api('/api/onyx/attendance/' + w.session + '/check-in',
     { token: w.alpha.outsider, body: { code: code.data.code } })).status, 403);
 
-  // Wait out the window, then confirm the old code is dead.
-  await new Promise((r) => { setTimeout(r, 11_000); });
+  // Wait out TWO windows, then confirm the old code is dead. Two, because a
+  // code is good for its own window and the one after it -- the tolerance that
+  // stops a learner who read the code a second before it rotated being told it
+  // was never valid. Waiting one window would be asserting the old behaviour.
+  await new Promise((r) => { setTimeout(r, 21_000); });
   const rotated = await api<{ code: string }>('/api/onyx/attendance/' + w.session + '/code',
     { token: w.alpha.faculty });
   assert.notEqual(rotated.data.code, code.data.code, 'the code did not rotate');

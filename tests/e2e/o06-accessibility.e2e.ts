@@ -99,11 +99,15 @@ test('4.1.2 the exam screen names every control it offers', async () => {
     assert.ok(named, 'an unnamed form control: ' + tag.slice(0, 120));
   }
 
-  // Buttons have text, not just an icon.
-  const buttons = [...html.matchAll(/<button\b[^>]*>([\s\S]*?)<\/button>/g)];
-  for (const [, inner] of buttons) {
+  // Every button has an accessible name. Visible text is one way; an
+  // icon-only control with aria-label is another, and 4.1.2 asks for a name
+  // rather than for text. Checking the text alone failed the phone's menu
+  // button, which is correctly labelled and always was.
+  const buttons = [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)];
+  for (const [, attrs, inner] of buttons) {
     const label = String(inner).replace(/<[^>]+>/g, '').replace(/<!--.*?-->/g, '').trim();
-    assert.ok(label.length > 0, 'a button with no accessible name');
+    const named = label.length > 0 || /aria-label=|aria-labelledby=|title=/.test(attrs);
+    assert.ok(named, 'a button with no accessible name: ' + String(attrs).slice(0, 120));
   }
 });
 

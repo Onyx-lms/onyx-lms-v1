@@ -1,9 +1,12 @@
 import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
 import { navFor } from '@/lib/onyx-nav';
-import { requireOnyxPageRole, onyxApi, type Me } from '@/lib/onyx-session';
+import { requireOnyxPageRole, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import { money } from '@/lib/onyx-campus';
 import { CreatePanel } from '@/components/onyx-create';
+import { BuildFeeStructure } from '@/components/onyx-manage';
+import { ConfigureGateways } from '@/components/onyx-pay';
+import type { GatewayConfigSummary } from '@/lib/onyx-campus';
 
 export const metadata: Metadata = { title: 'Finance' };
 
@@ -18,11 +21,19 @@ interface Outstanding {
 /** CMP-03 -- what is owed, institution-wide. Administrators only. */
 export default async function OnyxFinancePage() {
   const claims = await requireOnyxPageRole('admin');
-  void claims;
-  const [me, outstanding] = await Promise.all([
+  const [me, outstanding, heads, structures, members] = await Promise.all([
     onyxApi<Me>('/api/onyx/me'),
     onyxApi<Outstanding>('/api/onyx/finance/outstanding'),
+    onyxApiSafe<{ id: number; code: string; name: string }[]>('/api/onyx/fee-heads'),
+    onyxApiSafe<{ id: number; name: string; status: string }[]>('/api/onyx/fee-structures'),
+    onyxApiSafe<{ user_id: number; role: string; user: { name: string } | null }[]>(
+      '/api/onyx/members'),
   ]);
+  // CMP-03b: where this institution's fees settle to. Its own merchant
+  // account, not the platform's -- two institutions are two merchants.
+  const gateways = await onyxApiSafe<GatewayConfigSummary[]>('/api/onyx/admin/gateways');
+  const learners = (members ?? []).filter((m) => m.role === 'student');
+  const issuable = (structures ?? []).filter((s) => s.status === 'published');
 
   return (
     <OnyxShell me={me} nav={navFor(me.role)} title="Finance"
@@ -30,7 +41,35 @@ export default async function OnyxFinancePage() {
         + outstanding.invoices.length + ' invoice'
         + (outstanding.invoices.length === 1 ? '' : 's')}>
       {/* CMP-03: "configure fee structures, generate invoices, process
-          online payments, issue receipts and reconcile accounts". */}
+          online payments, issue receipts and reconcile accounts". The third of
+          those was the one with nothing behind it. */}
+      <div className="mb-6">
+        <ConfigureGateways configured={gateways ?? []} tenantId={claims.tenant_id} />
+      </div>
+
+      <div className="mb-6 flex flex-wrap items-start gap-3">
+        <BuildFeeStructure heads={heads ?? []} />
+        {/* An invoice copies its lines from the structure at issue time, so
+            editing the fees later cannot rewrite a bill already paid. */}
+        <CreatePanel
+          title="Raise an invoice" cta="Raise an invoice" icon="wallet" compact
+          endpoint="invoices"
+          fields={[
+            { name: 'user_id', label: 'Learner', type: 'select', required: true,
+              numeric: true, wide: true,
+              options: learners.map((m) => ({ value: String(m.user_id),
+                label: m.user?.name ?? 'User ' + m.user_id })) },
+            { name: 'structure_id', label: 'Fee structure', type: 'select', required: true,
+              numeric: true, wide: true,
+              options: issuable.map((s) => ({ value: String(s.id), label: s.name })),
+              help: issuable.length ? undefined : 'Build a fee structure first.' },
+            { name: 'instalment_no', label: 'Instalment', type: 'number', min: 1, max: 12,
+              fallback: 1 },
+            { name: 'due_at', label: 'Due', type: 'datetime' },
+          ]}
+        />
+      </div>
+
       <div className="mb-6 grid gap-3 lg:grid-cols-2">
         <CreatePanel
           title="New fee head" cta="Add a fee head" icon="wallet" compact

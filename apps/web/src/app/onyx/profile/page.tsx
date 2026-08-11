@@ -3,8 +3,10 @@ import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
 import { OnyxReadiness, OnyxSkills } from '@/components/onyx-career';
 import { navFor } from '@/lib/onyx-nav';
-import { requireOnyxSession, onyxApi, type Me } from '@/lib/onyx-session';
+import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import type { Profile } from '@/lib/onyx-career';
+import type { GuardianLink } from '@/lib/onyx-campus';
+import { GuardianConsent } from '@/components/onyx-manage';
 
 export const metadata: Metadata = { title: 'Employability profile' };
 
@@ -15,6 +17,11 @@ export default async function OnyxProfilePage() {
     onyxApi<Me>('/api/onyx/me'),
     onyxApi<Profile>('/api/onyx/my/profile'),
   ]);
+  // CMP-04: the learner is the one who accepts a guardian and decides what
+  // each of them may see, so the controls belong on the learner's own page.
+  const guardians = me.role === 'student'
+    ? await onyxApiSafe<GuardianLink[]>('/api/onyx/guardians')
+    : null;
 
   return (
     <OnyxShell
@@ -26,6 +33,17 @@ export default async function OnyxProfilePage() {
       <div className="grid gap-8 lg:grid-cols-[320px_1fr]">
         <div className="space-y-6">
           <OnyxReadiness readiness={profile.readiness} />
+
+          {me.role === 'student' ? (
+            <section>
+              <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
+                Who follows your progress
+              </h2>
+              <div className="mt-3">
+                <GuardianConsent links={guardians ?? []} />
+              </div>
+            </section>
+          ) : null}
 
           <section>
             <h2 className="text-sm font-medium uppercase tracking-wide text-muted">

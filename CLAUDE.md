@@ -68,7 +68,11 @@ Onyx table is ordinary work; adding a 62nd *ported* table is not.
   do not bypass it by selecting the row directly.
 - **Nothing in this repo runs learner code.** `ExecutionProvider` is the
   contract; with no sandbox configured the answer is a 503, never a local
-  fallback. Do not add one, in any environment.
+  fallback. Do not add one, in any environment. `deploy/judge0/` is a real one
+  to point at, and `tools/onyx/verify-sandbox.mjs` proves it contains a fork
+  bomb, a loop and a network call before it carries learners. Running it
+  against `tools/judge0-stub.mjs` fails five of six cases -- that is correct,
+  the stub is a protocol echo and not a sandbox.
 - **The queue is Postgres with `FOR UPDATE SKIP LOCKED`** (`queue.service.ts`).
   It is the ONLY part of Onyx that talks to Postgres directly, because the claim
   is one statement whose atomicity is the point. `onyxSql()` resolves the host
@@ -96,14 +100,33 @@ Onyx table is ordinary work; adding a 62nd *ported* table is not.
   AND the attempt is `published`. Both, not either.
 - **Anonymous marking omits `user_id` from the payload** rather than hiding it.
 - **Proctoring stores events, never recordings**, and no flag auto-fails
-  anybody. A human decision is not overwritten by the flag score.
+  anybody. A human decision is not overwritten by the flag score. The camera
+  and screen capture added for ASS-02a does not change this: the stream is held
+  in the browser to observe when it starts and stops, not one frame is
+  uploaded, and face counting (where `FaceDetector` exists at all) sends the
+  number and never the picture.
 - **A tenant-scoped query is not enough on its own.** A foreign id must 404, not
   answer 200 with an empty list -- an empty list confirms the id exists. Load
   the parent row first. This has now been the same bug in O03 and twice in O04.
 - **A workspace snapshot is jsonb, not copied rows**, and restore deletes files
   added since. Anything else quietly breaks LAB-05's one promise.
+- **A check-in code is judged against the request's ARRIVAL time, and the
+  window before it counts.** Deriving the window after the three lookups made
+  the learner pay for the server's round trips, and current-window-only refused
+  codes that were still on the projector. RFC 6238's one-step tolerance, paid
+  for by halving the default window to 15s: a code is dead at most
+  `2 x qr_window_seconds` after it appeared. Do not "tighten" this back.
 - **The QR secret never leaves the server.** `SESSION_COLUMNS` omits it *and*
   `createSession` deletes it, so one careless edit is not enough to leak it.
+- **A payment webhook is the one Onyx route with no token, and it is still not
+  trusted.** The tenant in the URL only chooses which credentials verify the
+  signature; the reference inside the body is HMAC-signed by us and carries the
+  real tenant, invoice and amount, and the two must agree. Never read a tenant
+  from a webhook body.
+- **Gateway credentials are write-only.** `onyx_payment_gateways` has RLS with
+  no SELECT policy at all, the admin API returns the NAMES of the keys that are
+  set and never a value, and the audit entry records which keys changed rather
+  than what they changed to.
 
 ## Non-obvious invariants
 

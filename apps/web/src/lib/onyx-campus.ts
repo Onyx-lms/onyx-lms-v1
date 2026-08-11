@@ -98,6 +98,19 @@ export interface TicketDetail extends Ticket {
 export const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday',
   'Saturday', 'Sunday'];
 
+/** CMP-01a -- who is teaching what, in which term. */
+export interface FacultyAllocation {
+  id: number; semester_id: number; course_id: number;
+  batch_id: number | null; user_id: number;
+  kind: 'lead' | 'assistant' | 'lab';
+  hours_per_week: number;
+}
+
+/** The same allocations rolled up per person: the console's one useful number. */
+export interface WorkloadRow {
+  user_id: number; name: string | null; courses: number; hours: number;
+}
+
 export interface Room {
   id: number; code: string; name: string; capacity: number;
   kind: string; building: string | null;
@@ -198,6 +211,17 @@ export function money(minor: number, currency = 'INR'): string {
 // ---------------------------------------------------------------------------
 // CMP-04 -- guardians
 // ---------------------------------------------------------------------------
+
+/** CMP-03b -- a gateway a learner can actually pay through. */
+export interface PayableGateway {
+  identifier: string; title: string; currency: string;
+}
+
+/** The same gateway as an administrator configures it. Never the credentials. */
+export interface GatewayConfigSummary {
+  id: number; identifier: string; title: string; currency: string;
+  test_mode: number; status: number; configured_keys: string[];
+}
 
 export interface GuardianLink {
   id: number;

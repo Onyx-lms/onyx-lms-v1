@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
 import { navFor } from '@/lib/onyx-nav';
-import { requireOnyxSession, onyxApi, type Me } from '@/lib/onyx-session';
+import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import type { ExamMark, Transcript } from '@/lib/onyx-campus';
+import { CreatePanel } from '@/components/onyx-create';
 
 export const metadata: Metadata = { title: 'Results' };
 
@@ -19,6 +20,14 @@ export default async function OnyxResultsPage() {
   await requireOnyxSession();
   const me = await onyxApi<Me>('/api/onyx/me');
   const staff = EXAM_STAFF.includes(me.role);
+  // CMP-02c: issuing a transcript needs somebody to issue it to, and which
+  // programme it covers. Both come from the institution, not from a text box.
+  const [members, programs] = await Promise.all([
+    staff ? onyxApiSafe<{ user_id: number; role: string; user: { name: string } | null }[]>(
+      '/api/onyx/members') : null,
+    staff ? onyxApiSafe<{ id: number; name: string }[]>('/api/onyx/programs') : null,
+  ]);
+  const learners = (members ?? []).filter((m) => m.role === 'student');
 
   const [marks, transcripts] = await Promise.all([
     onyxApi<ExamMark[]>('/api/onyx/results'),
@@ -33,6 +42,24 @@ export default async function OnyxResultsPage() {
       subtitle={staff ? 'Your own record.' : 'Published results only.'}
     >
       <div className="space-y-8">
+        {staff ? (
+          <CreatePanel
+            title="Issue a transcript" cta="Issue a transcript" icon="award" compact
+            endpoint="transcripts"
+            fields={[
+              { name: 'user_id', label: 'Learner', type: 'select', required: true,
+                numeric: true, wide: true,
+                options: learners.map((m) => ({ value: String(m.user_id),
+                  label: m.user?.name ?? 'User ' + m.user_id })) },
+              { name: 'program_id', label: 'Programme', type: 'select', numeric: true, wide: true,
+                options: [{ value: '', label: 'Everything on record' }].concat(
+                  (programs ?? []).map((p) => ({ value: String(p.id), label: p.name }))),
+                help: 'Published marks only. The document is sealed with a checksum '
+                  + 'so it can be verified later without trusting the copy.' },
+            ]}
+          />
+        ) : null}
+
         <section>
           <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Marks</h2>
           <table className="mt-2 w-full text-sm">

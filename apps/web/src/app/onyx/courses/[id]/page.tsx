@@ -294,10 +294,20 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
                   { name: 'duration_minutes', label: 'Minutes', type: 'number', min: 5,
                     max: 600, fallback: 60 },
                   { name: 'qr_window_seconds', label: 'Code rotates every (s)', type: 'number',
-                    min: 10, max: 300, fallback: 30,
-                    help: 'The check-in code changes on this cycle, so a photograph of the screen goes stale.' },
+                    min: 10, max: 300, fallback: 15,
+                    help: 'The check-in code changes on this cycle. A code is accepted for its own cycle and the next one, so a photograph of the screen is dead within two.' },
                 ]}
               />
+              {/* LRN-03c: the percentages and the export. Reachable from the
+                  course rather than from a menu, because "who is short of
+                  attendance" is a question about one course at a time. */}
+              <Link
+                href={'/onyx/courses/' + id + '/attendance'}
+                className="mt-2 inline-flex min-h-[34px] items-center rounded-2xl border
+                           border-line px-3 text-sm font-medium text-slate-700 hover:bg-brand-50"
+              >
+                Attendance report
+              </Link>
             </section>
           ) : null}
 

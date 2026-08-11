@@ -18,6 +18,11 @@ export interface Certificate {
   id: number; credential_id: string; title: string; kind: string;
   issued_at: string; expires_at: string | null;
   revoked_at: string | null; detail: Record<string, unknown>;
+  /** Present on the institution's register; the holder's own list is all theirs. */
+  user_id?: number;
+  revoked_reason?: string | null;
+  course_id?: number | null;
+  assessment_id?: number | null;
 }
 
 export interface SkillEntry {

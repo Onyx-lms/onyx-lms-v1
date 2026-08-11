@@ -3,7 +3,8 @@ import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxPageRole, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
-import type { DriveSummary } from '@/lib/onyx-career';
+import type { Application, DriveSummary } from '@/lib/onyx-career';
+import { RecordRound } from '@/components/onyx-manage';
 
 export const metadata: Metadata = { title: 'Drive' };
 
@@ -24,6 +25,20 @@ export default async function OnyxDrivePage({ params }: { params: Promise<{ id: 
   ]);
   const names = new Map((members ?? [])
     .map((m) => [Number(m.user_id), m.user?.name ?? ('User ' + m.user_id)]));
+
+  // Who is actually in this drive: the people who applied to the post it runs
+  // against, minus the ones already rejected or withdrawn. An employer coming
+  // to interview six people is not handed the institution's roster.
+  const applicants = summary.drive.job_id
+    ? await onyxApiSafe<Application[]>(
+      '/api/onyx/jobs/' + summary.drive.job_id + '/applicants')
+    : null;
+  const candidates = (applicants ?? [])
+    .filter((a) => !['rejected', 'withdrawn'].includes(a.status))
+    .map((a) => ({
+      user_id: Number(a.user_id),
+      name: a.candidate?.name ?? names.get(Number(a.user_id)) ?? ('User ' + a.user_id),
+    }));
 
   return (
     <OnyxShell
@@ -54,7 +69,13 @@ export default async function OnyxDrivePage({ params }: { params: Promise<{ id: 
             <tbody>
               {summary.rounds.map((r) => (
                 <tr key={r.round_id} className="border-t border-line">
-                  <td className="px-4 py-3">{r.name}</td>
+                  <td className="px-4 py-3">
+                    <span className="block">{r.name}</span>
+                    <span className="mt-1 inline-block">
+                      <RecordRound roundId={r.round_id} roundName={r.name}
+                        candidates={candidates} />
+                    </span>
+                  </td>
                   <td className="px-4 py-3 tabular-nums">{r.attended}</td>
                   <td className="px-4 py-3 tabular-nums">{r.absent}</td>
                   <td className="px-4 py-3 tabular-nums">{r.passed}</td>

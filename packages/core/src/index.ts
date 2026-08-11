@@ -1,6 +1,8 @@
 // @onyx/core -- platform services shared by the API and the web app.
 export * from './json/php-json.ts';
 export * from './format/currency.ts';
+export * from './format/csv.ts';
+export * from './format/pdf.ts';
 export * from './db/client.ts';
 export * from './settings/settings.service.ts';
 export * from './i18n/i18n.service.ts';
@@ -98,5 +100,6 @@ export * from './onyx/support.service.ts';
 export * from './onyx/campus.service.ts';
 export * from './onyx/examinations.service.ts';
 export * from './onyx/finance.service.ts';
+export * from './onyx/checkout.service.ts';
 export * from './onyx/guardian.service.ts';
 export * from './onyx/platform.service.ts';

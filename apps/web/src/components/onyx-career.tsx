@@ -424,3 +424,76 @@ export function OnyxInterviewFeedback({ interviewId, existing }: {
     </div>
   );
 }
+
+/**
+ * CAR-03 -- revoking a credential.
+ *
+ * Not an ActionButton with a confirm dialog, because revoking asks for a
+ * reason and the API requires one. The reason is not decoration: a credential
+ * is never deleted, so what a verifier is eventually told rests on what is
+ * typed here.
+ */
+export function RevokeCertificate({ certificateId }: { certificateId: number }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  if (!open) {
+    return (
+      <button
+        type="button" onClick={() => setOpen(true)}
+        className="rounded-xl border border-rose-600 px-3 py-1.5 text-[13px] font-semibold
+                   text-rose-700 hover:bg-rose-50"
+      >
+        Revoke
+      </button>
+    );
+  }
+
+  return (
+    <form
+      className="flex flex-wrap items-start gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!reason.trim()) { setError('A revocation needs a reason.'); return; }
+        start(async () => {
+          setError(null);
+          const res = await fetch('/api/proxy/onyx/certificates/' + certificateId + '/revoke', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reason: reason.trim() }),
+          });
+          const body = await res.json().catch(() => ({ ok: false }));
+          if (!body.ok) { setError(body.message ?? 'That did not work.'); return; }
+          setOpen(false);
+          setReason('');
+          router.refresh();
+        });
+      }}
+    >
+      <div>
+        <label htmlFor={'reason-' + certificateId} className="sr-only">Reason for revoking</label>
+        <input
+          id={'reason-' + certificateId} value={reason} maxLength={500}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Why it is being revoked"
+          className="w-56 rounded-xl border border-slate-300 px-3 py-1.5 text-sm
+                     focus:border-brand-600 focus:outline-none"
+        />
+        {error ? <p role="alert" className="mt-1 text-xs text-rose-700">{error}</p> : null}
+      </div>
+      <button type="submit" disabled={pending}
+        className="rounded-xl bg-rose-600 px-3 py-1.5 text-[13px] font-semibold text-white
+                   hover:bg-rose-700 disabled:opacity-60">
+        {pending ? 'Revoking…' : 'Confirm'}
+      </button>
+      <button type="button" onClick={() => { setOpen(false); setError(null); }}
+        className="rounded-xl border border-line px-3 py-1.5 text-[13px] font-medium
+                   text-slate-700 hover:bg-brand-50">
+        Cancel
+      </button>
+    </form>
+  );
+}

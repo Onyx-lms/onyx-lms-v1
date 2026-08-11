@@ -327,24 +327,41 @@ test('a session gets a secret, and the secret never comes back', async () => {
   assert.equal((session as Record<string, unknown>).qr_secret, undefined);
 });
 
-test('the check-in code rotates and only the current one is accepted', async () => {
+test('the check-in code rotates, and dies two windows after it appeared', async () => {
   const { attendance, session, clock: c } = await withSession();
   const first = await attendance.currentCode(T, Number(session.id));
   assert.match(first.code, /^[0-9A-F]{8}$/);
+  assert.equal(first.window_seconds, 15);
 
   // Same window, same code.
   c.advance(5_000);
   assert.equal((await attendance.currentCode(T, Number(session.id))).code, first.code);
 
-  // Next window, different code -- and the old one is dead. A grace window
-  // would double the useful life of a photograph of the projector.
-  c.advance(30_000);
+  // Two windows on, the code is gone. Not one window: the window after the one
+  // a code was issued in still accepts it, which is what stops a learner who
+  // read the code at the end of a window being refused for arriving a moment
+  // late. Thirty seconds is the same life the old 30-second single window gave.
+  c.advance(35_000);
   const second = await attendance.currentCode(T, Number(session.id));
   assert.notEqual(second.code, first.code);
   await assert.rejects(attendance.checkIn(T, Number(session.id), 10, first.code),
     (e: HttpError) => e.status === 422);
   const marked = await attendance.checkIn(T, Number(session.id), 10, second.code);
   assert.equal(marked.status, 'present');
+});
+
+test('a code read at the end of its window still works just over the boundary', async () => {
+  const { attendance, session, clock: c } = await withSession();
+  const shown = await attendance.currentCode(T, Number(session.id));
+
+  // Step exactly past the boundary the learner was racing: the projector has
+  // rotated, the learner is typing the code they read a second ago.
+  c.advance(shown.expires_in_seconds * 1000 + 1_000);
+  const rotated = await attendance.currentCode(T, Number(session.id));
+  assert.notEqual(rotated.code, shown.code, 'the code did not rotate');
+
+  const marked = await attendance.checkIn(T, Number(session.id), 10, shown.code);
+  assert.equal(marked.method, 'qr');
 });
 
 test('the countdown says how long the code on screen has left', async () => {

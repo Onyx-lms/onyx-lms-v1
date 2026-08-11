@@ -13,6 +13,23 @@ import { api, webPage, withDb, WEB, RUN } from './harness.ts';
 /** The rendered document, without the RSC payload. See o01-web.e2e.ts. */
 const dom = (html: string) => html.replace(/<script[\s\S]*?<\/script>/g, '');
 
+/**
+ * Just the content column.
+ *
+ * The shell's navigation is part of every page, and it names things: a
+ * learner's sidebar links to "Results", which made a whole-page search for
+ * "Result" true on a page that was showing nothing of the sort. Anything
+ * asserting that a value has NOT leaked has to look at the content, not at
+ * the furniture around it.
+ */
+const content = (html: string) => {
+  const body = dom(html);
+  const start = body.lastIndexOf('<main');
+  if (start === -1) return body;
+  const end = body.indexOf('</main>', start);
+  return end === -1 ? body.slice(start) : body.slice(start, end);
+};
+
 const pw = 'OnyxTest#2026';
 const mail = (who: string) => 'lw.' + who + '.' + RUN + '@onyx.test';
 const T = { name: 'Web Learn College ' + RUN, slug: 'web-learn-' + RUN };
@@ -203,13 +220,15 @@ test('a returned grade appears for the learner, and only then', async () => {
   await viaWeb('submissions/' + w.submission + '/grade', w.cookies.faculty,
     { body: { score: 88, feedback: 'Good work.' } });
 
-  const before = dom((await webPage('/onyx/assignments/' + w.assignment, w.cookies.student)).html);
+  const before = content(
+    (await webPage('/onyx/assignments/' + w.assignment, w.cookies.student)).html);
   assert.ok(!before.includes('Good work.'), 'feedback leaked before it was returned');
   assert.ok(!before.includes('Result'), 'a result appeared before it was returned');
 
   await viaWeb('submissions/' + w.submission + '/return', w.cookies.faculty, { method: 'POST' });
 
-  const after = dom((await webPage('/onyx/assignments/' + w.assignment, w.cookies.student)).html);
+  const after = content(
+    (await webPage('/onyx/assignments/' + w.assignment, w.cookies.student)).html);
   assert.match(after, /Result/);
   assert.match(after, /88/);
   assert.match(after, /Good work\./);
@@ -229,13 +248,13 @@ test('the dashboard tells a learner what to do next', async () => {
   const page = dom((await webPage('/onyx/dashboard', w.cookies.student)).html);
   assert.match(page, /What you are taking/);
   assert.match(page, /Web Course/);
-  assert.match(page, /What is due next/, 'no deadline list for a learner with work due');
+  assert.match(page, /Due next/, 'no deadline list for a learner with work due');
   assert.match(page, /Web Essay/);
 
   // Staff get the shape of the institution instead.
   const staff = dom((await webPage('/onyx/dashboard', w.cookies.admin)).html);
   assert.match(staff, /People/);
-  assert.ok(!staff.includes('What is due next'), 'an admin was shown a learner deadline list');
+  assert.ok(!staff.includes('Due next'), 'an admin was shown a learner deadline list');
 });
 
 test('navigation matches the role', async () => {

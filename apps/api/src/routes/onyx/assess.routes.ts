@@ -356,6 +356,26 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
     return reply.send(csv);
   });
 
+  /** ASS-04b -- the same report as a document, for the board paper. */
+  app.get('/api/onyx/assessments/:id/results.pdf', async (req, reply) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const [members, tenant] = await Promise.all([
+      ctx.onyxTenancy.members(claims.tenant_id),
+      ctx.onyxTenancy.tenant(claims.tenant_id),
+    ]);
+    const names = new Map(members.map((m) => [Number(m.user_id), {
+      name: m.user?.name ?? '', email: m.user?.email ?? '',
+    }]));
+    const pdf = await ctx.onyxAssessAnalytics.exportPdf(claims.tenant_id, idOf(req), {
+      names, issuer: tenant?.name ?? null,
+    });
+
+    reply.header('Content-Type', 'application/pdf');
+    reply.header('Content-Disposition',
+      'attachment; filename="assessment-' + idOf(req) + '-results.pdf"');
+    return reply.send(pdf);
+  });
+
   /** A candidate's own results, once they exist. */
   app.get('/api/onyx/my/assessments', async (req) => {
     const claims = requireOnyx(asReq(req), ctx.jwtSecret);

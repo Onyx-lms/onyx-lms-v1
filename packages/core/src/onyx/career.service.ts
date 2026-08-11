@@ -129,6 +129,23 @@ export class CareerService {
   }
 
   /**
+   * Everything this institution has issued.
+   *
+   * Staff-facing, and the counterpart to `certificates()` above: a registrar
+   * cannot revoke what they cannot find, and until this existed the only way
+   * to see an issued credential was to already know whose it was. Newest
+   * first, because the reason someone opens this list is almost always the
+   * thing that was issued a moment ago.
+   */
+  async issuedCertificates(tenantId: number, opts: { userId?: number } = {}) {
+    let q = this.#db.from('onyx_certificates')
+      .select(CERTIFICATE_COLUMNS).eq('tenant_id', tenantId);
+    if (opts.userId) q = q.eq('user_id', opts.userId);
+    const { data } = await q.order('issued_at', { ascending: false });
+    return data ?? [];
+  }
+
+  /**
    * The public verification page.
    *
    * Deliberately NOT tenant-scoped: a stranger holding a credential has no idea

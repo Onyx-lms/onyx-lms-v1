@@ -18,7 +18,8 @@ import { Icon, type IconName } from '@/components/onyx-ui';
  * validates, reports and looks the same.
  */
 
-export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'datetime' | 'select' | 'checkbox';
+export type FieldType =
+  | 'text' | 'textarea' | 'number' | 'date' | 'datetime' | 'time' | 'select' | 'checkbox';
 
 export interface Field {
   name: string;
@@ -79,6 +80,9 @@ function toBody(fields: Field[], data: FormData): Record<string, unknown> {
       body[f.name] = new Date(raw as string).toISOString();
       continue;
     }
+    // A time of day is not an instant: a class at 09:00 is at 09:00 whatever
+    // the date, so it goes to the API as the "HH:MM" the input already gives.
+    if (f.type === 'time') { body[f.name] = raw; continue; }
     body[f.name] = raw;
   }
   return body;
@@ -203,7 +207,8 @@ export function CreatePanel({
                       {...common}
                       type={f.type === 'number' ? 'number'
                         : f.type === 'date' ? 'date'
-                          : f.type === 'datetime' ? 'datetime-local' : 'text'}
+                          : f.type === 'time' ? 'time'
+                            : f.type === 'datetime' ? 'datetime-local' : 'text'}
                       min={f.min} max={f.max} placeholder={f.placeholder}
                     />
                   )}

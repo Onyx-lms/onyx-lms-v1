@@ -13,7 +13,7 @@ import {
   AssessService, ProctorService, AssessAnalyticsService,
   CareerService, PlacementService, ContestService,
   EngageService, SupportService, CampusService, ExaminationsService,
-  FinanceService, GuardianService, PlatformService,
+  FinanceService, OnyxCheckoutService, GuardianService, PlatformService,
   executionProviderFromEnv, runCodeLabWorker,
   type ExecutionProvider, type CodeLabWorkerOptions,
   RegistrationService, VerificationService, PasswordResetService,
@@ -113,6 +113,7 @@ export interface AppContext {
   onyxCampus: CampusService;
   onyxExams: ExaminationsService;
   onyxFinance: FinanceService;
+  onyxCheckout: OnyxCheckoutService;
   onyxGuardians: GuardianService;
   onyxPlatform: PlatformService;
   /** One pass of the Code Lab worker. Also driven by an interval in server.ts. */
@@ -160,6 +161,9 @@ export function createContext(): AppContext {
   // querying onyx_exam_marks themselves, so the 'published only' rule
   // lives in one place.
   const onyxExams = new ExaminationsService(onyxDb, onyxAudit);
+  // Hoisted: the checkout service settles through it, so both need the
+  // same instance rather than two with separate audit wiring.
+  const onyxFinance = new FinanceService(onyxDb, onyxAudit);
   const bootcampPurchases = new BootcampPurchaseService(db, settings);
   const teamMembers = new TeamMemberService(db, settings);
   const revenue = new RevenueService(db);
@@ -245,7 +249,11 @@ export function createContext(): AppContext {
     onyxSupport: new SupportService(onyxDb, onyxAudit),
     onyxCampus: new CampusService(onyxDb, onyxAudit),
     onyxExams,
-    onyxFinance: new FinanceService(onyxDb, onyxAudit),
+    onyxFinance: onyxFinance,
+    onyxCheckout: new OnyxCheckoutService(onyxDb, onyxFinance, {
+      secret: process.env.SUPABASE_JWT_SECRET ?? '',
+      baseUrl: process.env.WEB_URL,
+    }),
     onyxGuardians: new GuardianService(onyxDb, onyxAudit, onyxExams),
     onyxPlatform: new PlatformService(onyxDb),
     onyxRunWorker: (opts) => runCodeLabWorker(onyxQueue, onyxCodeLab, {

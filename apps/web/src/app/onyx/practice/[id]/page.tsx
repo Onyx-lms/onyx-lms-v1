@@ -5,6 +5,7 @@ import { OnyxCodeLab } from '@/components/onyx-codelab';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, type Me } from '@/lib/onyx-session';
 import { DIFFICULTY_LABELS, type ProblemDetail } from '@/lib/onyx-codelab';
+import { TestCases } from '@/components/onyx-manage';
 
 export const metadata: Metadata = { title: 'Problem' };
 
@@ -39,6 +40,15 @@ export default async function OnyxProblemPage({ params }: { params: Promise<{ id
       <Link href="/onyx/practice" className="text-sm text-muted hover:underline">
         &larr; Back to practice
       </Link>
+
+      {/* LAB-01: a problem without cases cannot be judged. Authoring them was
+          API-only until now, which meant a problem created in the browser
+          could never be finished there. */}
+      {me.role === 'admin' || me.role === 'faculty' ? (
+        <div className="mt-4">
+          <TestCases problemId={Number(id)} />
+        </div>
+      ) : null}
 
       <div className="mt-4 grid gap-8 lg:grid-cols-[360px_1fr]">
         <div className="space-y-6">

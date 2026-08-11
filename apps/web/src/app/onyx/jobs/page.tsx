@@ -57,9 +57,13 @@ export default async function OnyxJobsPage() {
               { name: 'website', label: 'Website', placeholder: 'https://acme.example' },
             ]}
           />
+          {/* A post is created as a draft, and a draft is invisible to the
+              learners it is for. Opening it is the point of posting it, so it
+              happens in the same action rather than as a second step nobody
+              knew about. */}
           <CreatePanel
             title="New opening" cta="Post a job" icon="briefcase" compact
-            endpoint="jobs"
+            endpoint="jobs" thenPost="jobs/:id/publish"
             fields={[
               { name: 'employer_id', label: 'Employer', type: 'select', required: true,
                 numeric: true, wide: true,

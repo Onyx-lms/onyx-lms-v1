@@ -515,6 +515,23 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
     return ok(await ctx.onyxAttendance.exportRows(claims.tenant_id, idOf(req)));
   });
 
+  /** LRN-03c -- the same rows as a file, which is what an export means here. */
+  app.get('/api/onyx/courses/:id/attendance/export.csv', async (req, reply) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    await ctx.onyxAcademics.assertCanTeach(
+      claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role);
+    const members = await ctx.onyxTenancy.members(claims.tenant_id);
+    const names = new Map(members.map((m) => [Number(m.user_id), {
+      name: m.user?.name ?? '', email: m.user?.email ?? '',
+    }]));
+    const csv = await ctx.onyxAttendance.exportCsv(claims.tenant_id, idOf(req), { names });
+
+    reply.header('Content-Type', 'text/csv; charset=utf-8');
+    reply.header('Content-Disposition',
+      'attachment; filename="course-' + idOf(req) + '-attendance.csv"');
+    return reply.send(csv);
+  });
+
   /** A learner's own attendance, across everything they are enrolled in. */
   app.get('/api/onyx/my/attendance', async (req) => {
     const claims = requireOnyx(asReq(req), ctx.jwtSecret);

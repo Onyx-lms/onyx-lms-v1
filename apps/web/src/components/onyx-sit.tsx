@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   formatClock, type Assessment, type CandidateAttempt, type PaperQuestion,
 } from '@/lib/onyx-assess';
+import { ProctorMedia, ProctorPreflight } from '@/components/onyx-proctor';
 
 /**
  * ASS-01b/c + ASS-02a -- sitting a paper.
@@ -149,6 +150,16 @@ export function OnyxSitPaper({ assessment, attempt }: {
 
   return (
     <div className="space-y-6">
+      {/* ASS-02a. Above the paper rather than tucked beside it: a candidate
+          being watched should not have to look for the thing telling them so. */}
+      {assessment.proctoring ? (
+        <ProctorMedia
+          attemptId={attempt.id}
+          requireCamera={Boolean(assessment.require_camera)}
+          requireScreen={Boolean(assessment.require_screen)}
+        />
+      ) : null}
+
       <div className={'sticky top-0 z-10 flex flex-wrap items-center gap-4 rounded-xl border p-3 '
         + (low ? 'border-rose-300 bg-rose-50' : 'border-line bg-white')}>
         <div>
@@ -308,6 +319,9 @@ function QuestionInput({ question, value, onChange }: {
 export function OnyxStartAssessment({ assessment }: { assessment: Assessment }) {
   const router = useRouter();
   const [consented, setConsented] = useState(false);
+  // Every device the paper requires has been proved to work. Starts true so
+  // an unproctored paper is not gated on a check it never runs.
+  const [devicesReady, setDevicesReady] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
@@ -330,6 +344,12 @@ export function OnyxStartAssessment({ assessment }: { assessment: Assessment }) 
             <li>Leaving the tab, pasting and copying are recorded.</li>
             {assessment.require_camera ? <li>Your camera must stay on.</li> : null}
             {assessment.require_screen ? <li>Your screen is shared with the invigilator.</li> : null}
+            {assessment.require_camera || assessment.require_screen ? (
+              <li>
+                No video is recorded or uploaded — only when your camera and screen
+                started and stopped.
+              </li>
+            ) : null}
             <li>An invigilator reviews anything flagged. A flag is not an accusation.</li>
           </ul>
           <label className="mt-3 flex items-center gap-2 text-sm">
@@ -337,6 +357,13 @@ export function OnyxStartAssessment({ assessment }: { assessment: Assessment }) 
               onChange={(e) => setConsented(e.target.checked)} />
             I understand and agree to be monitored for this attempt.
           </label>
+          {/* Proving the camera works belongs here, not ninety seconds into a
+              timed paper. `ready` is what gates Start. */}
+          <ProctorPreflight
+            requireCamera={Boolean(assessment.require_camera)}
+            requireScreen={Boolean(assessment.require_screen)}
+            onReady={setDevicesReady}
+          />
         </div>
       ) : null}
 
@@ -344,7 +371,7 @@ export function OnyxStartAssessment({ assessment }: { assessment: Assessment }) 
 
       <button
         type="button"
-        disabled={pending || (Boolean(assessment.proctoring) && !consented)}
+        disabled={pending || (Boolean(assessment.proctoring) && (!consented || !devicesReady))}
         onClick={() => start(async () => {
           setError(null);
           const res = await fetch('/api/proxy/onyx/assessments/' + assessment.id + '/start', {
