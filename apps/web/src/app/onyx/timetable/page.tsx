@@ -123,31 +123,36 @@ export default async function OnyxTimetablePage() {
           if (!rows.length) return null;
           return (
             <section key={dayNum}>
-              <h2 className="text-sm font-medium uppercase tracking-wide text-muted">{day}</h2>
-              <table className="mt-2 w-full text-sm">
+              <h2 className="mb-2.5 text-[11.5px] font-bold uppercase tracking-[.085em]
+                             text-muted">{day}</h2>
+              <table className="w-full overflow-hidden rounded-2xl border border-line bg-white
+                                text-sm shadow-card">
                 <caption className="sr-only">{day}&apos;s scheduled classes</caption>
                 <thead>
-                  <tr className="text-left text-xs text-muted">
-                    <th scope="col" className="py-1 pr-3">Time</th>
-                    <th scope="col" className="py-1 pr-3">Course</th>
-                    <th scope="col" className="py-1 pr-3">Room</th>
-                    {registry ? <th scope="col" className="py-1">Status</th> : null}
+                  <tr className="bg-slate-50 text-left text-[11px] uppercase tracking-wide
+                                 text-muted">
+                    <th scope="col" className="px-4 py-2.5 font-bold">Time</th>
+                    <th scope="col" className="px-4 py-2.5 font-bold">Course</th>
+                    <th scope="col" className="px-4 py-2.5 font-bold">Room</th>
+                    {registry ? <th scope="col" className="px-4 py-2.5 font-bold">Status</th> : null}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-line">
                   {rows.map((s) => (
                     <tr key={s.id}>
-                      <td className="py-2 pr-3 tabular-nums">
+                      {/* The time is what a person scans a timetable for, so it
+                          carries the weight rather than matching the room. */}
+                      <td className="whitespace-nowrap px-4 py-3 font-bold tabular-nums">
                         {hhmm(s.starts_at)}&ndash;{hhmm(s.ends_at)}
                       </td>
-                      <td className="py-2 pr-3">
+                      <td className="px-4 py-3 font-medium">
                         {courseName.get(s.course_id) ?? 'Course #' + s.course_id}
                       </td>
-                      <td className="py-2 pr-3">
+                      <td className="px-4 py-3 text-muted">
                         {roomName.get(s.room_id) ?? 'Room #' + s.room_id}
                       </td>
                       {registry ? (
-                        <td className="py-2 text-xs text-muted">
+                        <td className="px-4 py-3 text-xs text-muted">
                           {s.status === 'draft' ? 'draft' : 'published'}
                         </td>
                       ) : null}

@@ -1,6 +1,9 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
+import {
+  Card, Empty, ListRow, Pill, RowList, SectionHead, relativeDue,
+} from '@/components/onyx-ui';
 import { OnyxReturnedWork, OnyxSubmissionForm } from '@/components/onyx-assignment';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
@@ -31,71 +34,88 @@ export default async function OnyxAssignmentPage({ params }: { params: Promise<{
     : null;
   const names = new Map((members ?? []).map((m) => [Number(m.user_id), m.user]));
   const mine = assignment.my_submission ?? null;
+  const when = relativeDue(assignment.due_at);
 
   return (
     <OnyxShell
       me={me}
       nav={navFor(me.role)}
       title={assignment.title}
-      subtitle={'Out of ' + assignment.total_points
-        + (assignment.due_at ? ', due ' + new Date(assignment.due_at).toLocaleString() : '')}
+      subtitle={when.text}
     >
       <Link href={'/onyx/courses/' + assignment.course_id}
-        className="text-sm text-muted hover:underline">
+        className="inline-flex items-center gap-1 text-[13px] font-semibold text-muted
+                   hover:text-brand-700 hover:underline">
         &larr; Back to the course
       </Link>
+
+      {/* The facts that decide what a learner does next -- when it is due, what
+          it is worth, what happens if they are late -- were a subtitle reading
+          "Out of 100, due 8/17/2026, 12:00:00 AM". Now they are chips, and the
+          late policy is stated rather than discovered by being late. */}
+      <div className="mt-4 flex flex-wrap items-center gap-2.5">
+        <Pill tone={when.tone}>{when.text}</Pill>
+        <Pill tone="neutral">{assignment.total_points} marks</Pill>
+        {assignment.late_policy === 'reject' ? (
+          <Pill tone="late">Nothing accepted after the deadline</Pill>
+        ) : assignment.late_policy === 'penalty' ? (
+          <Pill tone="soon">Late work loses {assignment.late_penalty_percent}%</Pill>
+        ) : (
+          <Pill tone="good">Late work accepted</Pill>
+        )}
+      </div>
 
       <div className="mt-6 grid gap-8 lg:grid-cols-[1fr_280px]">
         <div className="space-y-6">
           {assignment.instructions ? (
-            <article className="whitespace-pre-wrap text-sm text-slate-700">
-              {assignment.instructions}
-            </article>
+            <Card className="p-4">
+              <h2 className="mb-2 text-[11.5px] font-bold uppercase tracking-[.085em] text-muted">
+                The brief
+              </h2>
+              <article className="whitespace-pre-wrap text-[14.5px] leading-relaxed text-slate-700">
+                {assignment.instructions}
+              </article>
+            </Card>
           ) : null}
 
           {staff ? (
             <section>
-              <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
-                Submissions
-              </h2>
-              <div className="mt-2 overflow-x-auto rounded-2xl border border-line">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
-                    <tr>
-                      <th className="px-4 py-3">Learner</th>
-                      <th className="px-4 py-3">Handed in</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3">Score</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(assignment.submissions ?? []).map((s) => (
-                      <tr key={s.id} className="border-t border-line">
-                        <td className="px-4 py-3">
-                          <Link href={'/onyx/submissions/' + s.id} className="hover:underline">
-                            {names.get(s.user_id)?.name ?? ('User ' + s.user_id)}
-                          </Link>
-                        </td>
-                        <td className="px-4 py-3 text-muted">
-                          {s.submitted_at ? new Date(s.submitted_at).toLocaleString() : '-'}
-                          {s.is_late
-                            ? <span className="ml-2 text-xs text-amber-700">late</span>
-                            : null}
-                        </td>
-                        <td className="px-4 py-3 capitalize">{s.status}</td>
-                        <td className="px-4 py-3 tabular-nums">{s.score ?? '-'}</td>
-                      </tr>
-                    ))}
-                    {(assignment.submissions ?? []).length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="px-4 py-8 text-center text-muted">
-                          Nothing handed in yet.
-                        </td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
+              <SectionHead title={'Submissions \u00b7 ' + (assignment.submissions ?? []).length} />
+              {/* A marking queue is a list of people to open one at a time, so
+                  the row is the person and the action is marking them. */}
+              <RowList label="Submissions">
+                {(assignment.submissions ?? []).map((s) => (
+                  <ListRow
+                    key={s.id}
+                    icon={s.status === 'returned' ? 'check' : 'edit'}
+                    tone={s.status === 'returned' ? 'good' : s.is_late ? 'late' : 'brand'}
+                    title={names.get(s.user_id)?.name ?? ('User ' + s.user_id)}
+                    href={'/onyx/submissions/' + s.id}
+                    chips={s.is_late ? <Pill tone="late">Late</Pill> : null}
+                    meta={s.submitted_at
+                      ? 'Handed in ' + new Date(s.submitted_at).toLocaleDateString(undefined,
+                        { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+                      : 'Not handed in'}
+                    trailing={s.score !== null && s.score !== undefined ? (
+                      <span className="text-[15px] font-extrabold tabular-nums">
+                        {s.score}
+                        <span className="text-[13px] font-semibold text-muted">
+                          /{assignment.total_points}
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="text-[12.5px] font-semibold capitalize text-muted">
+                        {s.status}
+                      </span>
+                    )}
+                    action={{ href: '/onyx/submissions/' + s.id,
+                      label: s.status === 'returned' ? 'Review' : 'Mark' }}
+                  />
+                ))}
+                {(assignment.submissions ?? []).length === 0 ? (
+                  <li><Empty icon="edit">Nothing has been handed in yet.</Empty></li>
+                ) : null}
+              </RowList>
             </section>
           ) : (
             <>
@@ -110,25 +130,31 @@ export default async function OnyxAssignmentPage({ params }: { params: Promise<{
         <aside>
           {assignment.rubric?.length ? (
             <section>
-              <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
-                How this is marked
-              </h2>
-              <ul className="mt-2 space-y-2 text-sm">
-                {assignment.rubric.map((c) => (
-                  <li key={c.id} className="flex justify-between gap-3">
-                    <span>
-                      {c.title}
-                      {c.description
-                        ? <span className="block text-xs text-muted">{c.description}</span>
-                        : null}
-                    </span>
-                    <span className="tabular-nums text-muted">{c.points}</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-3 text-xs text-muted">
-                The criteria add up to the marks for the whole assignment.
-              </p>
+              <SectionHead title="How this is marked" />
+              <Card>
+                <ul className="divide-y divide-line">
+                  {assignment.rubric.map((c) => (
+                    <li key={c.id} className="flex items-start justify-between gap-3 px-3.5 py-3">
+                      <span className="min-w-0">
+                        <span className="block text-[14px] font-semibold">{c.title}</span>
+                        {c.description ? (
+                          <span className="mt-0.5 block text-[12.5px] leading-relaxed text-muted">
+                            {c.description}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="shrink-0 rounded-lg bg-slate-100 px-2 py-0.5 text-[13px]
+                                       font-bold tabular-nums text-slate-700">
+                        {c.points}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="border-t border-line px-3.5 py-2.5 text-[12px] text-muted">
+                  The criteria add up to the {assignment.total_points} marks for the whole
+                  assignment.
+                </p>
+              </Card>
             </section>
           ) : null}
         </aside>

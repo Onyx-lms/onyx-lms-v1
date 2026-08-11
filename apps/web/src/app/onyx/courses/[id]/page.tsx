@@ -11,6 +11,9 @@ import {
 } from '@/lib/onyx-learn';
 import type { Discussion } from '@/lib/onyx-campus';
 import { CreatePanel, ActionButton } from '@/components/onyx-create';
+import {
+  Card, Empty, Icon, Meter, Pill, SectionHead, relativeDue,
+} from '@/components/onyx-ui';
 
 export const metadata: Metadata = { title: 'Course' };
 
@@ -51,6 +54,18 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
     .filter((a) => a.status === 'published' && a.due_at)
     .sort((a, b) => Date.parse(a.due_at!) - Date.parse(b.due_at!));
 
+  // The next thing to do: the first lesson that is neither finished nor locked,
+  // in the order the course is taught. This is what the hero's button points
+  // at, and it is the difference between "continue" and knowing what continuing
+  // means before you click it.
+  const lessons = outline.modules.flatMap((m) => m.lessons);
+  const next = lessons.find((l) => !l.completed_at && !l.locked) ?? null;
+  const finished = lessons.length > 0 && lessons.every((l) => l.completed_at);
+
+  /** Which icon a lesson gets. A row of identical dots tells a learner nothing. */
+  const lessonIcon = (type: string) =>
+    type === 'video' ? 'play' : type === 'link' ? 'chevron' : 'book';
+
   return (
     <OnyxShell
       me={me}
@@ -61,27 +76,54 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
       <div className="grid gap-8 lg:grid-cols-[1fr_260px]">
         <div className="space-y-6">
           {outline.enrolled ? (
-            <div className="rounded-2xl border border-line p-4">
-              <div className="flex items-baseline justify-between text-sm">
-                <span className="font-medium">Your progress</span>
-                <span className="tabular-nums text-muted">
-                  {outline.progress.completed} of {outline.progress.total} lessons
-                </span>
+            /* The band a learner came here for. Progress alone tells you where
+               you are and not what to do; the point of a course page is the
+               next lesson, so that is the button -- and it names the lesson
+               rather than saying "continue" and making you find out. */
+            <section className="overflow-hidden rounded-2xl bg-gradient-to-br from-brand-700
+                                to-brand-900 p-5 text-white shadow-lift">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-bold uppercase tracking-[.11em] text-white/70">
+                    {finished ? 'Course complete' : next ? 'Up next' : 'Nothing to do yet'}
+                  </p>
+                  <p className="mt-1 text-[19px] font-extrabold leading-snug">
+                    {finished
+                      ? 'You have finished every lesson.'
+                      : next?.title ?? 'No lessons have been published on this course.'}
+                  </p>
+                </div>
+                {next ? (
+                  <Link
+                    href={'/onyx/courses/' + id + '/lessons/' + next.id}
+                    className="inline-flex min-h-[42px] shrink-0 items-center gap-2 rounded-2xl
+                               bg-white px-4 text-[14px] font-bold text-brand-800
+                               hover:bg-brand-50"
+                  >
+                    <Icon name="play" className="h-3.5 w-3.5" />
+                    {outline.progress.completed > 0 ? 'Resume' : 'Start'}
+                  </Link>
+                ) : null}
               </div>
-              <div
-                className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100"
-                role="progressbar"
-                aria-valuenow={outline.progress.percent}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label="Course progress"
-              >
-                <div className="h-full bg-brand-600" style={{ width: outline.progress.percent + '%' }} />
-              </div>
-            </div>
+
+              {outline.progress.total > 0 ? (
+                <div className="mt-4">
+                  <Meter percent={outline.progress.percent} tone="light"
+                    label={outline.course.title + ' progress'} />
+                  <div className="mt-2 flex items-baseline justify-between text-[13px]">
+                    <span className="font-bold tabular-nums">
+                      {outline.progress.percent}% complete
+                    </span>
+                    <span className="tabular-nums text-white/75">
+                      {outline.progress.completed} of {outline.progress.total} lessons
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+            </section>
           ) : (
-            <div className="rounded-2xl border border-line bg-white p-4">
-              <p className="text-sm text-muted">
+            <Card className="p-4">
+              <p className="text-sm text-slate-700">
                 You are not enrolled in this course. Preview lessons are open; the rest is not.
               </p>
               {outline.course.self_enroll && me.role === 'student' ? (
@@ -89,47 +131,82 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
                   <ActionButton endpoint={'courses/' + id + '/enroll'} label="Join this course" />
                 </div>
               ) : null}
-            </div>
+            </Card>
           )}
 
-          {outline.modules.map((m) => (
+          {/* Modules numbered, because a course IS an order -- "02" tells a
+              learner where they are in a way a bare title does not. Each lesson
+              carries its own state: a check when it is done, the next one
+              marked, a lock where it is not open yet. */}
+          {outline.modules.map((m, mi) => (
             <section key={m.id}>
-              <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
-                {m.title}
-              </h2>
-              {m.summary ? <p className="mt-1 text-sm text-muted">{m.summary}</p> : null}
-              <ul className="mt-2 divide-y divide-line rounded-2xl border border-line">
-                {m.lessons.map((l) => (
-                  <li key={l.id} className="flex items-center gap-3 px-4 py-3">
-                    <span className="flex-1">
-                      {l.locked ? (
-                        <span className="text-muted">{l.title}</span>
-                      ) : (
-                        <Link href={'/onyx/courses/' + id + '/lessons/' + l.id}
-                          className="hover:underline">
-                          {l.title}
-                        </Link>
-                      )}
-                      {l.is_preview ? <span className="ml-2 text-xs text-muted">preview</span> : null}
-                    </span>
-                    {l.duration_seconds ? (
-                      <span className="text-xs tabular-nums text-muted">
-                        {formatDuration(l.duration_seconds)}
+              <div className="mb-2.5 flex items-baseline gap-2.5">
+                <span className="font-mono text-[13px] font-bold tabular-nums text-accent-700">
+                  {String(mi + 1).padStart(2, '0')}
+                </span>
+                <h2 className="text-[15px] font-bold">{m.title}</h2>
+                <span className="ml-auto text-[12.5px] tabular-nums text-muted">
+                  {m.lessons.length} {m.lessons.length === 1 ? 'lesson' : 'lessons'}
+                </span>
+              </div>
+              {m.summary ? (
+                <p className="-mt-1 mb-2.5 text-[13px] text-muted">{m.summary}</p>
+              ) : null}
+
+              <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line
+                             bg-white shadow-card">
+                {m.lessons.map((l) => {
+                  const isNext = next?.id === l.id;
+                  return (
+                    <li key={l.id}
+                      className={'flex items-center gap-3 px-4 py-3 '
+                        + (isNext ? 'bg-brand-50/70' : 'hover:bg-brand-50/40')}>
+                      <span className={'grid h-9 w-9 shrink-0 place-items-center rounded-xl '
+                        + (l.completed_at ? 'bg-green-50 text-green-700'
+                          : l.locked ? 'bg-slate-100 text-muted'
+                            : 'bg-brand-50 text-brand-700')}>
+                        <Icon name={l.completed_at ? 'check' : lessonIcon(l.type)}
+                          className="h-[17px] w-[17px]" />
                       </span>
-                    ) : null}
-                    {l.completed_at ? <span className="text-xs text-emerald-700">done</span> : null}
-                    {l.locked ? <span className="text-xs text-muted">locked</span> : null}
-                  </li>
-                ))}
+
+                      <span className="min-w-0 flex-1">
+                        {l.locked ? (
+                          <span className="text-[14.5px] text-muted">{l.title}</span>
+                        ) : (
+                          <Link href={'/onyx/courses/' + id + '/lessons/' + l.id}
+                            className="text-[14.5px] font-semibold hover:underline">
+                            {l.title}
+                          </Link>
+                        )}
+                        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12.5px]
+                                         text-muted">
+                          {l.duration_seconds ? (
+                            <span className="tabular-nums">{formatDuration(l.duration_seconds)}</span>
+                          ) : null}
+                          {l.is_preview ? <span>· free preview</span> : null}
+                        </span>
+                      </span>
+
+                      {isNext ? <Pill tone="brand">Next</Pill> : null}
+                      {l.completed_at ? <Pill tone="good">Done</Pill> : null}
+                      {l.locked ? <Pill tone="neutral">Locked</Pill> : null}
+                    </li>
+                  );
+                })}
                 {m.lessons.length === 0 ? (
-                  <li className="px-4 py-3 text-sm text-muted">Nothing here yet.</li>
+                  <li><Empty icon="layers">Nothing has been added to this module yet.</Empty></li>
                 ) : null}
               </ul>
             </section>
           ))}
 
           {outline.modules.length === 0 ? (
-            <p className="text-sm text-muted">This course has no content yet.</p>
+            <Card className="p-2">
+              <Empty icon="book">
+                This course has no content yet.
+                {isStaff(me.role) ? ' Add a module below to start building it.' : ''}
+              </Empty>
+            </Card>
           ) : null}
 
           {/* LRN-02: content delivery starts with somebody being able to put
@@ -174,27 +251,42 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
 
           {visible ? (
             <section>
-              <div className="flex items-center justify-between">
-                <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
+              <div className="mb-2.5 flex items-center justify-between gap-3">
+                <h2 className="text-[11.5px] font-bold uppercase tracking-[.085em] text-muted">
                   Questions
                 </h2>
                 <OnyxAskForm courseId={Number(id)} />
               </div>
-              <ul className="mt-3 space-y-2">
+              <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line
+                             bg-white shadow-card">
                 {(discussions ?? []).map((d) => (
-                  <li key={d.id} className="rounded-2xl border border-line p-3">
-                    <Link href={'/onyx/discussions/' + d.id}
-                      className="text-sm font-medium hover:underline">
-                      {d.title}
-                    </Link>
-                    <div className="mt-0.5 text-xs text-muted">
-                      {d.status === 'resolved' ? 'resolved' : d.status} · {d.reply_count}
-                      {' '}{d.reply_count === 1 ? 'reply' : 'replies'}
-                    </div>
+                  <li key={d.id} className="flex items-center gap-3 px-4 py-3
+                                            hover:bg-brand-50/40">
+                    <span className={'grid h-9 w-9 shrink-0 place-items-center rounded-xl '
+                      + (d.status === 'resolved'
+                        ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-muted')}>
+                      <Icon name={d.status === 'resolved' ? 'check' : 'help'}
+                        className="h-[17px] w-[17px]" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <Link href={'/onyx/discussions/' + d.id}
+                        className="block truncate text-[14.5px] font-semibold hover:underline">
+                        {d.title}
+                      </Link>
+                      <span className="text-[12.5px] text-muted">
+                        {d.reply_count} {d.reply_count === 1 ? 'reply' : 'replies'}
+                      </span>
+                    </span>
+                    {d.status === 'resolved' ? <Pill tone="good">Resolved</Pill> : null}
                   </li>
                 ))}
                 {(discussions ?? []).length === 0 ? (
-                  <li className="text-sm text-muted">Nobody has asked anything yet.</li>
+                  <li>
+                    <Empty icon="help">
+                      Nobody has asked anything yet. If you are stuck, asking here reaches
+                      the people teaching this course.
+                    </Empty>
+                  </li>
                 ) : null}
               </ul>
             </section>
@@ -208,7 +300,7 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
               they or an administrator could do about it from the product. */}
           {me.role === 'admin' && teachers.length ? (
             <section className="mb-4">
-              <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-muted">
+              <h2 className="mb-2 text-[11.5px] font-bold uppercase tracking-[.085em] text-muted">
                 Teaching
               </h2>
               <CreatePanel
@@ -229,7 +321,7 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
           {/* LRN-04: "faculty must create assignments". They could not. */}
           {isStaff(me.role) ? (
             <section>
-              <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-muted">
+              <h2 className="mb-2 text-[11.5px] font-bold uppercase tracking-[.085em] text-muted">
                 Set work
               </h2>
               <CreatePanel
@@ -261,19 +353,28 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
 
           {due.length ? (
             <section>
-              <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Due</h2>
-              <ul className="mt-2 space-y-2 text-sm">
-                {due.map((a) => (
-                  <li key={a.id}>
-                    <Link href={'/onyx/assignments/' + a.id} className="hover:underline">
-                      {a.title}
-                    </Link>
-                    <div className="text-xs text-muted">
-                      {new Date(a.due_at!).toLocaleString()}
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <SectionHead title="Due" />
+              <Card>
+                <ul className="divide-y divide-line">
+                  {due.map((a) => {
+                    const when = relativeDue(a.due_at);
+                    return (
+                      <li key={a.id} className="px-3.5 py-3">
+                        <Link href={'/onyx/assignments/' + a.id}
+                          className="text-[14px] font-semibold hover:underline">
+                          {a.title}
+                        </Link>
+                        <div className="mt-1">
+                          {/* Relative, not a locale timestamp. What a learner
+                              scans a due list for is what is urgent, and
+                              "8/17/2026, 12:00:00 AM" makes that a calculation. */}
+                          <Pill tone={when.tone}>{when.text}</Pill>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </Card>
             </section>
           ) : null}
 
@@ -281,7 +382,7 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
               screen existed, but nothing could create the session it needs. */}
           {isStaff(me.role) ? (
             <section>
-              <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-muted">
+              <h2 className="mb-2 text-[11.5px] font-bold uppercase tracking-[.085em] text-muted">
                 Attendance
               </h2>
               <CreatePanel
@@ -313,29 +414,40 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
 
           {sessions?.length ? (
             <section>
-              <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
+              <h2 className="text-[11.5px] font-bold uppercase tracking-[.085em] text-muted">
                 Sessions
               </h2>
-              <ul className="mt-2 space-y-2 text-sm">
-                {sessions.slice(0, 5).map((s) => (
-                  <li key={s.id}>
-                    <Link href={'/onyx/courses/' + id + '/attendance/' + s.id}
-                      className="hover:underline">
-                      {s.title}
-                    </Link>
-                    <div className="text-xs text-muted">
-                      {new Date(s.scheduled_at).toLocaleString()}
-                      {s.status === 'open' ? '' : ' · closed'}
-                    </div>
-                  </li>
-                ))}
-              </ul>
+              <Card className="mt-2">
+                <ul className="divide-y divide-line">
+                  {sessions.slice(0, 5).map((s) => (
+                    <li key={s.id} className="flex items-center gap-2 px-3.5 py-2.5">
+                      <span className="min-w-0 flex-1">
+                        <Link href={'/onyx/courses/' + id + '/attendance/' + s.id}
+                          className="block truncate text-[14px] font-semibold hover:underline">
+                          {s.title}
+                        </Link>
+                        <span className="text-[12.5px] text-muted">
+                          {/* A day and a time, not "11/8/2026, 12:11:13 am".
+                              Seconds have never told anybody when a lecture is. */}
+                          {new Date(s.scheduled_at).toLocaleDateString(undefined, {
+                            weekday: 'short', day: 'numeric', month: 'short',
+                            hour: '2-digit', minute: '2-digit',
+                          })}
+                        </span>
+                      </span>
+                      {s.status === 'open'
+                        ? <Pill tone="good">Open</Pill>
+                        : <Pill tone="neutral">Closed</Pill>}
+                    </li>
+                  ))}
+                </ul>
+              </Card>
             </section>
           ) : null}
 
           {resources?.length ? (
             <section>
-              <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
+              <h2 className="text-[11.5px] font-bold uppercase tracking-[.085em] text-muted">
                 Resources
               </h2>
               <ul className="mt-2 space-y-1 text-sm">

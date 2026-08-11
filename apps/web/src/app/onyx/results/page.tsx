@@ -4,6 +4,7 @@ import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import type { ExamMark, Transcript } from '@/lib/onyx-campus';
 import { CreatePanel } from '@/components/onyx-create';
+import { Empty, ListRow, Pill, RowList, SectionHead } from '@/components/onyx-ui';
 
 export const metadata: Metadata = { title: 'Results' };
 
@@ -61,51 +62,55 @@ export default async function OnyxResultsPage() {
         ) : null}
 
         <section>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Marks</h2>
-          <table className="mt-2 w-full text-sm">
-            <caption className="sr-only">Your published exam marks</caption>
-            <thead>
-              <tr className="text-left text-xs text-muted">
-                <th scope="col" className="py-1 pr-3">Exam</th>
-                <th scope="col" className="py-1 pr-3">Mark</th>
-                <th scope="col" className="py-1">Grade</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-line">
-              {marks.map((m) => (
-                <tr key={m.id}>
-                  <td className="py-2 pr-3">Exam #{m.exam_id}</td>
-                  <td className="py-2 pr-3 tabular-nums">{m.final_marks}</td>
-                  <td className="py-2">{m.grade ?? '--'}</td>
-                </tr>
-              ))}
-              {marks.length === 0 ? (
-                <tr><td colSpan={3} className="py-4 text-center text-muted">
-                  No results have been published yet.
-                </td></tr>
-              ) : null}
-            </tbody>
-          </table>
+          <SectionHead title="Marks" />
+          {/* The mark is the thing the page exists for, so it is the largest
+              element on the row rather than the middle cell of three. */}
+          <RowList label="Your published exam marks">
+            {marks.map((m) => (
+              <ListRow
+                key={m.id}
+                icon="award"
+                tone="brand"
+                title={'Exam #' + m.exam_id}
+                meta={m.grade ? 'Grade ' + m.grade : 'No grade band was applied'}
+                trailing={
+                  <span className="text-[17px] font-extrabold tabular-nums">{m.final_marks}</span>
+                }
+              />
+            ))}
+            {marks.length === 0 ? (
+              <li>
+                <Empty icon="award">
+                  No results have been published yet. A mark appears here only once the
+                  examinations office releases it.
+                </Empty>
+              </li>
+            ) : null}
+          </RowList>
         </section>
 
         <section>
-          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">Transcripts</h2>
-          <ul className="mt-2 space-y-2">
+          <SectionHead title="Transcripts" />
+          <RowList label="Your transcripts">
             {transcripts.map((t) => (
-              <li key={t.id} className="rounded-lg border border-line p-3 text-sm">
-                <div className="font-medium">{t.serial}</div>
-                <div className="mt-0.5 text-xs text-muted">
-                  issued {new Date(t.issued_at).toLocaleDateString()}
-                  {t.gpa !== null ? ' · GPA ' + t.gpa : ''}
-                  {' · '}{t.credits_earned} results
-                  {t.revoked_at ? ' · revoked' : ''}
-                </div>
-              </li>
+              <ListRow
+                key={t.id}
+                icon="flag"
+                tone={t.revoked_at ? 'late' : 'good'}
+                title={t.serial}
+                chips={t.revoked_at ? <Pill tone="late">Revoked</Pill> : null}
+                meta={
+                  'Issued ' + new Date(t.issued_at).toLocaleDateString(undefined,
+                    { day: 'numeric', month: 'short', year: 'numeric' })
+                  + ' · ' + t.credits_earned + ' results'
+                  + (t.gpa !== null ? ' · GPA ' + t.gpa : '')
+                }
+              />
             ))}
             {transcripts.length === 0 ? (
-              <li className="text-sm text-muted">None issued yet.</li>
+              <li><Empty icon="flag">None issued yet.</Empty></li>
             ) : null}
-          </ul>
+          </RowList>
         </section>
       </div>
     </OnyxShell>

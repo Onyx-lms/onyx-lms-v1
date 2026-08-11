@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
+import { Empty, ListRow, Pill, RowList, SectionHead } from '@/components/onyx-ui';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import { APPLICATION_LABELS, type Application, type JobPost } from '@/lib/onyx-career';
@@ -79,57 +80,63 @@ export default async function OnyxJobsPage() {
           />
         </div>
       ) : null}
-      <div className="overflow-x-auto rounded-2xl border border-line">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
-            <tr>
-              <th className="px-4 py-3">Role</th>
-              <th className="px-4 py-3">Where</th>
-              <th className="px-4 py-3">Openings</th>
-              <th className="px-4 py-3">State</th>
-            </tr>
-          </thead>
-          <tbody>
-            {jobs.map((j) => (
-              <tr key={j.id} className="border-t border-line">
-                <td className="px-4 py-3">
-                  <Link href={'/onyx/jobs/' + j.id} className="hover:underline">{j.title}</Link>
-                  {applied.has(j.id)
-                    ? <span className="ml-2 text-xs text-emerald-700">applied</span>
-                    : null}
-                </td>
-                <td className="px-4 py-3 text-muted">{j.location ?? '—'}</td>
-                <td className="px-4 py-3 tabular-nums">{j.openings}</td>
-                <td className="px-4 py-3 capitalize text-muted">{j.status}</td>
-              </tr>
-            ))}
-            {jobs.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-muted">
-                  Nothing open at the moment.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+      {/* A job post is something you read and apply to, so the row leads with
+          the role and ends with the action. "Applied" is the state that
+          changes what a learner does next, so it is a chip, not grey text. */}
+      <RowList label="Open roles">
+        {jobs.map((j) => (
+          <ListRow
+            key={j.id}
+            icon="briefcase"
+            tone={applied.has(j.id) ? 'good' : 'brand'}
+            title={j.title}
+            href={'/onyx/jobs/' + j.id}
+            chips={
+              <>
+                {applied.has(j.id) ? <Pill tone="good">Applied</Pill> : null}
+                {j.status !== 'open' ? (
+                  <Pill tone="neutral">{j.status[0]!.toUpperCase() + j.status.slice(1)}</Pill>
+                ) : null}
+              </>
+            }
+            meta={
+              <span className="flex flex-wrap items-center gap-x-3">
+                <span>{j.location ?? 'Location not stated'}</span>
+                <span className="tabular-nums">
+                  {j.openings} {j.openings === 1 ? 'opening' : 'openings'}
+                </span>
+              </span>
+            }
+            action={{ href: '/onyx/jobs/' + j.id,
+              label: applied.has(j.id) ? 'View' : 'See the role' }}
+          />
+        ))}
+        {jobs.length === 0 ? (
+          <li>
+            <Empty icon="briefcase">
+              Nothing is open at the moment. Roles your institution shares appear here.
+            </Empty>
+          </li>
+        ) : null}
+      </RowList>
 
       {mine?.length ? (
         <section className="mt-8">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
-            Your applications
-          </h2>
-          <ul className="mt-3 space-y-2 text-sm">
+          <SectionHead title="Your applications" />
+          <RowList label="Your applications">
             {mine.map((a) => (
-              <li key={a.id} className="flex items-center gap-3 rounded-lg border
-                                        border-line px-3 py-2">
-                <span className="flex-1">{a.job?.title ?? 'A role'}</span>
-                <span className="text-muted">
-                  {APPLICATION_LABELS[a.status] ?? a.status}
-                </span>
-              </li>
+              <ListRow
+                key={a.id}
+                icon={a.status === 'offered' ? 'award'
+                  : a.status === 'rejected' ? 'flag' : 'briefcase'}
+                tone={a.status === 'offered' ? 'good'
+                  : a.status === 'rejected' ? 'late' : 'neutral'}
+                title={a.job?.title ?? 'A role'}
+                meta={APPLICATION_LABELS[a.status] ?? a.status}
+                chips={a.status === 'offered' ? <Pill tone="good">Offer</Pill> : null}
+              />
             ))}
-          </ul>
+          </RowList>
         </section>
       ) : null}
     </OnyxShell>

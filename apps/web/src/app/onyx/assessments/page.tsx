@@ -7,6 +7,7 @@ import { isExamsStaff, type Assessment, type MyAttempt } from '@/lib/onyx-assess
 import type { Course } from '@/lib/onyx-learn';
 import { CreatePanel } from '@/components/onyx-create';
 import { BuildAssessment } from '@/components/onyx-manage';
+import { Empty, ListRow, Pill, RowList, SectionHead } from '@/components/onyx-ui';
 
 export const metadata: Metadata = { title: 'Assessments' };
 
@@ -75,80 +76,83 @@ export default async function OnyxAssessmentsPage() {
         </section>
       ) : null}
 
-      <div className="overflow-x-auto rounded-2xl border border-line">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
-            <tr>
-              <th className="px-4 py-3">Assessment</th>
-              <th className="px-4 py-3">Opens</th>
-              <th className="px-4 py-3">Length</th>
-              <th className="px-4 py-3">State</th>
-            </tr>
-          </thead>
-          <tbody>
-            {assessments.map((a) => {
-              const open = (!a.opens_at || Date.parse(a.opens_at) <= now)
-                && (!a.closes_at || Date.parse(a.closes_at) >= now);
-              return (
-                <tr key={a.id} className="border-t border-line">
-                  <td className="px-4 py-3">
-                    <Link href={'/onyx/assessments/' + a.id} className="hover:underline">
-                      {a.title}
-                    </Link>
-                    {a.proctoring ? (
-                      <span className="ml-2 text-xs text-amber-700">monitored</span>
-                    ) : null}
-                  </td>
-                  <td className="px-4 py-3 text-muted">
-                    {a.opens_at ? new Date(a.opens_at).toLocaleString() : 'Any time'}
-                  </td>
-                  <td className="px-4 py-3 text-muted">{a.duration_minutes} min</td>
-                  <td className="px-4 py-3 text-muted">
-                    {a.status === 'draft' ? 'Draft'
-                      : a.results_published_at ? 'Results out'
-                        : open ? 'Open' : 'Closed'}
-                  </td>
-                </tr>
-              );
-            })}
-            {assessments.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-muted">
-                  Nothing scheduled.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+      {/* A paper is something you sit, not a value you compare down a column,
+          so it gets a row with its state and its action rather than four cells
+          of grey text. "Open" is the whole point of the screen and it was the
+          last column. */}
+      <RowList label="Assessments">
+        {assessments.map((a) => {
+          const open = (!a.opens_at || Date.parse(a.opens_at) <= now)
+            && (!a.closes_at || Date.parse(a.closes_at) >= now);
+          const draft = a.status === 'draft';
+          const out = Boolean(a.results_published_at);
+          return (
+            <ListRow
+              key={a.id}
+              icon={out ? 'award' : 'edit'}
+              tone={draft ? 'neutral' : out ? 'good' : open ? 'brand' : 'neutral'}
+              title={a.title}
+              href={'/onyx/assessments/' + a.id}
+              chips={
+                <>
+                  {draft ? <Pill tone="neutral">Draft</Pill>
+                    : out ? <Pill tone="good">Results out</Pill>
+                      : open ? <Pill tone="brand">Open</Pill>
+                        : <Pill tone="neutral">Closed</Pill>}
+                  {a.proctoring ? <Pill tone="soon">Monitored</Pill> : null}
+                </>
+              }
+              meta={
+                <span className="flex flex-wrap items-center gap-x-3">
+                  <span className="tabular-nums">{a.duration_minutes} minutes</span>
+                  <span>
+                    {a.opens_at
+                      ? 'Opens ' + new Date(a.opens_at).toLocaleDateString(undefined,
+                        { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+                      : 'Open any time'}
+                  </span>
+                </span>
+              }
+              action={open && !draft
+                ? { href: '/onyx/assessments/' + a.id, label: 'Open' }
+                : undefined}
+            />
+          );
+        })}
+        {assessments.length === 0 ? (
+          <li>
+            <Empty icon="edit">
+              Nothing is scheduled. When a paper is set for one of your courses it appears here.
+            </Empty>
+          </li>
+        ) : null}
+      </RowList>
 
       {mine?.length ? (
         <section className="mt-8">
-          <h2 className="text-sm font-medium uppercase tracking-wide text-muted">
-            Your results
-          </h2>
-          <ul className="mt-3 space-y-2 text-sm">
+          <SectionHead title="Your papers" />
+          <RowList label="Your attempts">
             {mine.map((a) => (
-              <li key={a.attempt_id} className="flex items-center gap-3 rounded-lg border
-                                                border-line px-3 py-2">
-                <span className="flex-1">{a.title}</span>
-                {a.results_published ? (
-                  <>
-                    <span className="tabular-nums">{a.score} / {a.max_score}</span>
-                    {a.passed !== null ? (
-                      <span className={a.passed ? 'text-emerald-700' : 'text-rose-700'}>
-                        {a.passed ? 'passed' : 'not passed'}
-                      </span>
-                    ) : null}
-                  </>
-                ) : (
-                  <span className="text-xs text-muted">
-                    {a.status === 'in_progress' ? 'in progress' : 'awaiting results'}
+              <ListRow
+                key={a.attempt_id}
+                icon={a.results_published ? 'award' : 'clock'}
+                tone={a.results_published ? (a.passed === false ? 'late' : 'good') : 'neutral'}
+                title={a.title}
+                meta={a.results_published
+                  ? (a.passed === null ? 'Marked' : a.passed ? 'Passed' : 'Not passed')
+                  : a.status === 'in_progress'
+                    ? 'You have a paper open'
+                    : 'Handed in — results are not out yet'}
+                trailing={a.results_published ? (
+                  <span className="text-[15px] font-extrabold tabular-nums">
+                    {a.score}
+                    <span className="text-[13px] font-semibold text-muted">/{a.max_score}</span>
                   </span>
-                )}
-              </li>
+                ) : null}
+                chips={a.status === 'in_progress' ? <Pill tone="soon">In progress</Pill> : null}
+              />
             ))}
-          </ul>
+          </RowList>
         </section>
       ) : null}
     </OnyxShell>

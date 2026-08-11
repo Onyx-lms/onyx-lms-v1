@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
+import { Empty, ListRow, Pill, RowList } from '@/components/onyx-ui';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, type Me } from '@/lib/onyx-session';
 import type { Contest } from '@/lib/onyx-career';
@@ -45,36 +46,48 @@ export default async function OnyxContestsPage() {
           />
         </div>
       ) : null}
-      <ul className="space-y-3">
+      {/* Running is the state that changes what you do, so it is a chip and
+          it is first. The old row put it in grey text at the end of the line
+          alongside "draft", which read as the same kind of fact. */}
+      <RowList label="Contests">
         {contests.map((c) => {
           const started = Date.parse(c.starts_at) <= now;
           const ended = Date.parse(c.ends_at) <= now;
+          const fmt = (t: string) => new Date(t).toLocaleDateString(undefined,
+            { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
           return (
-            <li key={c.id} className="rounded-2xl border border-line p-4">
-              <div className="flex items-baseline justify-between gap-3">
-                <Link href={'/onyx/contests/' + c.id} className="font-medium hover:underline">
-                  {c.title}
-                </Link>
-                <span className="text-xs text-muted">
-                  {ended ? 'finished' : started ? 'running' : 'not started'}
-                  {c.status === 'draft' ? ' · draft' : ''}
+            <ListRow
+              key={c.id}
+              icon="trophy"
+              tone={ended ? 'neutral' : started ? 'brand' : 'neutral'}
+              title={c.title}
+              href={'/onyx/contests/' + c.id}
+              chips={
+                <>
+                  {ended ? <Pill tone="neutral">Finished</Pill>
+                    : started ? <Pill tone="brand">Running</Pill>
+                      : <Pill tone="soon">Not started</Pill>}
+                  {c.status === 'draft' ? <Pill tone="neutral">Draft</Pill> : null}
+                </>
+              }
+              meta={
+                <span className="flex flex-wrap items-center gap-x-3">
+                  <span>{fmt(c.starts_at)} &ndash; {fmt(c.ends_at)}</span>
+                  <span>{c.team_size > 1 ? 'Teams of up to ' + c.team_size : 'Individual'}</span>
+                  {c.freeze_minutes ? (
+                    <span>Board freezes for the last {c.freeze_minutes} minutes</span>
+                  ) : null}
                 </span>
-              </div>
-              <div className="mt-1 text-xs text-muted">
-                {new Date(c.starts_at).toLocaleString()} &ndash;{' '}
-                {new Date(c.ends_at).toLocaleString()}
-                {c.team_size > 1 ? ' · teams of up to ' + c.team_size : ' · individual'}
-                {c.freeze_minutes
-                  ? ' · board freezes for the last ' + c.freeze_minutes + ' minutes'
-                  : ''}
-              </div>
-            </li>
+              }
+              action={{ href: '/onyx/contests/' + c.id,
+                label: started && !ended ? 'Compete' : 'Open' }}
+            />
           );
         })}
         {contests.length === 0 ? (
-          <li className="text-sm text-muted">Nothing scheduled.</li>
+          <li><Empty icon="trophy">Nothing is scheduled.</Empty></li>
         ) : null}
-      </ul>
+      </RowList>
     </OnyxShell>
   );
 }

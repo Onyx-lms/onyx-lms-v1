@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
+import { Empty, ListRow, Pill, RowList, SectionHead } from '@/components/onyx-ui';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import type { Interview } from '@/lib/onyx-career';
@@ -25,25 +26,26 @@ export default async function OnyxInterviewsPage() {
 
   const list = (title: string, items: Interview[], hint: string) => (
     <section className="mt-6">
-      <h2 className="text-sm font-medium uppercase tracking-wide text-muted">{title}</h2>
-      <ul className="mt-3 space-y-2 text-sm">
+      <SectionHead title={title} />
+      <RowList label={title}>
         {items.map((i) => (
-          <li key={i.id} className="flex flex-wrap items-center gap-3 rounded-lg border
-                                    border-line px-3 py-2">
-            <Link href={'/onyx/interviews/' + i.id} className="flex-1 hover:underline">
-              {i.title}
-            </Link>
-            <span className="text-xs text-muted">
-              {new Date(i.scheduled_at).toLocaleString()}
-            </span>
-            <span className="text-xs capitalize text-muted">{i.status}</span>
-            {i.feedback_released
-              ? <span className="text-xs text-emerald-700">feedback ready</span>
-              : null}
-          </li>
+          <ListRow
+            key={i.id}
+            icon="mic"
+            tone={i.feedback_released ? 'good' : 'brand'}
+            title={i.title}
+            href={'/onyx/interviews/' + i.id}
+            chips={i.feedback_released ? <Pill tone="good">Feedback ready</Pill> : null}
+            meta={new Date(i.scheduled_at).toLocaleDateString(undefined,
+              { weekday: 'short', day: 'numeric', month: 'short',
+                hour: '2-digit', minute: '2-digit' })
+              + ' \u00b7 ' + i.status}
+            action={{ href: '/onyx/interviews/' + i.id,
+              label: i.feedback_released ? 'Read feedback' : 'Open' }}
+          />
         ))}
-        {items.length === 0 ? <li className="text-muted">{hint}</li> : null}
-      </ul>
+        {items.length === 0 ? <li><Empty icon="mic">{hint}</Empty></li> : null}
+      </RowList>
     </section>
   );
 

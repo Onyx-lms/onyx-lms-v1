@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
+import { Empty, ListRow, Pill, RowList } from '@/components/onyx-ui';
 import { OnyxNewWorkspace } from '@/components/onyx-workspace-new';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, type Me } from '@/lib/onyx-session';
@@ -27,21 +28,30 @@ export default async function OnyxWorkspacesPage() {
     >
       <OnyxNewWorkspace courses={courses} />
 
-      <ul className="mt-6 grid gap-3 sm:grid-cols-2">
-        {workspaces.map((w) => (
-          <li key={w.id} className="rounded-2xl border border-line p-4">
-            <Link href={'/onyx/workspaces/' + w.id} className="font-medium hover:underline">
-              {w.title}
-            </Link>
-            <div className="text-xs text-muted">
-              {w.language} · updated {new Date(w.updated_at).toLocaleDateString()}
-            </div>
-          </li>
-        ))}
-        {workspaces.length === 0 ? (
-          <li className="text-sm text-muted">Nothing yet. Start a project above.</li>
-        ) : null}
-      </ul>
+      <div className="mt-6">
+        <RowList label="Your workspaces">
+          {workspaces.map((w) => (
+            <ListRow
+              key={w.id}
+              icon="layers"
+              tone="brand"
+              title={w.title}
+              href={'/onyx/workspaces/' + w.id}
+              chips={<Pill tone="neutral">{w.language}</Pill>}
+              meta={'Last worked on ' + new Date(w.updated_at).toLocaleDateString(undefined,
+                { day: 'numeric', month: 'short', year: 'numeric' })}
+              action={{ href: '/onyx/workspaces/' + w.id, label: 'Open' }}
+            />
+          ))}
+          {workspaces.length === 0 ? (
+            <li>
+              <Empty icon="layers">
+                No projects yet. Start one above and it keeps its own files and snapshots.
+              </Empty>
+            </li>
+          ) : null}
+        </RowList>
+      </div>
     </OnyxShell>
   );
 }

@@ -235,3 +235,119 @@ export function Empty({ children, icon }: { children: React.ReactNode; icon?: Ic
     </div>
   );
 }
+
+/* -------------------------------------------------------------- list rows */
+
+/**
+ * The row every list on this product is made of.
+ *
+ * The inner screens had all drifted to bare `<table>`s -- assessments, results,
+ * practice, jobs, contests -- while the dashboard got cards, progress and
+ * chips. A table is right when someone is comparing values down a column and
+ * wrong when they are picking one thing to open, which is what all of those
+ * screens actually are. The difference showed: a learner arriving at
+ * Assessments saw four columns of grey text and no indication of what to do.
+ *
+ * So: a leading icon that says what kind of thing this is, a title that is the
+ * link, one line of context under it, the state as a chip, and the action as a
+ * button. Everything optional except the title, so one component covers a
+ * problem, a paper, a job and a contest without any of them being bent to fit.
+ */
+export function ListRow({ icon, title, href, meta, chips, action, trailing, tone }: {
+  icon?: IconName;
+  title: string;
+  href?: string;
+  /** One line under the title. Context, never a repeat of it. */
+  meta?: React.ReactNode;
+  chips?: React.ReactNode;
+  action?: { href: string; label: string };
+  /** A number or ring that belongs on the right, before the action. */
+  trailing?: React.ReactNode;
+  /** Colours the leading icon. Meaning only -- see Pill. */
+  tone?: 'neutral' | 'brand' | 'good' | 'late';
+}) {
+  const tones = {
+    neutral: 'bg-slate-100 text-muted',
+    brand: 'bg-brand-50 text-brand-700',
+    good: 'bg-green-50 text-green-700',
+    late: 'bg-red-50 text-red-700',
+  } as const;
+
+  return (
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3.5
+                   transition-colors hover:bg-brand-50/40 sm:flex-nowrap">
+      {icon ? (
+        <span className={'grid h-10 w-10 shrink-0 place-items-center rounded-xl '
+          + tones[tone ?? 'neutral']}>
+          <Icon name={icon} className="h-[18px] w-[18px]" />
+        </span>
+      ) : null}
+
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {href ? (
+            // The whole title is the target, not a "view" link at the end of
+            // the row -- a five-pixel word is a poor thing to ask a thumb for.
+            <Link href={href} className="truncate text-[15px] font-semibold hover:underline">
+              {title}
+            </Link>
+          ) : (
+            <span className="truncate text-[15px] font-semibold">{title}</span>
+          )}
+          {chips}
+        </div>
+        {meta ? <div className="mt-0.5 text-[13px] text-muted">{meta}</div> : null}
+      </div>
+
+      {trailing ? <div className="shrink-0 text-right">{trailing}</div> : null}
+      {action ? <ActionLink href={action.href} label={action.label} /> : null}
+    </li>
+  );
+}
+
+/** The list rows sit in. One border, one divider rule, one radius. */
+export function RowList({ children, label }: {
+  children: React.ReactNode; label?: string;
+}) {
+  return (
+    <ul aria-label={label}
+      className="divide-y divide-line overflow-hidden rounded-2xl border border-line
+                 bg-white shadow-card">
+      {children}
+    </ul>
+  );
+}
+
+/**
+ * The one primary action on a row or a card.
+ *
+ * A link rather than a button because every one of them navigates; styled as a
+ * button because that is what it does for the person reading it.
+ */
+export function ActionLink({ href, label, tone = 'brand' }: {
+  href: string; label: string; tone?: 'brand' | 'quiet';
+}) {
+  const tones = {
+    brand: 'bg-brand-600 text-white hover:bg-brand-700',
+    quiet: 'border border-line text-slate-700 hover:bg-brand-50',
+  } as const;
+  return (
+    <Link href={href}
+      className={'inline-flex min-h-[38px] shrink-0 items-center gap-1.5 rounded-2xl px-3.5 '
+        + 'text-[13px] font-bold ' + tones[tone]}>
+      {label}
+    </Link>
+  );
+}
+
+/** A responsive grid of cards. Two up on a tablet, three on a desktop. */
+export function CardGrid({ children, min = '17rem' }: {
+  children: React.ReactNode; min?: string;
+}) {
+  return (
+    <div className="grid gap-3.5"
+      style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(min(' + min + ', 100%), 1fr))' }}>
+      {children}
+    </div>
+  );
+}

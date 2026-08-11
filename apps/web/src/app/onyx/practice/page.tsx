@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
+import { Empty, ListRow, Pill, RowList } from '@/components/onyx-ui';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, type Me } from '@/lib/onyx-session';
 import { isStaff } from '@/lib/onyx-learn';
@@ -54,57 +55,68 @@ export default async function OnyxPracticePage({ searchParams }: {
           />
         </div>
       ) : null}
-      <div className="mb-4 flex flex-wrap gap-2 text-sm">
-        <Link href="/onyx/practice"
-          className="rounded-lg border border-slate-300 px-3 py-1 hover:bg-slate-50">All</Link>
+      {/* Filters as pills, and the selected one carries the weight. The old
+          set drew every option with the same border, so which filter was on
+          was a question you answered by reading the URL. */}
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        <Filter href="/onyx/practice" label="All" on={!q.difficulty && !q.topic} />
         {(['easy', 'medium', 'hard'] as const).map((d) => (
-          <Link key={d} href={'/onyx/practice?difficulty=' + d}
-            className={'rounded-lg border px-3 py-1 capitalize hover:bg-slate-50 '
-              + (q.difficulty === d ? 'border-slate-900 bg-brand-600 text-white' : 'border-slate-300')}>
-            {d}
-          </Link>
+          <Filter key={d} href={'/onyx/practice?difficulty=' + d}
+            label={d[0]!.toUpperCase() + d.slice(1)} on={q.difficulty === d} />
         ))}
+        {topics.length ? <span className="mx-1 h-5 w-px bg-line" aria-hidden="true" /> : null}
         {topics.map((t) => (
-          <Link key={t} href={'/onyx/practice?topic=' + encodeURIComponent(t)}
-            className={'rounded-lg border px-3 py-1 hover:bg-slate-50 '
-              + (q.topic === t ? 'border-slate-900 bg-brand-600 text-white' : 'border-slate-300')}>
-            {t}
-          </Link>
+          <Filter key={t} href={'/onyx/practice?topic=' + encodeURIComponent(t)}
+            label={t} on={q.topic === t} />
         ))}
       </div>
 
-      <div className="overflow-x-auto rounded-2xl border border-line">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-muted">
-            <tr>
-              <th className="px-4 py-3">Problem</th>
-              <th className="px-4 py-3">Topic</th>
-              <th className="px-4 py-3">Difficulty</th>
-            </tr>
-          </thead>
-          <tbody>
-            {problems.map((p) => (
-              <tr key={p.id} className="border-t border-line">
-                <td className="px-4 py-3">
-                  <Link href={'/onyx/practice/' + p.id} className="hover:underline">{p.title}</Link>
-                  {p.status !== 'published'
-                    ? <span className="ml-2 text-xs text-amber-700">draft</span>
-                    : null}
-                </td>
-                <td className="px-4 py-3 text-muted">{p.topic ?? '-'}</td>
-                <td className="px-4 py-3 capitalize text-muted">{p.difficulty}</td>
-              </tr>
-            ))}
-            {problems.length === 0 ? (
-              <tr>
-                <td colSpan={3} className="px-4 py-8 text-center text-muted">
-                  No problems here yet.
-                </td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
+      <RowList label="Problems">
+        {problems.map((p) => (
+          <ListRow
+            key={p.id}
+            icon="code"
+            tone="brand"
+            title={p.title}
+            href={'/onyx/practice/' + p.id}
+            chips={
+              <>
+                {/* Difficulty is the thing a learner picks on, so it is a
+                    coloured chip and not a lowercase word in a grey column. */}
+                <Pill tone={p.difficulty === 'hard' ? 'late'
+                  : p.difficulty === 'medium' ? 'soon' : 'good'}>
+                  {p.difficulty[0]!.toUpperCase() + p.difficulty.slice(1)}
+                </Pill>
+                {p.status !== 'published' ? <Pill tone="neutral">Draft</Pill> : null}
+              </>
+            }
+            meta={p.topic ?? 'No topic'}
+            action={{ href: '/onyx/practice/' + p.id, label: 'Solve' }}
+          />
+        ))}
+        {problems.length === 0 ? (
+          <li>
+            <Empty icon="code">
+              {q.difficulty || q.topic
+                ? 'No problems match that filter.'
+                : 'No problems have been published yet.'}
+            </Empty>
+          </li>
+        ) : null}
+      </RowList>
     </OnyxShell>
+  );
+}
+
+/** One filter pill. Selected is filled, not merely outlined differently. */
+function Filter({ href, label, on }: { href: string; label: string; on: boolean }) {
+  return (
+    <Link href={href}
+      className={'inline-flex min-h-[32px] items-center rounded-2xl px-3 text-[13px] font-semibold '
+        + (on
+          ? 'bg-brand-600 text-white'
+          : 'border border-line bg-white text-slate-700 hover:bg-brand-50')}>
+      {label}
+    </Link>
   );
 }
