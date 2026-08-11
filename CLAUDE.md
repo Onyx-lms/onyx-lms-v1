@@ -157,6 +157,14 @@ Onyx table is ordinary work; adding a 62nd *ported* table is not.
   calls `ExecutionProvider.run()` straight from the request and answers with
   the result. Do not "fix" this into the queue without a reason a workspace
   actually has.
+- **`ONYX_JUDGE0_URL` in local `.env` points at `https://ce.judge0.com`, not a
+  local container.** Self-hosting (`deploy/judge0/`) needs cgroup v1; this
+  machine's Docker Desktop WSL2 VM is cgroup v2-only and the bundled `isolate`
+  (1.8.1, predates v2 support) fails every submission with `internal_error`,
+  verified with `tools/onyx/verify-sandbox.mjs` before concluding that, not
+  assumed. The hosted CE endpoint is the same fallback the Laravel app used
+  (`CodeIDEController.php`). It is rate-limited with no SLA -- fine for one
+  developer, not for a deployment. Full story in `deploy/judge0/README.md`.
 
 ## Non-obvious invariants
 

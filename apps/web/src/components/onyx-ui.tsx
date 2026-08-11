@@ -49,6 +49,9 @@ export const ICONS = {
   flag: <><path d="M5.5 21V4.5h13l-2.5 4 2.5 4h-13" /></>,
   shield: <><path d="M12 3l7.5 3v5.5c0 4.4-3 8.2-7.5 9.5-4.5-1.3-7.5-5.1-7.5-9.5V6z" /></>,
   building: <><rect x="4" y="3.5" width="16" height="17" rx="2" /><path d="M9 8h2M13 8h2M9 12h2M13 12h2" /><path d="M10 20.5v-4h4v4" /></>,
+  save: <><path d="M5 4h11l3 3v13H5z" /><path d="M8 4v5h8V4" /><path d="M8 20v-6h8v6" /></>,
+  camera: <><path d="M4 8.5h3l1.5-2h7l1.5 2h3v11H4z" /><circle cx="12" cy="14" r="3.5" /></>,
+  trash: <><path d="M5 7h14" /><path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7" /><path d="M7 7l1 13h8l1-13" /></>,
 } as const;
 
 export type IconName = keyof typeof ICONS;

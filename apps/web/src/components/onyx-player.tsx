@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { LessonDetail } from '@/lib/onyx-learn';
+import { Icon } from '@/components/onyx-ui';
 
 /**
  * LRN-02a -- the lesson player, with resumable playback.
@@ -73,7 +74,7 @@ export function OnyxPlayer({ lesson }: { lesson: LessonDetail }) {
         ref={video}
         src={lesson.url ?? undefined}
         controls
-        className="w-full rounded-xl bg-black"
+        className="aspect-video w-full rounded-xl bg-black"
         onLoadedMetadata={() => {
           // Only now does the browser accept a seek.
           if (video.current && resumedFrom > 0) video.current.currentTime = resumedFrom;
@@ -81,20 +82,32 @@ export function OnyxPlayer({ lesson }: { lesson: LessonDetail }) {
         onTimeUpdate={() => { position.current = video.current?.currentTime ?? 0; }}
         onEnded={() => { setCompleted(true); save(true); }}
       />
-      <div className="flex items-center gap-3 text-sm">
+      {/* This row lives on the dark theatre frame the page wraps around a
+          video lesson, so it is styled light-on-dark rather than assuming
+          a white background under it. */}
+      <div className="flex flex-wrap items-center gap-3 px-1 pb-1 text-[13px]">
         {completed
-          ? <span className="text-emerald-700">Completed</span>
+          ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/15
+                             px-3 py-1.5 font-bold text-emerald-300">
+              <Icon name="check" className="h-3.5 w-3.5" />
+              Completed
+            </span>
+          )
           : (
             <button
               type="button"
               onClick={() => { setCompleted(true); save(true); }}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-slate-700 hover:bg-slate-50"
+              className="inline-flex items-center gap-1.5 rounded-full border border-white/25
+                         px-3.5 py-1.5 font-semibold text-white/90 transition hover:border-white/50
+                         hover:bg-white/10"
             >
+              <Icon name="check" className="h-3.5 w-3.5" />
               Mark as complete
             </button>
           )}
         {resumedFrom > 0 && !completed ? (
-          <span className="text-muted">
+          <span className="text-white/50">
             Resumed from {Math.floor(resumedFrom / 60)}m {resumedFrom % 60}s
           </span>
         ) : null}

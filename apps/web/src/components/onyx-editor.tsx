@@ -27,12 +27,18 @@ const MONACO_LANGUAGE: Record<string, string> = {
   java: 'java', c: 'c', cpp: 'cpp', go: 'go', rust: 'rust',
 };
 
-export function OnyxEditor({ value, language, onChange, height = 420, readOnly = false }: {
+export function OnyxEditor({
+  value, language, onChange, height = 420, readOnly = false, onRunShortcut,
+}: {
   value: string;
   language: string;
   onChange?: (next: string) => void;
   height?: number;
   readOnly?: boolean;
+  /** Ctrl/Cmd+Enter, wired through Monaco when it is the one active. The
+   *  textarea fallback does not get this -- a browser reserves few enough
+   *  chords already without one more page trapping Enter. */
+  onRunShortcut?: () => void;
 }) {
   const [ready, setReady] = useState(false);
   const [gaveUp, setGaveUp] = useState(false);
@@ -80,7 +86,13 @@ export function OnyxEditor({ value, language, onChange, height = 420, readOnly =
           theme="vs-dark"
           value={value}
           onChange={(next) => onChange?.(next ?? '')}
-          onMount={() => { mounted.current = true; setReady(true); }}
+          onMount={(editor, monaco) => {
+            mounted.current = true;
+            setReady(true);
+            if (onRunShortcut) {
+              editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, onRunShortcut);
+            }
+          }}
           options={{
             readOnly,
             minimap: { enabled: false },

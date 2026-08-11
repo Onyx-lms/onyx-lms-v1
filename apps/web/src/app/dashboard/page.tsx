@@ -22,6 +22,7 @@ interface Summary {
 }
 interface Enrolled {
   id: number; title: string | null; slug: string | null; progress?: number;
+  thumbnail?: string | null; completed?: boolean;
 }
 
 const LABEL: Record<Purchase['kind'], string> = {
@@ -67,23 +68,54 @@ export default async function StudentDashboard() {
           </p>
         ) : (
           <ul className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {enrolled.slice(0, 6).map((c) => (
-              <li key={c.id} className="card p-4">
-                <h3 className="font-medium leading-snug">{c.title}</h3>
-                {typeof c.progress === 'number' && (
-                  <>
-                    <div className="mt-3 h-2 rounded-full bg-slate-100">
-                      <div className="h-2 rounded-full bg-brand-600"
-                        style={{ width: Math.min(100, Math.max(0, c.progress)) + '%' }} />
-                    </div>
-                    <p className="mt-1 text-xs text-slate-500">{c.progress}% complete</p>
-                  </>
-                )}
-                <Link href={'/play-course/' + c.slug} className="btn-primary mt-3 inline-block text-sm">
-                  Continue
-                </Link>
-              </li>
-            ))}
+            {enrolled.slice(0, 6).map((c) => {
+              const pct = Math.min(100, Math.max(0, c.progress ?? 0));
+              return (
+                <li key={c.id} className="card group flex flex-col transition duration-300 ease-out hover:-translate-y-1 hover:shadow-lift">
+                  <Link href={'/play-course/' + c.slug}
+                    className="relative block aspect-video w-full overflow-hidden bg-gradient-to-br from-brand-700 to-brand-900">
+                    {c.thumbnail ? (
+                      <img src={c.thumbnail} alt=""
+                        className="h-full w-full object-cover transition duration-500 ease-out group-hover:scale-105"
+                        loading="lazy" />
+                    ) : (
+                      <span aria-hidden className="absolute inset-0 bg-gradient-to-br from-brand-600 via-brand-700 to-brand-900" />
+                    )}
+                    <span aria-hidden className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/5 to-black/10" />
+                    <span className="absolute inset-0 flex items-center justify-center">
+                      <span aria-hidden
+                        className="grid h-10 w-10 scale-95 place-items-center rounded-full bg-white/90 text-brand-700 opacity-90 shadow-card transition duration-300 ease-out group-hover:scale-105 group-hover:opacity-100">
+                        <svg viewBox="0 0 24 24" width="15" height="15">
+                          <path d="M8 5.5v13l11-6.5z" fill="currentColor" />
+                        </svg>
+                      </span>
+                    </span>
+                    <span aria-hidden className="absolute inset-x-0 bottom-0 h-1.5 bg-white/25">
+                      <span className={`block h-full ${c.completed ? 'bg-emerald-400' : 'bg-brand-400'}`}
+                        style={{ width: pct + '%' }} />
+                    </span>
+                  </Link>
+
+                  <div className="flex flex-1 flex-col gap-2 p-4">
+                    <h3 className="font-medium leading-snug line-clamp-2">
+                      <Link href={'/play-course/' + c.slug} className="hover:text-brand-600">{c.title}</Link>
+                    </h3>
+                    {typeof c.progress === 'number' && (
+                      <>
+                        <div className="h-2 rounded-full bg-slate-100">
+                          <div className={`h-2 rounded-full ${c.completed ? 'bg-emerald-500' : 'bg-brand-600'}`}
+                            style={{ width: pct + '%' }} />
+                        </div>
+                        <p className="text-xs text-muted">{c.completed ? 'Completed' : `${Math.round(pct)}% complete`}</p>
+                      </>
+                    )}
+                    <Link href={'/play-course/' + c.slug} className="btn-primary mt-auto inline-block text-center text-sm">
+                      {pct > 0 ? 'Continue' : 'Start learning'}
+                    </Link>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

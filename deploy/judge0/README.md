@@ -14,6 +14,43 @@ ONYX_JUDGE0_URL=http://127.0.0.1:2358 node tools/onyx/verify-sandbox.mjs
 ONYX_JUDGE0_URL=http://127.0.0.1:2358
 ```
 
+## Docker Desktop on Windows/Mac: read this before you debug it for an hour
+
+`isolate` builds its sandbox from cgroup v1 accounting. Docker Desktop's WSL2 VM is
+cgroup v2-only by default, and the `isolate` bundled in `judge0/judge0:1.13.1`
+(version 1.8.1, March 2021) predates cgroup v2 support entirely — every submission
+fails identically, `internal_error` with `"No such file or directory @ rb_sysopen -
+/box/script.py"`, because `isolate --cg --box-id=0 --init` cannot create
+`/sys/fs/cgroup/memory/box-0/` on a v2-only host. `verify-sandbox.mjs` catches this:
+all six cases fail, including the benign one, rather than reporting a false pass.
+
+The real fix — booting the VM with `systemd.unified_cgroup_hierarchy=0` — reconfigures
+Docker Desktop's *shared* VM, which restarts every container on the host, not just
+this one. Do that deliberately, on purpose, when nothing else is running that matters.
+
+**For local development, there is a second option that needs no Docker at all:**
+Judge0 runs a free hosted CE instance, and the same `ONYX_JUDGE0_URL` env var can
+point straight at it —
+
+```bash
+ONYX_JUDGE0_URL=https://ce.judge0.com
+```
+
+— no `ONYX_JUDGE0_TOKEN` required for the free tier. This is exactly what the
+Laravel predecessor did by default (`app/Http/Controllers/student/CodeIDEController.php`,
+`JUDGE0_API_URL` defaulting to `https://ce.judge0.com`) before this port existed.
+Isolation there is Judge0's own responsibility, not this host's config — which is
+also why `verify-sandbox.mjs` (a fork bomb, an allocation bomb, a `/etc/shadow`
+read) should **not** be run against it: that is hostile load against a shared,
+free, rate-limited community server that somebody else pays to keep up, not a
+verification of anything under this repo's control. A plain "does it run" check
+is the appropriate ceiling for a server you don't own.
+
+The free tier has no SLA and a low daily rate limit per IP — fine for one
+developer clicking Run, not for a classroom. A deployment carrying real learners
+still wants either the self-hosted stack above (fixed for cgroup v1) or a paid
+Judge0 host, with `ONYX_JUDGE0_TOKEN` set to match.
+
 ## Running it is not the same as isolating
 
 `verify-sandbox.mjs` submits a fork bomb, an infinite loop, an allocation bomb, a
