@@ -14,10 +14,28 @@ import pg from 'pg';
 
 const ROOT = new URL('../../', import.meta.url).pathname.replace(/^[/]([A-Za-z]:)/, '$1');
 
+/**
+ * Configuration, from the .env file on a developer's machine and from the real
+ * environment anywhere else.
+ *
+ * This used to read .env unconditionally, so every one of these tools threw
+ * ENOENT on a CI runner or in a container -- where .env is deliberately absent
+ * and the values arrive as environment variables instead. A workflow could pass
+ * SUPABASE_DB_URL correctly and still watch the script die before it read it.
+ *
+ * The file wins where it exists, because that is the machine-local override a
+ * developer expects; process.env fills in the rest.
+ */
 export function loadEnv() {
-  return Object.fromEntries(fs.readFileSync(ROOT + '.env', 'utf8').split('\n')
-    .filter((l) => l.includes('=') && !l.trim().startsWith('#'))
-    .map((l) => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()]));
+  let fromFile = {};
+  try {
+    fromFile = Object.fromEntries(fs.readFileSync(ROOT + '.env', 'utf8').split('\n')
+      .filter((l) => l.includes('=') && !l.trim().startsWith('#'))
+      .map((l) => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()]));
+  } catch {
+    // No .env: not an error, just a machine configured the other way.
+  }
+  return { ...process.env, ...fromFile };
 }
 
 const clean = (url) => url.replace(/[?&]sslmode=[^&]*/, '');

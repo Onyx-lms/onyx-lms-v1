@@ -71,12 +71,22 @@ export class ProctorService {
   #notify: ProctorNotifier | null;
   #now: () => number;
 
-  constructor(db: OnyxDb, audit: AuditService, notify: ProctorNotifier | null = null,
-    now: () => number = Date.now) {
+  /**
+   * `notify` goes LAST, after `now`, and deliberately so.
+   *
+   * It was briefly inserted third, ahead of `now`. Nothing failed to compile --
+   * both are optional -- but every existing caller passing a clock as the third
+   * argument silently handed it over as the notifier, and `now` quietly fell
+   * back to the real Date.now. The unit tests' fake clock stopped working and an
+   * event recorded 90 seconds in reported an offset of zero. New optional
+   * parameters belong at the end.
+   */
+  constructor(db: OnyxDb, audit: AuditService, now: () => number = Date.now,
+    notify: ProctorNotifier | null = null) {
     this.#db = db;
     this.#audit = audit;
-    this.#notify = notify;
     this.#now = now;
+    this.#notify = notify;
   }
 
   /**

@@ -250,8 +250,10 @@ export function createContext(): AppContext {
     onyxWorkspaces: new WorkspaceService(onyxDb, onyxAcademics, onyxExecution),
     onyxAssess: new AssessService(onyxDb, onyxAcademics),
     // The notifier is what turns a crossed threshold into something an
-    // invigilator is told rather than something they must go and find.
-    onyxProctor: new ProctorService(onyxDb, onyxAudit, onyxNotify),
+    // invigilator is told rather than something they must go and find. It is
+    // the fourth argument; the third is the clock, stated explicitly here so
+    // the two cannot be transposed again.
+    onyxProctor: new ProctorService(onyxDb, onyxAudit, Date.now, onyxNotify),
     onyxAssessAnalytics: new AssessAnalyticsService(onyxDb),
     onyxCareer,
     onyxPlacement: new PlacementService(onyxDb, onyxCareer, onyxAttendance),

@@ -6,16 +6,16 @@
  * storage configuration -- everything that must be right for the port to
  * behave like Laravel, not merely resemble it.
  */
-import fs from 'node:fs';
 import pg from 'pg';
 import { execFileSync } from 'node:child_process';
-import { connect } from './connect.mjs';
+import { connect, loadEnv } from './connect.mjs';
 import { laravelDb } from './laravel-source.mjs';
 
 const ROOT = new URL('../../', import.meta.url).pathname.replace(/^[/]([A-Za-z]:)/, '$1');
-const env = Object.fromEntries(fs.readFileSync(ROOT + '.env', 'utf8').split('\n')
-  .filter((l) => l.includes('=') && !l.trim().startsWith('#'))
-  .map((l) => [l.slice(0, l.indexOf('=')).trim(), l.slice(l.indexOf('=') + 1).trim()]));
+// Same arrangement as connect.mjs: .env where a developer has one, the real
+// environment on a runner that does not. Reading the file unconditionally made
+// this fail with ENOENT in CI before it could use the variables CI had set.
+const env = loadEnv();
 
 const PY = [
   'import sqlite3, json, sys',
