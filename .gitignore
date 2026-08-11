@@ -31,3 +31,5 @@ supabase/.temp/
 # Playwright run artifacts (screenshots, traces) -- never meant to be committed.
 test-results/
 playwright-report/
+.vercel
+.env*
