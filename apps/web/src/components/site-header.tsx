@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import type { CategoryNode, SiteSettings } from '@/lib/api';
 import { getSession, homeForRole } from '@/lib/session';
+import { OnyxMark } from '@/components/onyx-brand';
 
 export async function SiteHeader({ settings, categories }: {
   settings: SiteSettings | null;
@@ -11,8 +12,17 @@ export async function SiteHeader({ settings, categories }: {
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
       <div className="container-page flex h-16 items-center gap-6">
-        <Link href="/" className="text-lg font-semibold text-brand-700">
-          {settings?.system_title ?? 'Onyx LMS'}
+        {/* The mark was missing here entirely: the storefront header showed the
+            title as text while every page under /onyx wore the actual logo, so
+            the two halves of the same deployment did not look related.
+            `OnyxMark` renders it with alt="" on purpose -- the name is right
+            beside it in text, and a described image would make a screen reader
+            announce the brand twice. */}
+        <Link href="/" className="flex min-h-[44px] items-center gap-2.5">
+          <OnyxMark className="h-8 w-auto shrink-0" />
+          <span className="text-lg font-semibold tracking-tight text-brand-700">
+            {settings?.system_title ?? 'Onyx LMS'}
+          </span>
         </Link>
 
         <nav className="hidden items-center gap-5 text-sm md:flex">
