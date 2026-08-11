@@ -78,6 +78,8 @@ export * from './admin/campaign.service.ts';
 export * from './onyx/db.ts';
 export * from './onyx/auth.ts';
 export * from './onyx/audit.service.ts';
+export * from './onyx/notify.service.ts';
+export * from './onyx/metrics.ts';
 export * from './onyx/tenancy.service.ts';
 export * from './onyx/academics.service.ts';
 export * from './onyx/content.service.ts';

@@ -61,6 +61,7 @@ const I = {
   placement: { href: '/onyx/placement', label: 'Placement', icon: 'chart' },
   audit:     { href: '/onyx/audit', label: 'Audit log', icon: 'flag' },
   family:    { href: '/onyx/family', label: 'Your family', icon: 'users' },
+  inbox:     { href: '/onyx/inbox', label: 'Inbox', icon: 'bell' },
   certs:     { href: '/onyx/certificates', label: 'Certificates', icon: 'award' },
   allocate:  { href: '/onyx/allocations', label: 'Teaching load', icon: 'chart' },
 } satisfies Record<string, OnyxNavItem>;
@@ -71,28 +72,31 @@ const NAV: Record<Role, OnyxNavGroup[]> = {
     { label: 'Assessment', items: [I.assess, I.results, I.contests] },
     { label: 'Campus', items: [I.timetable, I.fees, I.support] },
     { label: 'Career', items: [I.jobs, I.interviews, I.profile] },
+    { items: [I.inbox] },
   ],
   faculty: [
     { items: [I.dashboard, I.courses, I.practice, I.spaces] },
     { label: 'Assessment', items: [I.assess, I.invigilate] },
     { label: 'Teaching', items: [I.programs, I.timetable, I.allocate, I.people] },
-    { label: 'Support', items: [I.mentor] },
+    { label: 'Support', items: [I.mentor, I.inbox] },
   ],
   exams: [
     { items: [I.dashboard, I.courses] },
     { label: 'Examinations', items: [I.assess, I.invigilate, I.exams, I.timetable, I.certs] },
     { label: 'Practice', items: [I.practice, I.spaces] },
+    { items: [I.inbox] },
   ],
   placement: [
     { items: [I.dashboard, I.courses] },
     { label: 'Placement', items: [I.placement, I.jobs, I.interviews, I.contests, I.certs] },
+    { items: [I.inbox] },
   ],
   // An employer is an outsider with an account: their own posts and the
   // interviews they are conducting, and nothing that belongs to the institution.
-  employer: [{ items: [I.posts, I.interviews] }],
+  employer: [{ items: [I.posts, I.interviews, I.inbox] }],
   // A guardian has exactly one page -- everything they see is derived from
   // links other people control, so there is nowhere else to navigate to.
-  guardian: [{ items: [I.family] }],
+  guardian: [{ items: [I.family, I.inbox] }],
   admin: [
     { items: [I.dashboard, I.courses, I.practice, I.spaces] },
     // Invigilation and placement are the administrator's too: ASS-03 lets them
@@ -101,7 +105,7 @@ const NAV: Record<Role, OnyxNavGroup[]> = {
     { label: 'Assessment', items: [I.assess, I.invigilate, I.exams, I.contests, I.certs] },
     { label: 'Campus', items: [I.programs, I.timetable, I.allocate, I.people, I.finance] },
     { label: 'Career', items: [I.placement, I.jobs] },
-    { label: 'Operations', items: [I.mentor, I.audit] },
+    { label: 'Operations', items: [I.mentor, I.inbox, I.audit] },
   ],
 };
 

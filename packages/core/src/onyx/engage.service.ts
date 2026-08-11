@@ -571,12 +571,45 @@ export class EngageService {
   }
 
   /** What a learner has been pulled into and has not looked at yet. */
+  /**
+   * Where somebody named you.
+   *
+   * Returns the thread's title, not just its id. The row on its own says
+   * "discussion #10", which is not something a person can act on -- and this
+   * endpoint had no screen for exactly as long as that was all it returned. One
+   * extra query for the whole page rather than one per mention.
+   */
   async mentions(tenantId: number, userId: number) {
     const { data } = await this.#db.from('onyx_discussion_mentions')
       .select('id, discussion_id, post_id, read_at, created_at')
       .eq('tenant_id', tenantId).eq('user_id', userId)
       .order('created_at', { ascending: false }).limit(50);
-    return data ?? [];
+
+    const rows = data ?? [];
+    if (!rows.length) return [];
+
+    const ids = [...new Set(rows.map((m) => Number(m.discussion_id)))];
+    const { data: threads } = await this.#db.from('onyx_discussions')
+      .select('id, title, course_id, status')
+      .eq('tenant_id', tenantId).in('id', ids);
+    const byId = new Map((threads ?? []).map((d) => [Number(d.id), d]));
+
+    return rows.map((m) => {
+      const thread = byId.get(Number(m.discussion_id));
+      return {
+        id: Number(m.id),
+        discussion_id: Number(m.discussion_id),
+        post_id: m.post_id === null ? null : Number(m.post_id),
+        read_at: m.read_at,
+        created_at: m.created_at,
+        // Null when the thread has since been deleted. The mention is still
+        // shown -- "somebody named you in something that is gone" is a true
+        // thing to say, and dropping the row would be a silent hole.
+        title: thread ? String(thread.title) : null,
+        course_id: thread ? Number(thread.course_id) : null,
+        resolved: thread ? thread.status === 'resolved' : false,
+      };
+    });
   }
 
   async readMentions(tenantId: number, userId: number) {

@@ -82,6 +82,10 @@ export default async function OnyxTimetablePage() {
           <CreatePanel
             title="Schedule a class" cta="Schedule a class" icon="calendar" compact
             endpoint="timetable"
+            // CMP-01b: the POST refuses a clash and names it. This says so
+            // while the registrar can still change the answer, which is the
+            // difference between one form and forty.
+            watch="timetable-clash"
             fields={[
               { name: 'semester_id', label: 'Semester', type: 'select', required: true,
                 numeric: true, options: idOptions(semesters, (s) => s.name) },

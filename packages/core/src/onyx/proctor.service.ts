@@ -23,6 +23,7 @@
  */
 import type { OnyxDb } from './db.ts';
 import { HttpError } from '../http/errors.ts';
+import { increment } from './metrics.ts';
 import type { AuditService } from './audit.service.ts';
 
 const EVENT_COLUMNS = 'id, tenant_id, attempt_id, kind, weight, detail, media_path, at, client_at, review, reviewed_by, reviewed_at, review_note';
@@ -100,6 +101,7 @@ export class ProctorService {
     if (error) throw new HttpError(500, 'Could not record that: ' + error.message);
 
     if (weight > 0) await this.#rescore(tenantId, attemptId);
+    increment('onyx_proctor_events_total', { kind: input.kind });
     return { id: data!.id, kind: data!.kind, at: data!.at };
   }
 

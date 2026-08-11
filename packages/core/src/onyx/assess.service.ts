@@ -23,6 +23,7 @@ import { createHash } from 'node:crypto';
 import type { OnyxDb } from './db.ts';
 import type { Role } from '@onyx/types';
 import { HttpError } from '../http/errors.ts';
+import { increment } from './metrics.ts';
 import type { AcademicsService } from './academics.service.ts';
 
 const BANK_COLUMNS = 'id, tenant_id, course_id, name, description, created_by, created_at';
@@ -521,6 +522,55 @@ export class AssessService {
     const overdue = (data ?? []).filter((a) => now > Date.parse(a.expires_at));
     for (const a of overdue) await this.#expire(tenantId, Number(a.id));
     return { expired: overdue.length };
+  }
+
+  /**
+   * The same sweep, across every institution. What the worker runs.
+   *
+   * This existed only as a per-tenant call behind a staff endpoint that nothing
+   * ever called -- no cron, no worker, no screen. The in-tab timer hands a paper
+   * in at zero, so the ordinary path was safe; a candidate whose browser died
+   * left an attempt at `in_progress` for ever, and `markingQueue` filters that
+   * status out. The paper was never marked and nobody was told.
+   *
+   * Deliberately NOT tenant-scoped, and the only method here that is not. It
+   * runs as the server rather than as a caller, which is why it takes no claims
+   * and is not reachable from a route: there is no token that could ask for
+   * "every institution", and inventing one would be a hole in the isolation
+   * model to serve a background job.
+   *
+   * One query finds the work. Sweeping every tenant blindly would be one query
+   * per institution per tick, most of them returning nothing.
+   */
+  async expireOverdueEverywhere(): Promise<{ tenants: number; expired: number }> {
+    const nowIso = new Date(this.#now()).toISOString();
+    const { data } = await this.#db.from('onyx_assessment_attempts')
+      .select('id, tenant_id')
+      .eq('status', 'in_progress')
+      .lt('expires_at', nowIso);
+
+    const rows = data ?? [];
+    if (!rows.length) return { tenants: 0, expired: 0 };
+
+    const byTenant = new Map<number, number[]>();
+    for (const r of rows) {
+      const t = Number(r.tenant_id);
+      byTenant.set(t, [...(byTenant.get(t) ?? []), Number(r.id)]);
+    }
+
+    let expired = 0;
+    for (const [tenantId, ids] of byTenant) {
+      for (const id of ids) {
+        // One failure must not strand every other candidate's paper. The
+        // attempt stays in_progress and the next tick tries again.
+        try {
+          await this.#expire(tenantId, id);
+          expired += 1;
+        } catch { /* reported by the caller's onError */ }
+      }
+    }
+    increment('onyx_attempts_expired_total', undefined, expired);
+    return { tenants: byTenant.size, expired };
   }
 
   // -------------------------------------------------------------------------

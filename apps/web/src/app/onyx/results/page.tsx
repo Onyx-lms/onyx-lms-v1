@@ -4,7 +4,8 @@ import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import type { ExamMark, Transcript } from '@/lib/onyx-campus';
 import { CreatePanel } from '@/components/onyx-create';
-import { Empty, ListRow, Pill, RowList, SectionHead } from '@/components/onyx-ui';
+import { Card, Empty, ListRow, Pill, RowList, SectionHead } from '@/components/onyx-ui';
+import { VerifyTranscript } from '@/components/onyx-transcript';
 
 export const metadata: Metadata = { title: 'Results' };
 
@@ -88,6 +89,19 @@ export default async function OnyxResultsPage() {
             ) : null}
           </RowList>
         </section>
+
+        {staff ? (
+          <section>
+            <SectionHead title="Check a transcript" />
+            {/* CMP-02c's acceptance criterion is that a transcript reconciles
+                with the marks behind it. The API could always answer; nothing
+                asked, so the only people who could check were people with a
+                database client. */}
+            <Card className="p-4">
+              <VerifyTranscript />
+            </Card>
+          </section>
+        ) : null}
 
         <section>
           <SectionHead title="Transcripts" />

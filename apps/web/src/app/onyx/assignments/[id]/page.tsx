@@ -5,6 +5,7 @@ import {
   Card, Empty, ListRow, Pill, RowList, SectionHead, relativeDue,
 } from '@/components/onyx-ui';
 import { OnyxReturnedWork, OnyxSubmissionForm } from '@/components/onyx-assignment';
+import { ActionButton } from '@/components/onyx-create';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import { isStaff, type Assignment } from '@/lib/onyx-learn';
@@ -35,6 +36,9 @@ export default async function OnyxAssignmentPage({ params }: { params: Promise<{
   const names = new Map((members ?? []).map((m) => [Number(m.user_id), m.user]));
   const mine = assignment.my_submission ?? null;
   const when = relativeDue(assignment.due_at);
+  // Graded but not yet released. What "return all" would actually release.
+  const readyToReturn = (assignment.submissions ?? [])
+    .filter((sub) => sub.status === 'graded').length;
 
   return (
     <OnyxShell
@@ -80,7 +84,26 @@ export default async function OnyxAssignmentPage({ params }: { params: Promise<{
 
           {staff ? (
             <section>
-              <SectionHead title={'Submissions \u00b7 ' + (assignment.submissions ?? []).length} />
+              <div className="mb-2.5 flex flex-wrap items-center justify-between gap-3">
+                <h2 className="text-[11.5px] font-bold uppercase tracking-[.085em] text-muted">
+                  Submissions &middot; {(assignment.submissions ?? []).length}
+                </h2>
+                {/* LRN-04b: a score is invisible to the learner until it is
+                    returned, so marking thirty papers and releasing them one at
+                    a time was thirty chances to release twenty-nine. The API
+                    could release the lot and nothing asked it to. */}
+                {readyToReturn > 0 ? (
+                  <ActionButton
+                    endpoint={'assignments/' + id + '/return-all'}
+                    label={readyToReturn === 1
+                      ? 'Return 1 marked paper'
+                      : 'Return all ' + readyToReturn + ' marked papers'}
+                    confirm={'Release ' + readyToReturn + ' mark'
+                      + (readyToReturn === 1 ? '' : 's')
+                      + ' to the learners? They cannot be un-seen.'}
+                  />
+                ) : null}
+              </div>
               {/* A marking queue is a list of people to open one at a time, so
                   the row is the person and the action is marking them. */}
               <RowList label="Submissions">

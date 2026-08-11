@@ -137,7 +137,18 @@ export default async function OnyxCertificatesPage() {
                         : null}
                     </td>
                     <td className="px-4 py-3">
-                      {c.revoked_at ? null : <RevokeCertificate certificateId={c.id} />}
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <a
+                          href={'/api/proxy/onyx/certificates/' + c.id + '/document.pdf'}
+                          download
+                          className="inline-flex min-h-[38px] items-center rounded-2xl border
+                                     border-line px-3 text-[13px] font-semibold text-slate-700
+                                     hover:bg-brand-50"
+                        >
+                          PDF
+                        </a>
+                        {c.revoked_at ? null : <RevokeCertificate certificateId={c.id} />}
+                      </div>
                     </td>
                   </tr>
                 );

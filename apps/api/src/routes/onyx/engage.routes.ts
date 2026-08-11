@@ -171,9 +171,24 @@ export function registerOnyxEngageRoutes(app: FastifyInstance, ctx: AppContext):
       owner_id: z.number().int().positive().optional(),
     }), req.body ?? {});
     // No owner given means "I am taking this", which is what actually happens.
-    return ok(body.owner_id
+    const ticket = body.owner_id
       ? await ctx.onyxSupport.assign(claims.tenant_id, idOf(req), body.owner_id, viewer)
-      : await ctx.onyxSupport.claim(claims.tenant_id, idOf(req), viewer));
+      : await ctx.onyxSupport.claim(claims.tenant_id, idOf(req), viewer);
+
+    // LRN-06b: "an escalated question REACHES a named owner and its age is
+    // visible". The owner was named in the database and never told, so the
+    // acceptance criterion held only for whoever happened to open the queue.
+    // Claiming it yourself raises nothing -- you already know.
+    if (body.owner_id && body.owner_id !== claims.user_id) {
+      await ctx.onyxNotify.notify(claims.tenant_id, {
+        userId: body.owner_id,
+        kind: 'ticket.assigned',
+        title: 'A question has been assigned to you',
+        body: ticket?.subject ?? 'A support ticket',
+        link: '/onyx/support/' + idOf(req),
+      });
+    }
+    return ok(ticket);
   });
 
   app.post('/api/onyx/tickets/:id/respond', async (req) => {

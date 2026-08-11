@@ -56,9 +56,12 @@ export default async function OnyxCoursesPage() {
         : mine.length
           ? 'You are taking ' + mine.length + (mine.length === 1 ? ' course' : ' courses')
           : 'Nothing yet — the catalogue is below.'}
-      action={staff ? (
-        /* LRN-01: "enroll themselves or be enrolled by administrators" --
-           which first requires a course to exist. */
+      action={me.role === 'admin' ? (
+        /* Administrators only, because POST /api/onyx/courses is. This used to
+           test `isStaff`, which is admin OR faculty -- so a lecturer was shown
+           the button, filled the form in and was refused by the API. The
+           register belongs to the administrator (CMP-01a); the screen now says
+           the same thing the API does. */
         <CreatePanel
           title="New course" cta="Create a course" icon="book"
           endpoint="courses"

@@ -58,16 +58,22 @@ does not extend the port's 61 tables. See `ONYX_SPRINT_PLAN.csv` and
 | **O07** Campus: timetable, examinations, finance, guardians | 4/4 | 8/8 | **done, live** |
 | **Platform** superadmin: tenants, cross-tenant audit | 1/1 | 2/2 | **done, live** |
 | **Gap closure** the seven partial requirements, finished | -- | -- | **done** |
-| O08 | Hardening: SEC-01/02, SCL-01--03, DOC-01 | | not started |
-| *(pulled forward from O08)* SEC-03 accessibility, DR-01 backups | -- | 6 e2e | **done** |
+| **O08** Hardening: SEC-01--03, SCL-01--03, DR-01, DOC-01 | -- | -- | **done** |
 
-The last row is two O08 tasks done early. The proposal's non-functional
-commitments -- WCAG 2.2 AA, and "backups and recovery procedures protect
-academic records" -- belong to no feature, and a task that belongs to no feature
-tends to stay nobody's until launch. Both are built and tested:
-`tests/e2e/o06-accessibility.e2e.ts` and `tools/db/backup.mjs`. The rest of O08
-(SEC-01/02 audits, SCL-01--03, DOC-01) is not started; SCL-01's queue exists
-already because O03 needed it.
+**O08 is the hardening sprint, and it is finished.** The proposal's
+non-functional commitments belong to no feature, which is how they stay nobody's
+until launch. What each one is now:
+
+| Task | What exists |
+| --- | --- |
+| **SEC-01** tenant isolation | Per-sprint cross-tenant and RLS assertions, in the gate |
+| **SEC-02** authorization matrix | `tests/e2e/o08-authorization-matrix.e2e.ts` -- every route asserted for every role. It found three real problems on its first run |
+| **SEC-03** WCAG 2.2 AA | `tests/e2e/o06-accessibility.e2e.ts` plus an axe-core sweep in the browser suite |
+| **SCL-01** queues | `queue.service.ts` -- `FOR UPDATE SKIP LOCKED`, bounded retries, a terminal failed state |
+| **SCL-02** load to 1,000 | `tools/onyx/load-test.mjs`. **Measured: 1,000 concurrent learners, 373 req/s, zero errors**, writes p95 290ms. Numbers and caveats in [the runbook](docs/RUNBOOK.md) |
+| **SCL-03** observability | `/metrics` in Prometheus format, a `/health` that reaches the database and answers 503 when it cannot, and counters on grading, proctoring, payments and notifications. Alert expressions in the runbook |
+| **DR-01** backups | `tools/db/backup.mjs` -- per-tenant export, `--verify`, `--restore --into` |
+| **DOC-01** documentation | [`docs/`](docs/README.md) -- administrator's guide, UAT scripts, runbook, and a generated API reference the gate checks |
 
 **Onyx Learn is six requirements, not four.** O02 delivered LRN-01 to LRN-04;
 O06 added **LRN-05** (progress and nudges, derived at read time -- there is no
@@ -117,7 +123,9 @@ one-per-person. A counter would let a single account click forever.
 npm run verify:all      # everything below, in order
 
 npm run verify:parity   # generated SQL vs the Laravel schema
-npm test                # 631 unit tests, no database needed
+npm test                # unit tests, no database needed
+npm run typecheck       # packages, api AND the web app -- see below
+npm run docs:check      # the generated API reference is current
 npm run db:audit        # live types, RLS, sequences, seed, storage
 npm run e2e             # 314 tests against a running api + web + Supabase
 npm run browser         # 92 tests in real Chromium against the same servers

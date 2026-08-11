@@ -143,6 +143,18 @@ export function registerOnyxTenancyRoutes(app: FastifyInstance, ctx: AppContext)
       entityId: result.membership.id,
       after: { user_id: result.user.id, role: body.role }, ip: ipOf(req),
     });
+
+    // F-06 calls this an invitation. Until now it was an account appearing,
+    // and somebody having to tell the person out of band that it had.
+    const tenant = await ctx.onyxTenancy.tenant(claims.tenant_id);
+    await ctx.onyxNotify.notify(claims.tenant_id, {
+      userId: Number(result.user.id),
+      kind: 'membership.invited',
+      title: 'You have been added to ' + (tenant?.name ?? 'an institution'),
+      body: 'You joined as ' + body.role + '. Sign in to see what is waiting for you.',
+      link: '/onyx/dashboard',
+      email: { to: body.email, subject: 'You have been added to ' + (tenant?.name ?? 'Onyx') },
+    });
     return ok(result, 'Member added.');
   });
 

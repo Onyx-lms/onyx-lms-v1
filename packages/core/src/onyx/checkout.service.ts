@@ -37,6 +37,7 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { OnyxDb } from './db.ts';
 import type { Role } from '@onyx/types';
 import { HttpError } from '../http/errors.ts';
+import { increment } from './metrics.ts';
 import {
   getProvider, hasProvider,
   type CheckoutOrder, type GatewayConfig, type PaymentOutcome, type WebhookRequest,
@@ -363,6 +364,9 @@ export class OnyxCheckoutService {
    */
   async settle(intent: OnyxPaymentIntent, outcome: PaymentOutcome) {
     if (outcome.status === 'failed') {
+      // SCL-03: alert on any. A payment that fails silently is money a learner
+      // believes they have paid.
+      increment('onyx_payment_failures_total', { gateway: intent.gateway });
       return { status: 'failed' as const, reason: outcome.reason, payment: null, invoice: null };
     }
     if (outcome.status === 'pending') {
@@ -382,6 +386,8 @@ export class OnyxCheckoutService {
       status: 'captured',
     });
 
+    increment('onyx_payments_total',
+      { gateway: intent.gateway, replayed: String(result.replayed) });
     return {
       status: 'captured' as const,
       replayed: result.replayed,

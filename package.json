@@ -17,7 +17,11 @@
     "gen:all": "npm run gen:schema && npm run gen:rls && npm run gen:types",
     "verify:parity": "python tools/verify_parity.py",
     "build": "tsc --build",
-    "typecheck": "tsc --build --force",
+    "typecheck": "tsc --build --force && npm run typecheck:web",
+    "typecheck:web": "tsc --noEmit -p apps/web/tsconfig.json",
+    "docs:api": "node tools/onyx/gen-api-docs.mjs",
+    "docs:check": "node tools/onyx/gen-api-docs.mjs --check",
+    "load:test": "node --env-file=.env tools/onyx/load-test.mjs",
     "test": "node --test packages/core/test/*.test.ts",
     "dev:api": "node --watch apps/api/src/server.ts",
     "db:migrate": "node tools/db/migrate.mjs",
@@ -33,7 +37,7 @@
     "e2e": "node tools/e2e-run.mjs",
     "e2e:only": "node --test tests/e2e/*.e2e.ts",
     "browser": "playwright test",
-    "verify:all": "npm run verify:parity && npm test && npx tsc --build --force && npm run db:audit && npm run e2e",
+    "verify:all": "npm run verify:parity && npm test && npm run typecheck && npm run docs:check && npm run db:audit && npm run e2e",
     "db:backup": "node tools/db/backup.mjs"
   },
   "devDependencies": {

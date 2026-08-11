@@ -62,8 +62,17 @@ test.describe('proposal pillars, one browser check each', () => {
     await signInViaForm(page, facultyEmail);
     await page.goto('/onyx/courses');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Courses');
-    // The people running it get the whole register, and the means to add to it.
+    // The people running it get the whole register rather than a catalogue of
+    // what is left to join.
     await expect(page.getByRole('heading', { name: 'Every course' })).toBeVisible();
+    // ...but not the means to add to it. The register is the administrator's
+    // (CMP-01a) and `POST /api/onyx/courses` always said so; the screen used to
+    // offer faculty a button the API refused, which the SEC-02 matrix caught.
+    await expect(page.getByRole('button', { name: /create a course/i })).toHaveCount(0);
+
+    await page.context().clearCookies();
+    await signInViaForm(page, adminEmail);
+    await page.goto('/onyx/courses');
     await expect(page.getByRole('button', { name: /create a course/i })).toBeVisible();
   });
 

@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import cookie from '@fastify/cookie';
 import multipart from '@fastify/multipart';
 import { createContext } from './context.ts';
+import { increment, observe, renderMetrics, health } from '@onyx/core';
 import { registerErrorHandler } from './plugins/error-handler.ts';
 import { registerAuthRoutes } from './routes/auth.routes.ts';
 import { registerAccountRoutes } from './routes/account.routes.ts';
@@ -34,6 +35,7 @@ import { registerOnyxAssessRoutes } from './routes/onyx/assess.routes.ts';
 import { registerOnyxCareerRoutes } from './routes/onyx/career.routes.ts';
 import { registerOnyxEngageRoutes } from './routes/onyx/engage.routes.ts';
 import { registerOnyxCampusRoutes } from './routes/onyx/campus.routes.ts';
+import { registerOnyxNotifyRoutes } from './routes/onyx/notify.routes.ts';
 import { registerOnyxPlatformRoutes } from './routes/onyx/platform.routes.ts';
 import { registerPlatformRoutes } from './routes/platform.routes.ts';
 
@@ -61,6 +63,35 @@ export async function buildServer() {
   registerErrorHandler(app);
 
   const ctx = createContext();
+
+  /**
+   * SCL-03. Every request counted, and the slow ones visible.
+   *
+   * The route is the label, not the URL: `/api/onyx/courses/119/outline` as a
+   * label would make one time series per course and a scrape nobody can read.
+   */
+  app.addHook('onResponse', async (req, reply) => {
+    const route = (req as unknown as { routeOptions?: { url?: string } }).routeOptions?.url
+      ?? 'unmatched';
+    increment('onyx_http_requests_total', {
+      method: req.method, route, status: String(reply.statusCode),
+    });
+    if (reply.statusCode >= 500) {
+      increment('onyx_http_errors_total', { method: req.method, route });
+    }
+    observe('onyx_http_duration_ms', reply.elapsedTime, { route });
+  });
+
+  /**
+   * What a scraper reads. Deliberately unauthenticated and deliberately
+   * loopback-only in deployment: metrics carry no personal data, and putting a
+   * token on the endpoint is how a monitoring stack ends up not monitoring.
+   */
+  app.get('/metrics', async (_req, reply) => {
+    reply.header('Content-Type', 'text/plain; version=0.0.4');
+    return reply.send(renderMetrics());
+  });
+
   registerPlatformRoutes(app, ctx);
   registerAuthRoutes(app, ctx);
   registerAccountRoutes(app, ctx);
@@ -92,6 +123,7 @@ export async function buildServer() {
   registerOnyxCareerRoutes(app, ctx);
   registerOnyxEngageRoutes(app, ctx);
   registerOnyxCampusRoutes(app, ctx);
+  registerOnyxNotifyRoutes(app, ctx);
   registerOnyxPlatformRoutes(app, ctx);
 
   // The worker interval below needs the same context the routes use --
@@ -146,9 +178,10 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '
   // unref() so a pending tick never holds the process open on shutdown.
   const everyMs = Number(process.env.ONYX_WORKER_INTERVAL_MS ?? 2000);
   if (everyMs > 0) {
-    const ctx = (app as unknown as { ctx: { onyxRunWorker: (o?: {
-      concurrency?: number;
-    }) => Promise<unknown> } }).ctx;
+    const ctx = (app as unknown as { ctx: {
+      onyxRunWorker: (o?: { concurrency?: number }) => Promise<unknown>;
+      onyxAssess: { expireOverdueEverywhere: () => Promise<{ tenants: number; expired: number }> };
+    } }).ctx;
     let running = false;
     setInterval(() => {
       // Skip rather than overlap. Two passes at once would claim different jobs
@@ -160,5 +193,39 @@ if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, '
         .catch((err) => app.log.error({ err }, 'onyx worker pass failed'))
         .finally(() => { running = false; });
     }, everyMs).unref();
+  }
+
+  /**
+   * ASS-01b. Ends attempts whose time ran out while nobody was looking.
+   *
+   * The paper's own timer hands in at zero, so this only ever catches the
+   * candidate whose browser died -- but until now nothing caught them at all.
+   * Their attempt sat at `in_progress` for ever, and the marking queue excludes
+   * that status, so the paper was never marked and no invigilator was told.
+   *
+   * A minute rather than the worker's two seconds: nothing here is urgent, the
+   * timer covers the ordinary case, and a sweep is a write per abandoned paper.
+   * Skips its own overlap for the same reason the worker does.
+   */
+  const sweepMs = Number(process.env.ONYX_EXPIRY_SWEEP_MS ?? 60_000);
+  if (sweepMs > 0) {
+    const ctx = (app as unknown as { ctx: {
+      onyxAssess: { expireOverdueEverywhere: () => Promise<{ tenants: number; expired: number }> };
+    } }).ctx;
+    let sweeping = false;
+    setInterval(() => {
+      if (sweeping) return;
+      sweeping = true;
+      void ctx.onyxAssess.expireOverdueEverywhere()
+        .then((r) => {
+          // Logged only when it did something. A line a minute saying "nothing
+          // expired" is how a log stops being read.
+          if (r.expired) {
+            app.log.info({ ...r }, 'onyx expired abandoned assessment attempts');
+          }
+        })
+        .catch((err) => app.log.error({ err }, 'onyx attempt expiry sweep failed'))
+        .finally(() => { sweeping = false; });
+    }, sweepMs).unref();
   }
 }

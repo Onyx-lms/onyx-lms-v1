@@ -52,15 +52,33 @@ export default async function OnyxProfilePage() {
             {profile.certificates.length ? (
               <ul className="mt-3 space-y-2 text-sm">
                 {profile.certificates.map((c) => (
-                  <li key={c.credential_id} className="rounded-2xl border border-line p-3">
-                    <div className="font-medium">{c.title}</div>
-                    <div className="text-xs text-muted">
-                      {new Date(c.issued_at).toLocaleDateString()}
+                  <li key={c.credential_id}
+                    className="rounded-2xl border border-line bg-white p-3.5 shadow-card">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[15px] font-bold">{c.title}</div>
+                        <div className="text-[12.5px] text-muted">
+                          Issued {new Date(c.issued_at).toLocaleDateString(undefined,
+                            { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </div>
+                      </div>
+                      {/* The two ways a credential actually gets shared: a link
+                          somebody can check, and a file somebody can attach to
+                          an application. The page had only the first. */}
+                      {c.id ? (
+                        <a
+                          href={'/api/proxy/onyx/certificates/' + c.id + '/document.pdf'}
+                          download
+                          className="inline-flex min-h-[38px] shrink-0 items-center rounded-2xl
+                                     bg-brand-600 px-3.5 text-[13px] font-bold text-white
+                                     hover:bg-brand-700"
+                        >
+                          Download
+                        </a>
+                      ) : null}
                     </div>
-                    {/* The share link is the whole feature: it works for
-                        somebody with no account here. */}
                     <Link href={'/onyx/verify/' + c.credential_id}
-                      className="mt-1 block break-all font-mono text-xs text-brand-600
+                      className="mt-2 block break-all font-mono text-xs text-brand-600
                                  hover:underline">
                       {c.credential_id}
                     </Link>

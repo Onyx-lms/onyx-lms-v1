@@ -50,8 +50,8 @@ export interface Profile {
   user_id: number;
   readiness: Readiness;
   skills: SkillEntry[];
-  certificates: { credential_id: string; title: string; kind: string; issued_at: string;
-    detail: Record<string, unknown> }[];
+  certificates: { id: number; credential_id: string; title: string; kind: string;
+    issued_at: string; detail: Record<string, unknown> }[];
 }
 
 export interface Employer {

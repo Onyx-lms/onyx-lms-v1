@@ -304,3 +304,122 @@ function serialise(streams: string[], page: { width: number; height: number }): 
 
   return Buffer.concat(chunks);
 }
+
+/* ----------------------------------------------------------- certificates */
+
+export interface PdfCertificate {
+  /** The institution issuing it. */
+  issuer: string;
+  /** Who holds it. */
+  holder: string;
+  /** What it certifies, in the issuer's own words. */
+  title: string;
+  /** "course" | "assessment" | "contest" | "program". */
+  kind?: string;
+  credentialId: string;
+  issuedAt: string;
+  expiresAt?: string | null;
+  /** Where a stranger can check it. Printed in full so it survives paper. */
+  verifyUrl: string;
+}
+
+/**
+ * CAR-03 -- the credential as a document.
+ *
+ * "Verifiable, shareable skill certificates." The verification page delivered
+ * *verifiable* from the first day and *shareable* only in the sense that a URL
+ * is shareable -- there was no artefact a graduate could attach to a job
+ * application, which is the form in which people actually share a credential.
+ *
+ * The design follows from what the thing is for. A certificate is read twice:
+ * once by a person deciding whether they are impressed, and once by a person
+ * deciding whether it is real. So the holder's name is the largest thing on the
+ * page, and the credential id and the full verification URL are printed at the
+ * foot in a size that survives a photocopy -- not as a QR code, which is
+ * unreadable if the print is poor and tells a reader nothing about where they
+ * are being sent.
+ *
+ * **It is not the evidence.** A PDF can be edited by anyone with a text editor,
+ * which is exactly why the verification page exists and why this document's job
+ * is to carry people to it rather than to be believed on its own. The wording
+ * on the page says so.
+ */
+export function pdfCertificate(cert: PdfCertificate): Buffer {
+  const page = A4_LANDSCAPE;
+  const mid = page.width / 2;
+  const out: string[] = [];
+
+  /** Centred, because a certificate is a symmetrical object. */
+  const centre = (y: number, value: string, size: number, bold: boolean) =>
+    text(mid - width(value, size, bold) / 2, y, value, size, bold);
+
+  // A double rule inset from the trim, which is what makes a page read as a
+  // certificate rather than as a letter.
+  out.push(box(28, 28, page.width - 28, page.height - 28, 1.4, 0.15));
+  out.push(box(34, 34, page.width - 34, page.height - 34, 0.6, 0.45));
+
+  let y = page.height - 96;
+  out.push(shaded(0.35, centre(y, cert.issuer.toUpperCase(), 12, true)));
+
+  y -= 46;
+  out.push(centre(y, 'Certificate of Achievement', 26, true));
+
+  y -= 40;
+  out.push(shaded(0.4, centre(y, 'This is to certify that', 11, false)));
+
+  y -= 40;
+  out.push(centre(y, cert.holder, 30, true));
+
+  y -= 30;
+  out.push(shaded(0.4, centre(y, 'has completed', 11, false)));
+
+  y -= 32;
+  // Long titles wrap rather than run off the page or get an ellipsis: the one
+  // sentence saying what was achieved is not the place to truncate.
+  for (const line of wrap(cert.title, page.width - 200, 17, true)) {
+    out.push(centre(y, line, 17, true));
+    y -= 24;
+  }
+
+  y -= 14;
+  const issued = 'Issued ' + cert.issuedAt
+    + (cert.expiresAt ? '   ·   Valid until ' + cert.expiresAt : '');
+  out.push(shaded(0.4, centre(y, issued, 10, false)));
+
+  // The foot: what makes it checkable. Printed large enough to be typed in
+  // from a photocopy, because that is how a certificate is often verified.
+  const footY = 74;
+  out.push(rule(120, footY + 34, page.width - 120, 0.6, 0.75));
+  out.push(shaded(0.35, centre(footY + 16, 'CREDENTIAL ' + cert.credentialId, 11, true)));
+  out.push(shaded(0.45, centre(footY, 'Verify at ' + cert.verifyUrl, 9.5, false)));
+  out.push(shaded(0.55, centre(footY - 14,
+    'This document is a record. The page above is the evidence.', 8.5, false)));
+
+  return serialise([out.join('\n')], page);
+}
+
+/** A rectangle, stroked. Two of them nested is the certificate's border. */
+function box(x1: number, y1: number, x2: number, y2: number,
+  lineWidth: number, shade: number): string {
+  return num(lineWidth) + ' w ' + num(shade) + ' G '
+    + num(x1) + ' ' + num(y1) + ' m ' + num(x2) + ' ' + num(y1) + ' l '
+    + num(x2) + ' ' + num(y2) + ' l ' + num(x1) + ' ' + num(y2) + ' l h S 0 G';
+}
+
+/** Greedy wrap on whole words, so a long title breaks where a reader would. */
+function wrap(value: string, available: number, size: number, bold: boolean): string[] {
+  const words = value.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let line = '';
+  for (const word of words) {
+    const next = line ? line + ' ' + word : word;
+    if (width(next, size, bold) > available && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : [''];
+}

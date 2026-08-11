@@ -11,6 +11,7 @@
  * marks the submission `failed` with the reason.
  */
 import { drain, type Job, type JobHandler, type QueueService } from './queue.service.ts';
+import { increment, observe } from './metrics.ts';
 import type { CodeLabService } from './codelab.service.ts';
 
 export interface CodeLabWorkerOptions {
@@ -51,10 +52,19 @@ export async function runCodeLabWorker(
   // Anything left `running` by a process that died is eligible again first --
   // otherwise it is invisible work that never completes.
   await queue.requeueStale();
-  return drain(queue, codeLabHandlers(codelab, queue), {
+  const started = Date.now();
+  const result = await drain(queue, codeLabHandlers(codelab, queue), {
     concurrency: opts.concurrency ?? 4,
     maxPasses: opts.maxPasses ?? 1000,
     kinds: ['code.run', 'code.grade'],
     onError: opts.onError,
   });
+
+  // SCL-03's acceptance criterion is "a failed grading run pages someone before
+  // a learner reports it". These are the numbers that page: a non-zero rate on
+  // failures, or a runs rate that falls to nothing.
+  increment('onyx_grading_runs_total', undefined, result.done);
+  increment('onyx_grading_failures_total', undefined, result.failed);
+  if (result.done || result.failed) observe('onyx_grading_pass_ms', Date.now() - started);
+  return result;
 }

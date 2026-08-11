@@ -119,6 +119,26 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
       Number.isFinite(userId) && userId ? { userId } : {}));
   });
 
+  /**
+   * The credential as a document. The holder's own, or an issuer's copy.
+   *
+   * Not tenant-public like `/verify`: this carries the holder's name on a
+   * printable page, and a stranger holding a credential id is entitled to
+   * check it, not to a copy of it.
+   */
+  app.get('/api/onyx/certificates/:id/document.pdf', async (req, reply) => {
+    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const { file, filename } = await ctx.onyxCareer.certificatePdf(
+      claims.tenant_id, idOf(req), {
+        viewer: { userId: claims.user_id, role: claims.tenant_role },
+        baseUrl: process.env.WEB_URL,
+      });
+
+    reply.header('Content-Type', 'application/pdf');
+    reply.header('Content-Disposition', 'attachment; filename="' + filename + '"');
+    return reply.send(file);
+  });
+
   app.get('/api/onyx/my/certificates', async (req) => {
     const claims = requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxCareer.certificates(claims.tenant_id, claims.user_id));
@@ -197,7 +217,25 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
         throw new HttpError(422, 'An employer contact needs the employer role.');
       }
     }
-    return ok(await ctx.onyxPlacement.createEmployer(claims.tenant_id, claims.user_id, body),
+    const employer = await ctx.onyxPlacement.createEmployer(
+      claims.tenant_id, claims.user_id, body);
+
+    // CAR-04a: "employer records ... with contacts and an invitation flow".
+    // The record could always be linked to an account; nothing ever told the
+    // contact that it had been.
+    if (body.user_id) {
+      const tenant = await ctx.onyxTenancy.tenant(claims.tenant_id);
+      await ctx.onyxNotify.notify(claims.tenant_id, {
+        userId: body.user_id,
+        kind: 'employer.invited',
+        title: (tenant?.name ?? 'An institution') + ' has given you employer access',
+        body: 'You can post roles and see your own pipeline. Nothing else at the '
+          + 'institution is shared with you.',
+        link: '/onyx/jobs',
+        email: body.contact_email ? { to: body.contact_email } : null,
+      });
+    }
+    return ok(employer,
       'Employer added.');
   });
 

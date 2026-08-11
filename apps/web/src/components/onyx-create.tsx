@@ -3,6 +3,7 @@
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icon, type IconName } from '@/components/onyx-ui';
+import { ClashCheck } from '@/components/onyx-clash';
 
 /**
  * One authoring form, driven by a field list.
@@ -89,7 +90,7 @@ function toBody(fields: Field[], data: FormData): Record<string, unknown> {
 }
 
 export function CreatePanel({
-  title, cta, endpoint, fields, extra, icon = 'edit', thenPost, compact,
+  title, cta, endpoint, fields, extra, icon = 'edit', thenPost, compact, watch,
 }: {
   title: string;
   /** Button label, both to open the form and to submit it. */
@@ -111,11 +112,23 @@ export function CreatePanel({
    */
   thenPost?: string;
   compact?: boolean;
+  /**
+   * Something rendered under the fields that needs to see what has been typed
+   * so far -- the timetable's clash pre-check is the only user.
+   *
+   * A named kind rather than a render prop for the same reason `thenPost` is a
+   * string: these panels are rendered from server components, and React refuses
+   * to pass a function across that boundary.
+   */
+  watch?: 'timetable-clash';
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  // Only tracked when something is watching. Every other panel stays
+  // uncontrolled, which is why they re-render on nothing.
+  const [values, setValues] = useState<Record<string, string>>({});
 
   async function post(path: string, body?: unknown) {
     const res = await fetch('/api/proxy/onyx/' + path, {
@@ -141,6 +154,12 @@ export function CreatePanel({
   return (
     <form
       className="rounded-2xl border border-line bg-white p-4 shadow-card"
+      onChange={watch ? (e) => {
+        const form = e.currentTarget as HTMLFormElement;
+        const data = new FormData(form);
+        setValues(Object.fromEntries(
+          [...data.entries()].map(([k, v]) => [k, String(v)])));
+      } : undefined}
       onSubmit={(e) => {
         e.preventDefault();
         const form = e.currentTarget;
@@ -219,6 +238,12 @@ export function CreatePanel({
           );
         })}
       </div>
+
+      {/* Between the fields and the button, which is where somebody looks
+          before pressing it. */}
+      {watch === 'timetable-clash' ? (
+        <div className="mt-3"><ClashCheck fields={values} /></div>
+      ) : null}
 
       {error ? (
         <p role="alert" className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">

@@ -21,6 +21,7 @@ import { randomBytes } from 'node:crypto';
 import type { OnyxDb } from './db.ts';
 import type { Role } from '@onyx/types';
 import { HttpError } from '../http/errors.ts';
+import { pdfCertificate } from '../format/pdf.ts';
 import { slugify } from '../authoring/slug.ts';
 import type { AcademicsService } from './academics.service.ts';
 import type { AttendanceService } from './attendance.service.ts';
@@ -185,6 +186,59 @@ export class CareerService {
       expires_at: data.expires_at,
       revoked_at: data.revoked_at,
       detail: data.detail,
+    };
+  }
+
+  /**
+   * CAR-03 -- the credential as a file.
+   *
+   * "Verifiable, shareable." The verification page made it verifiable from the
+   * first day; shareable meant a URL, and a URL is not what a graduate attaches
+   * to an application. This is.
+   *
+   * A revoked or expired credential still renders. Refusing would leave the
+   * holder of a withdrawn certificate with nothing to explain, and the document
+   * says on its face that the page is the evidence -- which will tell any
+   * verifier the truth whatever the paper says.
+   */
+  async certificatePdf(tenantId: number, id: number, opts: {
+    viewer?: { userId: number; role: Role };
+    baseUrl?: string;
+  } = {}): Promise<{ file: Buffer; filename: string }> {
+    const { data } = await this.#db.from('onyx_certificates')
+      .select(CERTIFICATE_COLUMNS).eq('tenant_id', tenantId).eq('id', id).maybeSingle();
+    if (!data) throw new HttpError(404, 'Certificate not found.');
+
+    // A holder may take their own; an issuer may take anyone's. Nobody else.
+    if (opts.viewer
+      && Number(data.user_id) !== opts.viewer.userId
+      && !['admin', 'exams', 'placement'].includes(opts.viewer.role)) {
+      throw new HttpError(403, 'That is not your certificate.');
+    }
+
+    const [{ data: tenant }, { data: holder }] = await Promise.all([
+      this.#db.from('onyx_tenants').select('id, name').eq('id', tenantId).maybeSingle(),
+      this.#db.from('onyx_users').select('name').eq('id', data.user_id).maybeSingle(),
+    ]);
+
+    const day = (iso: string | null | undefined) => (iso
+      ? new Date(iso).toLocaleDateString('en-GB',
+        { day: 'numeric', month: 'long', year: 'numeric' })
+      : null);
+
+    const base = (opts.baseUrl ?? 'http://127.0.0.1:5173').replace(/\/+$/, '');
+    return {
+      file: pdfCertificate({
+        issuer: tenant?.name ?? 'Onyx',
+        holder: holder?.name ?? 'The holder',
+        title: String(data.title),
+        kind: String(data.kind),
+        credentialId: String(data.credential_id),
+        issuedAt: day(data.issued_at) ?? '',
+        expiresAt: day(data.expires_at),
+        verifyUrl: base + '/onyx/verify/' + data.credential_id,
+      }),
+      filename: 'certificate-' + data.credential_id + '.pdf',
     };
   }
 
@@ -447,6 +501,10 @@ export class CareerService {
       certificates: certificates
         .filter((c) => !c.revoked_at)
         .map((c) => ({
+          // The id is here only so the holder's own page can offer them the
+          // PDF. It is never on the PUBLIC verification payload, which is a
+          // different projection in `verify()` and stays name-only.
+          id: c.id,
           credential_id: c.credential_id, title: c.title,
           kind: c.kind, issued_at: c.issued_at, detail: c.detail,
         })),

@@ -14,6 +14,7 @@ import {
   CareerService, PlacementService, ContestService,
   EngageService, SupportService, CampusService, ExaminationsService,
   FinanceService, OnyxCheckoutService, GuardianService, PlatformService,
+  NotifyService,
   executionProviderFromEnv, runCodeLabWorker,
   type ExecutionProvider, type CodeLabWorkerOptions,
   RegistrationService, VerificationService, PasswordResetService,
@@ -112,6 +113,7 @@ export interface AppContext {
   onyxSupport: SupportService;
   onyxCampus: CampusService;
   onyxExams: ExaminationsService;
+  onyxNotify: NotifyService;
   onyxFinance: FinanceService;
   onyxCheckout: OnyxCheckoutService;
   onyxGuardians: GuardianService;
@@ -160,6 +162,12 @@ export function createContext(): AppContext {
   // CMP-02. Guardians read published marks through this rather than
   // querying onyx_exam_marks themselves, so the 'published only' rule
   // lives in one place.
+  // Mail is the port's, reused wholesale: SMTP settings, transport caching
+  // and the fail-soft behaviour are all already right there.
+  const onyxNotify = new NotifyService(onyxDb, {
+    mail,
+    onError: (m) => console.error('[onyx] ' + m),
+  });
   const onyxExams = new ExaminationsService(onyxDb, onyxAudit);
   // Hoisted: the checkout service settles through it, so both need the
   // same instance rather than two with separate audit wiring.
@@ -249,6 +257,7 @@ export function createContext(): AppContext {
     onyxSupport: new SupportService(onyxDb, onyxAudit),
     onyxCampus: new CampusService(onyxDb, onyxAudit),
     onyxExams,
+    onyxNotify,
     onyxFinance: onyxFinance,
     onyxCheckout: new OnyxCheckoutService(onyxDb, onyxFinance, {
       secret: process.env.SUPABASE_JWT_SECRET ?? '',

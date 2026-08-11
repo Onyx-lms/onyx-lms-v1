@@ -127,6 +127,28 @@ Onyx table is ordinary work; adding a 62nd *ported* table is not.
   no SELECT policy at all, the admin API returns the NAMES of the keys that are
   set and never a value, and the audit entry records which keys changed rather
   than what they changed to.
+- **Notifying never throws**, exactly like audit and for the same reason: the
+  row describes work that already happened, so raising would roll back the thing
+  being announced. Failures go to `#onError` and a counter. **The row is the
+  notification and email is a copy** -- an institution with no SMTP must still
+  have told the person.
+- **No route takes a notification recipient.** Notifications are raised by
+  services as a consequence of work, so what this product can send you is a
+  closed list in code. Do not add an endpoint that puts something in somebody
+  else's inbox.
+- **A Prometheus counter that has never fired does not exist**, and "no data"
+  looks identical to "no failures" on a dashboard. Every counter in `HELP` is
+  seeded to zero at import for that reason; add a new one to that map or its
+  alert will be silently unarmed.
+- **`tsc --build` does NOT check `apps/web`.** It walks project references and
+  the Next app is not one of them, so for most of this product's lifetime the
+  gate's typecheck step skipped every page and component. `npm run typecheck`
+  now runs `typecheck:web` as well; do not "simplify" it back to one command.
+- **`docs/API.md` is generated.** `npm run docs:check` is in the gate, so a new
+  route with no documentation fails the build. The generator reads the guard out
+  of each handler -- an early version searched too small a window and reported
+  every guarded route as public, which is the one way this file can be worse
+  than nothing.
 
 ## Non-obvious invariants
 

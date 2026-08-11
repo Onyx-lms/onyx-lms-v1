@@ -173,6 +173,10 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
   // =========================================================================
 
   app.post('/api/onyx/exams', async (req) => {
+    // Guard first, validate second. The service checks the role too -- that is
+    // where the rule lives -- but reaching validation is itself an answer, and
+    // somebody who may not schedule an exam should not get one.
+    requireOnyxRole(asReq(req), ctx.jwtSecret, ...EXAMS);
     const { claims, viewer } = viewerOf(req);
     const body = validate(z.object({
       semester_id: z.number().int().positive(),
@@ -345,6 +349,9 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
   // =========================================================================
 
   app.post('/api/onyx/fee-heads', async (req) => {
+    // As above: the service owns the rule, the route stops the wrong caller
+    // reaching the validator at all.
+    requireOnyxRole(asReq(req), ctx.jwtSecret, ...REGISTRY);
     const { claims, viewer } = viewerOf(req);
     const body = validate(z.object({
       code: z.string().min(1).max(40),
@@ -560,7 +567,22 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
       student_user_id: z.number().int().positive(),
       relationship: z.string().max(40).optional(),
     }), req.body);
-    return ok(await ctx.onyxGuardians.link(claims.tenant_id, viewer, body));
+    const link = await ctx.onyxGuardians.link(claims.tenant_id, viewer, body);
+
+    // CMP-04a: "notifications on key events". The LEARNER is told, not the
+    // guardian -- a link grants nothing until the learner accepts it, and
+    // announcing it to the guardian first would describe access they do not
+    // have. This is the notification that makes the consent model work: an
+    // acceptance nobody knows to give never happens.
+    await ctx.onyxNotify.notify(claims.tenant_id, {
+      userId: body.student_user_id,
+      kind: 'guardian.linked',
+      title: 'Somebody has asked to be linked to your account',
+      body: 'They see nothing until you accept, and then only the categories '
+        + 'you switch on. You can revoke it at any time.',
+      link: '/onyx/profile',
+    });
+    return ok(link);
   });
 
   app.post('/api/onyx/guardians/:id/accept', async (req) => {
@@ -569,6 +591,10 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
       { userId: claims.user_id }));
   });
 
+  /**
+   * CMP-04a. Consent changing is a key event for the guardian: what they can
+   * see just changed, and only the learner knows it did.
+   */
   app.post('/api/onyx/guardians/:id/consent', async (req) => {
     const { claims, viewer } = viewerOf(req);
     const body = validate(z.object({

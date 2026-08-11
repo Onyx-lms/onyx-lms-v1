@@ -6,6 +6,7 @@ import { useState, useTransition } from 'react';
 import type { Me, Role, Tenant } from '@/lib/onyx-session';
 import { ROLE_LABELS, navFor, tabsFor, type OnyxNavGroup } from '@/lib/onyx-nav';
 import { Icon } from '@/components/onyx-ui';
+import { NotificationBell } from '@/components/onyx-inbox';
 
 /**
  * F-07 -- the Onyx shell.
@@ -107,6 +108,10 @@ function Header({ me, onMenu }: { me: Me; onMenu: () => void }) {
         title={me.tenant.name}>
         {me.tenant.name}
       </span>
+
+      {/* Beside the avatar, which is where every product this audience already
+          uses puts it. The count is what makes it worth having. */}
+      <NotificationBell />
       <span className="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-full
                        bg-gradient-to-br from-brand-500 to-brand-700 text-[13px]
                        font-bold text-white" aria-hidden="true">
