@@ -51,6 +51,22 @@ const PolicySchema = z.enum(LATE_POLICIES as [LatePolicy, ...LatePolicy[]]);
 const TypeSchema = z.enum(ONYX_LESSON_TYPES as [LessonType, ...LessonType[]]);
 
 export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): void {
+  /**
+   * Adding someone to a roster, or removing them, is an administrator's act
+   * OR this specific course's own faculty -- not faculty tenant-wide, the
+   * same distinction assertCanTeach() draws everywhere else. A student is
+   * added by whoever actually runs the course, not only by whoever runs the
+   * institution.
+   */
+  async function requireCourseManager(req: FastifyRequest, courseId: number) {
+    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    if (claims.tenant_role !== 'admin') {
+      await ctx.onyxAcademics.assertCanTeach(
+        claims.tenant_id, courseId, claims.user_id, claims.tenant_role);
+    }
+    return claims;
+  }
+
   // -------------------------------------------------------------------------
   // LRN-01a -- academic structure
   // -------------------------------------------------------------------------
@@ -226,8 +242,34 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
     if (membership.role !== 'faculty' && membership.role !== 'admin') {
       throw new HttpError(422, 'Only faculty can be assigned to a course.');
     }
-    return ok(await ctx.onyxAcademics.assignFaculty(claims.tenant_id, idOf(req), body.user_id),
-      'Assigned.');
+    const result = await ctx.onyxAcademics.assignFaculty(claims.tenant_id, idOf(req), body.user_id);
+    if (result.assigned) {
+      await ctx.onyxAudit.record(claims, {
+        action: 'course.faculty_assigned', entityType: 'course', entityId: idOf(req),
+        after: { user_id: body.user_id }, ip: ipOf(req),
+      });
+    }
+    return ok(result, 'Assigned.');
+  });
+
+  /** Who currently teaches this course -- an admin, or faculty of this course. */
+  app.get('/api/onyx/courses/:id/faculty', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    await ctx.onyxAcademics.assertCanTeach(
+      claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role);
+    return ok(await ctx.onyxAcademics.faculty(claims.tenant_id, idOf(req)));
+  });
+
+  /** The other half of assigning -- freeing a slot back below the cap of two. */
+  app.delete('/api/onyx/courses/:id/faculty/:userId', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const removed = await ctx.onyxAcademics.removeFaculty(
+      claims.tenant_id, idOf(req), idOf(req, 'userId'));
+    await ctx.onyxAudit.record(claims, {
+      action: 'course.faculty_removed', entityType: 'course', entityId: idOf(req),
+      before: { user_id: idOf(req, 'userId') }, ip: ipOf(req),
+    });
+    return ok(removed, 'Removed.');
   });
 
   /** What this learner is enrolled in -- the "what do I do next" list. */
@@ -254,9 +296,10 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
     }), req.body ?? {});
     const courseId = idOf(req);
 
-    // Enrolling somebody else, or a whole cohort, is an administrator's act.
+    // Enrolling somebody else, or a whole cohort, is an administrator's act,
+    // or this course's own faculty acting on their own roster.
     if (body.batch_id) {
-      requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+      await requireCourseManager(req, courseId);
       const result = await ctx.onyxAcademics.enrollBatch(
         claims.tenant_id, courseId, body.batch_id, claims.user_id);
       await ctx.onyxAudit.record(claims, {
@@ -267,7 +310,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
     }
 
     if (body.user_id && body.user_id !== claims.user_id) {
-      requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+      await requireCourseManager(req, courseId);
       const enrolled = await ctx.onyxAcademics.enroll(
         claims.tenant_id, courseId, body.user_id, { enrolledBy: claims.user_id });
       await ctx.onyxAudit.record(claims, {
@@ -283,7 +326,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.delete('/api/onyx/courses/:id/enroll/:userId', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const claims = await requireCourseManager(req, idOf(req));
     const userId = idOf(req, 'userId');
     const result = await ctx.onyxAcademics.withdraw(claims.tenant_id, idOf(req), userId);
     await ctx.onyxAudit.record(claims, {

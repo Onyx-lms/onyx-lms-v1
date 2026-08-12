@@ -365,6 +365,20 @@ export class FinanceService {
       .eq('tenant_id', tenantId).eq('id', input.invoice_id).maybeSingle();
     if (!invoice) throw new HttpError(404, 'No such invoice.');
     if (invoice.status === 'void') throw new HttpError(409, 'That invoice has been voided.');
+    // Idempotency covers a replayed reference; it does nothing for a second,
+    // different reference against an invoice that is already settled -- that
+    // is a fresh insert and would over-credit the ledger. Checked before the
+    // insert so a duplicate-reference replay (handled below, after the
+    // insert) is still reached first for an invoice that was fully paid by
+    // the very payment being replayed.
+    if (invoice.status === 'paid') {
+      const { data: existing } = await this.#db.from('onyx_payments').select('id')
+        .eq('tenant_id', tenantId).eq('gateway', input.gateway)
+        .eq('reference', input.reference.trim()).maybeSingle();
+      if (!existing) {
+        throw new HttpError(409, 'That invoice is already settled in full.');
+      }
+    }
 
     const reference = input.reference.trim();
     if (!reference) throw new HttpError(422, 'A payment needs a gateway reference.');

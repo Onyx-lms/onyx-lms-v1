@@ -5,6 +5,7 @@ import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-se
 import { WEEKDAYS, hhmm, type Room, type TimetableSlot } from '@/lib/onyx-campus';
 import type { Course } from '@/lib/onyx-learn';
 import { CreatePanel } from '@/components/onyx-create';
+import { TimetableSlotDelete } from '@/components/onyx-manage';
 import {
   Banner, Card, Empty, Icon, ListRow, Meter, Pill, RowList, SectionHead, StatTile,
 } from '@/components/onyx-ui';
@@ -280,6 +281,7 @@ export default async function OnyxTimetablePage() {
                                   {draft ? 'draft' : 'published'}
                                 </span>
                               ) : null}
+                              {registry ? <TimetableSlotDelete slotId={s.id} /> : null}
                             </div>
                           );
                         })}

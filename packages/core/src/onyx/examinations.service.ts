@@ -160,6 +160,42 @@ export class ExaminationsService {
   }
 
   /**
+   * Correct a scheduled exam, or cancel it. The clash check schedule() runs
+   * is deliberately not repeated here: an administrator fixing a mistaken
+   * time is already looking at the reason to change it, and re-refusing the
+   * same clash they are trying to resolve would be the check working against
+   * the person using it.
+   */
+  async updateExam(tenantId: number, examId: number, actor: { userId: number; role: Role },
+    patch: {
+      title?: string; starts_at?: string | null; duration_minutes?: number;
+      max_marks?: number; pass_marks?: number; status?: string;
+    }) {
+    if (!canRunExams(actor.role)) {
+      throw new HttpError(403, 'Only the examinations office can change an exam.');
+    }
+    const exam = await this.exam(tenantId, examId);
+
+    const before: Record<string, unknown> = {};
+    const after: Record<string, unknown> = {};
+    for (const key of
+      ['title', 'starts_at', 'duration_minutes', 'max_marks', 'pass_marks', 'status'] as const) {
+      const value = patch[key];
+      if (value !== undefined && value !== exam[key]) { before[key] = exam[key]; after[key] = value; }
+    }
+    if (!Object.keys(after).length) return exam;
+
+    const { data, error } = await this.#db.from('onyx_exams')
+      .update({ ...after, updated_at: new Date(this.#now()).toISOString() })
+      .eq('tenant_id', tenantId).eq('id', examId).select(EXAM_COLUMNS).maybeSingle();
+    if (error) throw new HttpError(500, 'Could not update the exam: ' + error.message);
+
+    await this.#audit.record({ tenant_id: tenantId, user_id: actor.userId },
+      { action: 'exam.updated', entityType: 'exam', entityId: examId, before, after });
+    return data;
+  }
+
+  /**
    * Whether any one person would end up sitting two papers at the same time.
    *
    * Returns a sentence naming the collision, or null. The message names the
@@ -475,6 +511,43 @@ export class ExaminationsService {
       { action: 'marks.entered', entityType: 'exam', entityId: examId,
         after: { count: written.length } });
     return { entered: written.length };
+  }
+
+  /**
+   * Override one mark directly -- a dispute or a data-entry fix, not a
+   * moderation pass across the whole paper (moderate(), below, stays the
+   * board's tool, with its own delta+reason shape). Unlike enterMarks(),
+   * this works regardless of status: an administrator resolving a dispute is
+   * the deliberate override, not the everyday path enterMarks() protects
+   * with its "not after publish" rule.
+   */
+  async updateMark(tenantId: number, markId: number, actor: { userId: number; role: Role },
+    patch: { raw_marks?: number; final_marks?: number }) {
+    if (!canRunExams(actor.role)) {
+      throw new HttpError(403, 'Only the examinations office can change a mark.');
+    }
+    const { data: mark } = await this.#db.from('onyx_exam_marks').select(MARK_COLUMNS)
+      .eq('tenant_id', tenantId).eq('id', markId).maybeSingle();
+    if (!mark) throw new HttpError(404, 'No such mark.');
+    const exam = await this.exam(tenantId, Number(mark.exam_id));
+    const maxMarks = Number(exam.max_marks);
+
+    const raw = patch.raw_marks ?? Number(mark.raw_marks);
+    const final = patch.final_marks ?? raw;
+    if (final < 0 || final > maxMarks) {
+      throw new HttpError(422, 'A mark has to be between 0 and ' + maxMarks + '.');
+    }
+    const band = gradeFor(final, maxMarks);
+    const before = { raw_marks: mark.raw_marks, final_marks: mark.final_marks, grade: mark.grade };
+    const after = {
+      raw_marks: raw, final_marks: final, grade: band.grade, grade_points: band.points,
+    };
+
+    await this.#db.from('onyx_exam_marks')
+      .update({ ...after, updated_at: new Date(this.#now()).toISOString() }).eq('id', markId);
+    await this.#audit.record({ tenant_id: tenantId, user_id: actor.userId },
+      { action: 'marks.overridden', entityType: 'exam_mark', entityId: markId, before, after });
+    return { id: markId, ...after };
   }
 
   /**

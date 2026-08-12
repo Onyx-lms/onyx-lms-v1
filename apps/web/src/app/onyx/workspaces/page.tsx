@@ -6,7 +6,7 @@ import {
 } from '@/components/onyx-ui';
 import { OnyxNewWorkspace } from '@/components/onyx-workspace-new';
 import { navFor } from '@/lib/onyx-nav';
-import { requireOnyxSession, onyxApi, type Me } from '@/lib/onyx-session';
+import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import type { Course } from '@/lib/onyx-learn';
 import type { Workspace } from '@/lib/onyx-codelab';
 
@@ -48,6 +48,24 @@ export default async function OnyxWorkspacesPage() {
     onyxApi<Workspace[]>('/api/onyx/workspaces'),
     onyxApi<Course[]>('/api/onyx/my/courses'),
   ]);
+
+  // An administrator does not create workspaces here -- they monitor
+  // everyone who does. `/all` and the members list to name whose project is
+  // whose are both admin-only, so both are skipped entirely for anyone else.
+  const [everyProject, members] = me.role === 'admin'
+    ? await Promise.all([
+      onyxApiSafe<Workspace[]>('/api/onyx/workspaces/all'),
+      onyxApiSafe<{ user: { id: number; name: string; email: string } | null }[]>(
+        '/api/onyx/members'),
+    ])
+    : [null, null];
+  const ownerOf = new Map((members ?? [])
+    .filter((m) => m.user)
+    .map((m) => [m.user!.id, m.user!]));
+  const allCourses = me.role === 'admin'
+    ? await onyxApiSafe<Course[]>('/api/onyx/courses')
+    : null;
+  const courseByIdAll = new Map((allCourses ?? []).map((c) => [c.id, c]));
 
   const courseById = new Map(courses.map((c) => [c.id, c]));
   const attached = workspaces.filter((w) => w.course_id !== null).length;
@@ -145,6 +163,70 @@ export default async function OnyxWorkspacesPage() {
           </Card>
         )}
       </div>
+
+      {/* An administrator does not build here -- they oversee everyone who
+          does. Reachable because WorkspaceService now lets admin open any
+          project, personal or course-attached (view and comment only; the
+          editor, run and delete stay owner-only regardless of role). */}
+      {me.role === 'admin' && everyProject !== null ? (
+        <div className="mt-9">
+          <SectionHead title={'Every project at ' + me.tenant.name + ' · ' + everyProject.length} />
+          {everyProject.length === 0 ? (
+            <Card>
+              <Empty icon="layers">Nobody has started a project yet.</Empty>
+            </Card>
+          ) : (
+            <div tabIndex={0} role="region" aria-label="Every project at this institution"
+              className="relative min-w-0 max-w-full overflow-x-auto rounded-2xl border
+                         border-line bg-white shadow-card">
+              <table className="w-full text-sm">
+                <caption className="sr-only">Every project workspace at this institution</caption>
+                <thead>
+                  <tr className="border-b border-line bg-slate-50 text-left text-[11px]
+                                 uppercase tracking-[.06em] text-muted [&>th]:whitespace-nowrap
+                                 [&>th]:px-4 [&>th]:py-2.5 [&>th]:font-bold">
+                    <th scope="col">Project</th>
+                    <th scope="col">Owner</th>
+                    <th scope="col">Course</th>
+                    <th scope="col">Language</th>
+                    <th scope="col">Last touched</th>
+                    <th scope="col"><span className="sr-only">Open</span></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {[...everyProject]
+                    .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at))
+                    .map((w) => {
+                      const owner = ownerOf.get(w.user_id);
+                      const course = w.course_id === null ? null : courseByIdAll.get(w.course_id);
+                      return (
+                        <tr key={w.id} className="hover:bg-brand-50/40">
+                          <td className="px-4 py-3 font-semibold">{w.title}</td>
+                          <td className="px-4 py-3">
+                            {owner ? (
+                              <>
+                                <div>{owner.name}</div>
+                                <div className="text-xs text-muted">{owner.email}</div>
+                              </>
+                            ) : 'Unknown'}
+                          </td>
+                          <td className="px-4 py-3 text-muted">
+                            {course ? course.code + ' — ' + course.title : 'Personal project'}
+                          </td>
+                          <td className="px-4 py-3"><Pill>{w.language}</Pill></td>
+                          <td className="px-4 py-3 text-muted">{since(w.updated_at)}</td>
+                          <td className="px-4 py-3 text-right">
+                            <ActionLink href={'/onyx/workspaces/' + w.id} label="Open" tone="quiet" />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : null}
     </OnyxShell>
   );
 }

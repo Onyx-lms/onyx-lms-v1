@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
 import { OnyxStartAssessment } from '@/components/onyx-sit';
 import { OnyxPublishResults } from '@/components/onyx-marking';
+import { AssessmentEditForm } from '@/components/onyx-manage';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import { isExamsStaff, type Assessment, type MyAttempt } from '@/lib/onyx-assess';
@@ -151,6 +152,9 @@ export default async function OnyxAssessmentPage({ params }: { params: Promise<{
                   <ActionLink href={'/onyx/assessments/' + id + '/marking'} label="Marking queue" />
                   <ActionLink href={'/onyx/assessments/' + id + '/results'}
                     label="Results and item analysis" tone="quiet" />
+                </div>
+                <div className="border-t border-line pt-4">
+                  <AssessmentEditForm assessmentId={Number(id)} assessment={assessment} />
                 </div>
                 <div className="border-t border-line pt-4">
                   <OnyxPublishResults

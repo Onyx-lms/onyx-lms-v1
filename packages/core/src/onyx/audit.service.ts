@@ -17,7 +17,8 @@ const COLUMNS = 'id, tenant_id, actor_id, action, entity_type, entity_id, before
 /** The actions worth recording. A closed list, so the log stays searchable. */
 export type AuditAction =
   | 'tenant.created' | 'tenant.updated'
-  | 'membership.created' | 'membership.role_changed' | 'membership.removed'
+  | 'membership.created' | 'membership.role_changed' | 'membership.removed' | 'membership.updated'
+  | 'user.updated'
   | 'enrolment.created' | 'enrolment.removed'
   | 'attendance.marked' | 'attendance.amended'
   | 'assignment.graded' | 'assignment.returned'
@@ -29,9 +30,10 @@ export type AuditAction =
   | 'discussion.asked' | 'discussion.resolved'
   | 'ticket.raised' | 'ticket.assigned' | 'ticket.resolved'
   // O07 -- campus operations
-  | 'timetable.published' | 'exam.scheduled' | 'seating.allocated'
-  | 'marks.entered' | 'marks.moderated'
+  | 'timetable.published' | 'exam.scheduled' | 'exam.updated' | 'seating.allocated'
+  | 'marks.entered' | 'marks.moderated' | 'marks.overridden' | 'assessment.updated'
   | 'invoice.issued' | 'guardian.linked' | 'guardian.consent_changed'
+  | 'course.faculty_assigned' | 'course.faculty_removed'
   // Changing where an institution's fees settle to is a finance-grade event,
   // so it is logged like one. The entry names which credentials were written,
   // never their values.

@@ -55,6 +55,8 @@ const I = {
   interviews:{ href: '/onyx/interviews', label: 'Interviews', icon: 'mic' },
   profile:   { href: '/onyx/profile', label: 'Your profile', icon: 'user' },
   people:    { href: '/onyx/people', label: 'People', icon: 'users' },
+  students:  { href: '/onyx/people?role=student', label: 'Students', icon: 'users' },
+  facultyList: { href: '/onyx/people?role=faculty', label: 'Faculty', icon: 'user' },
   programs:  { href: '/onyx/programs', label: 'Programmes', icon: 'building' },
   exams:     { href: '/onyx/exams', label: 'Examinations', icon: 'award' },
   invigilate:{ href: '/onyx/invigilate', label: 'Invigilate', icon: 'shield' },
@@ -98,12 +100,20 @@ const NAV: Record<Role, OnyxNavGroup[]> = {
   // links other people control, so there is nowhere else to navigate to.
   guardian: [{ items: [I.family, I.inbox] }],
   admin: [
-    { items: [I.dashboard, I.courses, I.practice, I.spaces] },
+    // Practice (a learner's own coding drills) dropped from here: it is not
+    // a job an administrator does, unlike Workspaces, which stays -- an
+    // admin monitors every learner's projects there, rather than keeping
+    // their own.
+    { items: [I.dashboard, I.courses, I.spaces] },
     // Invigilation and placement are the administrator's too: ASS-03 lets them
     // watch a sitting and CAR-04 makes them keeper of the employer records.
     // Both were reachable only by typing the URL until this line existed.
     { label: 'Assessment', items: [I.assess, I.invigilate, I.exams, I.contests, I.certs] },
-    { label: 'Campus', items: [I.programs, I.timetable, I.allocate, I.people, I.finance] },
+    // People split into Students and Faculty -- the two an administrator
+    // actually reaches for -- rather than one combined roster that also
+    // holds the exams office, placement office, employers and guardians.
+    { label: 'Campus', items: [I.programs, I.timetable, I.allocate,
+      I.students, I.facultyList, I.finance] },
     { label: 'Career', items: [I.placement, I.jobs] },
     { label: 'Operations', items: [I.mentor, I.inbox, I.audit] },
   ],

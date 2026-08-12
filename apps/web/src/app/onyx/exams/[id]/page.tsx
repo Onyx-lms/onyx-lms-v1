@@ -4,7 +4,7 @@ import { OnyxShell } from '@/components/onyx-shell';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import type { Exam, SeatingPlan, Hall, ExamMark } from '@/lib/onyx-campus';
-import { AllocateSeating, EnterMarks } from '@/components/onyx-manage';
+import { AllocateSeating, EnterMarks, ExamEditForm, MarkOverride } from '@/components/onyx-manage';
 import { CreatePanel, ActionButton } from '@/components/onyx-create';
 import {
   Card, DataTable, Empty, EmptyRow, Icon, Meter, Pill, Score, SectionHead, State,
@@ -162,6 +162,7 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
             case, not the exception. */}
         {canMark ? (
           <div className="flex flex-wrap items-start gap-2">
+            {staff ? <ExamEditForm examId={Number(id)} exam={exam} /> : null}
             {staff ? <AllocateSeating examId={Number(id)} halls={halls ?? []} /> : null}
             <EnterMarks examId={Number(id)} maxMarks={exam.max_marks}
               candidates={candidates} />
@@ -331,8 +332,12 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
                                 </td>
                                 <td>
                                   {m ? (
-                                    <Score value={m.final_marks} outOf={exam.max_marks}
-                                      band={m.final_marks >= exam.pass_marks ? 'hi' : 'lo'} />
+                                    <span className="inline-flex items-center gap-1">
+                                      <Score value={m.final_marks} outOf={exam.max_marks}
+                                        band={m.final_marks >= exam.pass_marks ? 'hi' : 'lo'} />
+                                      <MarkOverride markId={m.id} maxMarks={exam.max_marks}
+                                        current={m.final_marks} />
+                                    </span>
                                   ) : (
                                     <Score value="—" band="none" />
                                   )}

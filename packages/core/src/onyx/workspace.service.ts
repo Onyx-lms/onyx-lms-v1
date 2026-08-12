@@ -102,6 +102,18 @@ export class WorkspaceService {
     return data ?? [];
   }
 
+  /** Every project at the institution, personal or course-attached -- an
+   * administrator does not create workspaces here, they monitor everyone
+   * who does. Ownership is who to ask about it, not who else can read it:
+   * see #assertReachable() for the actual open-one-and-look-inside check. */
+  async listAll(tenantId: number) {
+    const { data } = await this.#db.from('onyx_workspaces')
+      .select(WORKSPACE_COLUMNS)
+      .eq('tenant_id', tenantId)
+      .order('id', { ascending: false });
+    return data ?? [];
+  }
+
   /** The workspace with its tree, its snapshots and its review comments. */
   async open(tenantId: number, workspaceId: number, userId: number, role: Role) {
     const workspace = await this.#assertReachable(tenantId, workspaceId, userId, role);
@@ -381,7 +393,12 @@ export class WorkspaceService {
   async #assertReachable(tenantId: number, id: number, userId: number, role: Role) {
     const workspace = await this.#workspace(tenantId, id);
     if (Number(workspace.user_id) === userId) return workspace;
-    if (role !== 'admin' && role !== 'faculty') {
+    // An administrator monitors every project at the institution, personal
+    // or not -- the same standing they already hold over every course,
+    // roster and result. Faculty stay narrower: only a course they teach,
+    // which is why a personal (course_id null) workspace stays theirs alone.
+    if (role === 'admin') return workspace;
+    if (role !== 'faculty') {
       throw new HttpError(403, 'This is not your workspace.');
     }
     if (!workspace.course_id) {

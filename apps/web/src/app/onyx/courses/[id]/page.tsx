@@ -11,6 +11,7 @@ import {
 } from '@/lib/onyx-learn';
 import type { Discussion } from '@/lib/onyx-campus';
 import { CreatePanel, ActionButton } from '@/components/onyx-create';
+import { CourseFacultyManager, CourseRosterManager, CourseSettingsForm } from '@/components/onyx-manage';
 import {
   Banner, Card, Empty, Hero, Icon, ListRow, Meter, Pill, RowList, SectionHead,
   relativeDue, type IconName,
@@ -32,12 +33,25 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
   const [me, outline, members] = await Promise.all([
     onyxApi<Me>('/api/onyx/me'),
     onyxApi<Outline>('/api/onyx/courses/' + id + '/outline'),
-    // Only an administrator may allocate teaching, and only they can read the
-    // roster -- so this is fetched for them and nobody else.
-    onyxApiSafe<{ user: { id: number; name: string } | null; role: string }[]>(
+    onyxApiSafe<{ user: { id: number; name: string; email: string } | null; role: string }[]>(
       '/api/onyx/members'),
   ]);
   const teachers = (members ?? []).filter((m) => m.role === 'faculty' || m.role === 'admin');
+  const students = (members ?? []).filter((m) => m.role === 'student');
+  const nameOf = new Map((members ?? []).map((m) => [m.user?.id, m.user?.name ?? 'Unknown']));
+  const emailOf = new Map((members ?? []).map((m) => [m.user?.id, m.user?.email ?? '']));
+
+  // Who teaches this course, and its roster -- both gated the same way the
+  // API gates them (assertCanTeach): an admin always gets these, faculty
+  // only for a course they actually teach. A 403 comes back as null, which
+  // is also how "hide the section for a faculty member who doesn't teach
+  // this course" falls out, with no separate check needed here.
+  const [courseFaculty, roster] = isStaff(me.role)
+    ? await Promise.all([
+      onyxApiSafe<{ user_id: number }[]>('/api/onyx/courses/' + id + '/faculty'),
+      onyxApiSafe<{ user_id: number }[]>('/api/onyx/courses/' + id + '/roster'),
+    ])
+    : [null, null];
 
   // A learner who is not enrolled sees the catalog view: the shape of the
   // course, and nothing that belongs to the people taking it.
@@ -297,24 +311,58 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
         </div>
 
         <aside className="min-w-0 space-y-6">
+          {me.role === 'admin' ? (
+            <section className="mb-4">
+              <SectionHead title="Course details" />
+              <CourseSettingsForm courseId={Number(id)} course={outline.course} />
+            </section>
+          ) : null}
+
           {/* CMP-01 names "faculty allocation" as part of the console. There
               was no way to put a teacher on a course, so a faculty member
               opening one was told "You do not teach this course" with nothing
-              they or an administrator could do about it from the product. */}
-          {me.role === 'admin' && teachers.length ? (
+              they or an administrator could do about it from the product.
+              A course is run by one or two people, not a crowd -- capped and
+              enforced server-side (AcademicsService.assignFaculty()); this
+              is where an admin sees who that is and fixes it if it's wrong.
+              Faculty who teach this course see the same list, read-only --
+              knowing who else teaches with them, without being able to
+              reassign it. */}
+          {courseFaculty !== null ? (
             <section className="mb-4">
               <SectionHead title="Teaching" />
-              <CreatePanel
-                title="Assign a teacher" cta="Assign a teacher" icon="users" compact
-                endpoint={'courses/' + id + '/faculty'}
-                fields={[
-                  { name: 'user_id', label: 'Faculty member', type: 'select',
-                    required: true, numeric: true, wide: true,
-                    options: teachers.map((m) => ({
-                      value: String(m.user?.id ?? 0),
-                      label: m.user?.name ?? 'User ' + (m.user?.id ?? '?'),
-                    })) },
-                ]}
+              <CourseFacultyManager
+                courseId={Number(id)}
+                current={courseFaculty.map((f) => ({
+                  user_id: f.user_id, name: nameOf.get(f.user_id) ?? 'Unknown',
+                }))}
+                options={teachers
+                  .filter((m) => m.user)
+                  .map((m) => ({ id: m.user!.id, name: m.user!.name }))}
+                canManage={me.role === 'admin'}
+              />
+            </section>
+          ) : null}
+
+          {/* Enrolling a student is an administrator's act, or this specific
+              course's own faculty acting on their own roster -- the same
+              boundary learn.routes.ts's requireCourseManager() enforces. A
+              faculty member who doesn't teach this course never sees this
+              section at all: the roster fetch above 403s for them, which is
+              also the correct answer to "should they see who's enrolled". */}
+          {roster !== null ? (
+            <section className="mb-4">
+              <SectionHead title={'Students · ' + roster.length} />
+              <CourseRosterManager
+                courseId={Number(id)}
+                roster={roster.map((r) => ({
+                  user_id: r.user_id, name: nameOf.get(r.user_id) ?? 'Unknown',
+                  email: emailOf.get(r.user_id) ?? '',
+                }))}
+                options={students
+                  .filter((m) => m.user)
+                  .map((m) => ({ id: m.user!.id, name: m.user!.name }))}
+                canManage={me.role === 'admin' || me.role === 'faculty'}
               />
             </section>
           ) : null}

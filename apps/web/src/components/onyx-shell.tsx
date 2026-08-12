@@ -1,12 +1,13 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import type { Me, Role, Tenant } from '@/lib/onyx-session';
 import { ROLE_LABELS, navFor, tabsFor, type OnyxNavGroup } from '@/lib/onyx-nav';
 import { Icon } from '@/components/onyx-ui';
 import { NotificationBell } from '@/components/onyx-inbox';
+import { OnyxCreateProfileButton } from '@/components/onyx-create-profile-nav';
 
 /**
  * F-07 -- the Onyx shell.
@@ -54,6 +55,12 @@ export function OnyxShell({ me, title, subtitle, children, action }: {
         <aside className="hidden lg:sticky lg:top-[84px] lg:block">
           <TenantCard tenant={me.tenant} role={me.role}
             memberships={me.memberships} />
+          {/* An institution admin creates a profile the same way a platform
+              operator does -- same modal, same idea -- except there is no
+              institution to choose: this account is always this institution. */}
+          {me.role === 'admin' ? (
+            <div className="mt-4"><OnyxCreateProfileButton /></div>
+          ) : null}
           <nav className="mt-4" aria-label="Main">
             {groups.map((g, i) => (
               <NavGroup key={g.label ?? i} group={g} />
@@ -125,6 +132,11 @@ function Header({ me, onMenu }: { me: Me; onMenu: () => void }) {
 
 function NavGroup({ group }: { group: OnyxNavGroup }) {
   const pathname = usePathname();
+  // A handful of items (Students/Faculty) are the same page with a
+  // different query string, so the plain pathname match every other item
+  // uses would light both up together. Only those need the query compared.
+  const searchParams = useSearchParams();
+  const currentFull = pathname + (searchParams.toString() ? '?' + searchParams.toString() : '');
   return (
     <div className="mb-4">
       {group.label ? (
@@ -134,7 +146,9 @@ function NavGroup({ group }: { group: OnyxNavGroup }) {
         </div>
       ) : null}
       {group.items.map((item) => {
-        const active = pathname === item.href || pathname.startsWith(item.href + '/');
+        const active = item.href.includes('?')
+          ? currentFull === item.href
+          : pathname === item.href || pathname.startsWith(item.href + '/');
         return (
           <Link
             key={item.href + item.label}
@@ -172,6 +186,9 @@ function MobileMenu({ me, groups, onClose }: {
           </button>
         </div>
         <TenantCard tenant={me.tenant} role={me.role} memberships={me.memberships} />
+        {me.role === 'admin' ? (
+          <div className="mt-4"><OnyxCreateProfileButton /></div>
+        ) : null}
         <nav className="mt-4 flex-1" aria-label="All sections" onClick={onClose}>
           {groups.map((g, i) => <NavGroup key={g.label ?? i} group={g} />)}
         </nav>

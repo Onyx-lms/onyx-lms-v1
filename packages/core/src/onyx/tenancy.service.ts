@@ -193,6 +193,76 @@ export class TenancyService {
     return { id: membershipId, from: current.role as Role, to: role };
   }
 
+  /**
+   * A member's identity (name/email/phone/account status) and their standing
+   * at this institution (role/membership status), edited together -- the
+   * same combined shape the platform console's own member editor uses, since
+   * this is the same "who is this person" panel from the institution's own
+   * side rather than an operator's. Returns what changed on each half
+   * separately so the route can audit them as the two different sentences
+   * they are: "renamed someone" is not "made someone an admin".
+   */
+  async updateMember(tenantId: number, membershipId: number, patch: {
+    name?: string; email?: string; phone?: string | null; account_status?: number;
+    role?: Role; membership_status?: number;
+  }) {
+    const current = await this.#findMembership(tenantId, membershipId);
+    const userId = Number(current.user_id);
+    const { data: user } = await this.#db.from('onyx_users')
+      .select(USER_COLUMNS).eq('id', userId).maybeSingle();
+    if (!user) throw new HttpError(404, 'No such account.');
+
+    if (patch.role !== undefined && patch.role !== current.role) {
+      if (!ROLES.includes(patch.role)) throw new HttpError(422, 'That is not a role.');
+      if (current.role === 'admin') await this.#assertNotLastAdmin(tenantId, membershipId);
+    }
+
+    const userBefore: Record<string, unknown> = {};
+    const userPatch: Record<string, unknown> = {};
+    if (patch.name !== undefined && patch.name.trim() && patch.name.trim() !== user.name) {
+      userBefore.name = user.name; userPatch.name = patch.name.trim();
+    }
+    if (patch.email !== undefined) {
+      const email = patch.email.trim().toLowerCase();
+      if (email !== user.email) {
+        const { data: clash } = await this.#db.from('onyx_users')
+          .select('id').eq('email', email).neq('id', userId).maybeSingle();
+        if (clash) throw new HttpError(409, 'That email is already in use.');
+        userBefore.email = user.email; userPatch.email = email;
+      }
+    }
+    if (patch.phone !== undefined && patch.phone !== user.phone) {
+      userBefore.phone = user.phone; userPatch.phone = patch.phone;
+    }
+    if (patch.account_status !== undefined && patch.account_status !== user.status) {
+      userBefore.status = user.status; userPatch.status = patch.account_status;
+    }
+    if (Object.keys(userPatch).length) {
+      const { error } = await this.#db.from('onyx_users')
+        .update({ ...userPatch, updated_at: new Date().toISOString() }).eq('id', userId);
+      if (error) throw new HttpError(500, 'Could not update the account: ' + error.message);
+    }
+
+    const memberBefore: Record<string, unknown> = {};
+    const memberPatch: Record<string, unknown> = {};
+    if (patch.role !== undefined && patch.role !== current.role) {
+      memberBefore.role = current.role; memberPatch.role = patch.role;
+    }
+    if (patch.membership_status !== undefined && patch.membership_status !== current.status) {
+      memberBefore.status = current.status; memberPatch.status = patch.membership_status;
+    }
+    if (Object.keys(memberPatch).length) {
+      await this.#db.from('onyx_memberships')
+        .update({ ...memberPatch, updated_at: new Date().toISOString() }).eq('id', membershipId);
+    }
+
+    return {
+      userChange: Object.keys(userPatch).length ? { before: userBefore, after: userPatch } : null,
+      membershipChange: Object.keys(memberPatch).length
+        ? { before: memberBefore, after: memberPatch } : null,
+    };
+  }
+
   async removeMember(tenantId: number, membershipId: number): Promise<{ user_id: number }> {
     const current = await this.#findMembership(tenantId, membershipId);
     if (current.role === 'admin') await this.#assertNotLastAdmin(tenantId, membershipId);

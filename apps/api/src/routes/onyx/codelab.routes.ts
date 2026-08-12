@@ -208,6 +208,13 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
     return ok(await ctx.onyxWorkspaces.list(claims.tenant_id, claims.user_id));
   });
 
+  /** Every project at the institution -- an administrator does not create
+   * workspaces here, they monitor everyone who does. */
+  app.get('/api/onyx/workspaces/all', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    return ok(await ctx.onyxWorkspaces.listAll(claims.tenant_id));
+  });
+
   app.post('/api/onyx/workspaces', async (req) => {
     const claims = requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({

@@ -100,7 +100,9 @@ export default async function OnyxCoursesPage() {
               const p = progressFor.get(c.id);
               const done = p ? p.completed >= p.total && p.total > 0 : false;
               return (
-                <Card key={c.id} className="flex min-w-0 flex-col gap-3 p-4">
+                <Card key={c.id}
+                  className="flex min-w-0 flex-col gap-3 p-4 transition
+                             hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-lift">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <Link href={'/onyx/courses/' + c.id}
@@ -167,16 +169,31 @@ export default async function OnyxCoursesPage() {
         ) : (
           <CardGrid>
             {rest.map((c) => (
-              <Card key={c.id} className="flex min-w-0 flex-col gap-2.5 p-4">
-                <div className="flex items-center gap-2">
+              <Card key={c.id}
+                className="group relative flex min-w-0 flex-col gap-2.5 p-4 transition
+                           hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-lift">
+                {/* The whole card reads as one click target -- this link sits
+                    over the card and under everything else (z-0), so the
+                    title, the join button and any other real control inside
+                    stay independently clickable while the empty space around
+                    them also opens the course. */}
+                <Link href={'/onyx/courses/' + c.id} aria-label={'Open ' + c.title}
+                  className="absolute inset-0 z-0 rounded-2xl" />
+
+                <div className="relative z-10 flex items-center gap-2">
                   <span className="font-mono text-[12px] font-bold text-muted">{c.code}</span>
                   {enrolled.has(c.id) ? <Pill tone="good">Enrolled</Pill> : null}
-                  {c.self_enroll && !enrolled.has(c.id)
+                  {/* "Open to join" is a student's question. Staff see the
+                      whole register regardless of self_enroll, so the pill
+                      told every administrator their own courses were "open
+                      to join" -- true, but not theirs to join. */}
+                  {c.self_enroll && !enrolled.has(c.id) && me.role === 'student'
                     ? <Pill tone="brand">Open to join</Pill> : null}
                 </div>
 
                 <Link href={'/onyx/courses/' + c.id}
-                  className="text-[15.5px] font-bold leading-snug hover:underline">
+                  className="relative z-10 text-[15.5px] font-bold leading-snug
+                             group-hover:underline">
                   {c.title}
                 </Link>
 
@@ -207,10 +224,12 @@ export default async function OnyxCoursesPage() {
                     which reads as a broken card rather than a closed door. */}
                 {me.role === 'student' && !enrolled.has(c.id) ? (
                   c.self_enroll ? (
-                    <ActionButton endpoint={'courses/' + c.id + '/enroll'}
-                      label="Join this course" />
+                    <div className="relative z-10">
+                      <ActionButton endpoint={'courses/' + c.id + '/enroll'}
+                        label="Join this course" />
+                    </div>
                   ) : (
-                    <p className="text-[12.5px] text-muted">
+                    <p className="relative z-10 text-[12.5px] text-muted">
                       Enrolment for this course is handled by the programme office.
                     </p>
                   )

@@ -205,6 +205,32 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
     return ok(await ctx.onyxExams.exam(claims.tenant_id, idOf(req)));
   });
 
+  /** Correct a scheduled exam, or cancel it -- the examinations office's
+   * fix for its own mistake, not a route anyone else can reach. */
+  app.patch('/api/onyx/exams/:id', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    const body = validate(z.object({
+      title: z.string().min(1).max(255).optional(),
+      starts_at: z.string().nullish(),
+      duration_minutes: z.number().int().min(5).max(600).optional(),
+      max_marks: z.number().min(1).max(1000).optional(),
+      pass_marks: z.number().min(0).max(1000).optional(),
+      status: z.enum(['draft', 'scheduled', 'completed', 'cancelled']).optional(),
+    }), req.body);
+    return ok(await ctx.onyxExams.updateExam(claims.tenant_id, idOf(req), viewer, body), 'Updated.');
+  });
+
+  /** Override one mark directly -- a dispute or a data-entry fix. */
+  app.patch('/api/onyx/exam-marks/:id', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    const body = validate(z.object({
+      raw_marks: z.number().min(0).optional(),
+      final_marks: z.number().min(0).optional(),
+    }), req.body);
+    return ok(await ctx.onyxExams.updateMark(claims.tenant_id, idOf(req), viewer, body),
+      'Mark updated.');
+  });
+
   // =========================================================================
   // CMP-02b -- halls and seating
   // =========================================================================

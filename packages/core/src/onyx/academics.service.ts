@@ -245,13 +245,35 @@ export class AcademicsService {
 
   // ---- who teaches what ----
 
+  /**
+   * A course is run by one or two people, not a crowd -- past that, "who
+   * teaches this" stops being a question with a fast answer. The cap is
+   * checked here rather than left to the unique constraint, so a course
+   * already at two gets a real reason rather than a silent no-op.
+   */
   async assignFaculty(tenantId: number, courseId: number, userId: number) {
     await this.course(tenantId, courseId);
+    const current = await this.faculty(tenantId, courseId);
+    if (current.some((f) => Number(f.user_id) === userId)) return { assigned: false };
+    if (current.length >= 2) {
+      throw new HttpError(422,
+        'This course already has two faculty. Remove one before assigning another.');
+    }
+
     const { error } = await this.#db.from('onyx_course_faculty')
       .insert({ tenant_id: tenantId, course_id: courseId, user_id: userId });
     if (error?.code === '23505') return { assigned: false };
     if (error) throw new HttpError(500, 'Could not assign them: ' + error.message);
     return { assigned: true };
+  }
+
+  /** The other half of assignFaculty() -- a course stuck at two wrong people
+   * needs a way back to one before a correct third can be assigned. */
+  async removeFaculty(tenantId: number, courseId: number, userId: number) {
+    await this.course(tenantId, courseId);
+    await this.#db.from('onyx_course_faculty')
+      .delete().eq('tenant_id', tenantId).eq('course_id', courseId).eq('user_id', userId);
+    return { removed: true };
   }
 
   async faculty(tenantId: number, courseId: number) {

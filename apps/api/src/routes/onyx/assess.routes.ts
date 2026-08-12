@@ -171,6 +171,40 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
     });
   });
 
+  /** Correct an assessment's own fields -- title, window, pass mark, duration. */
+  app.patch('/api/onyx/assessments/:id', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const body = validate(z.object({
+      title: z.string().min(1).max(255).optional(),
+      opens_at: z.string().nullish(),
+      closes_at: z.string().nullish(),
+      pass_mark: z.number().int().min(0).nullish(),
+      duration_minutes: z.number().int().min(1).max(1440).optional(),
+      status: z.string().max(20).optional(),
+    }), req.body);
+    const { assessment, before, after } = await ctx.onyxAssess.updateAssessment(
+      claims.tenant_id, idOf(req), body);
+    if (Object.keys(after).length) {
+      await ctx.onyxAudit.record(claims, {
+        action: 'assessment.updated', entityType: 'assessment', entityId: idOf(req),
+        before, after, ip: ipOf(req),
+      });
+    }
+    return ok(assessment, 'Updated.');
+  });
+
+  /** Override one attempt's score directly -- a dispute or a data-entry fix. */
+  app.patch('/api/onyx/attempts/:id/score', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const body = validate(z.object({ score: z.number().min(0) }), req.body);
+    const result = await ctx.onyxAssess.overrideScore(claims.tenant_id, idOf(req), body.score);
+    await ctx.onyxAudit.record(claims, {
+      action: 'assessment.grade_changed', entityType: 'assessment_attempt', entityId: idOf(req),
+      before: result.before, after: { score: result.score }, ip: ipOf(req),
+    });
+    return ok(result, 'Score updated.');
+  });
+
   app.post('/api/onyx/assessments/:id/publish', async (req) => {
     const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     const published = await ctx.onyxAssess.publishAssessment(claims.tenant_id, idOf(req));

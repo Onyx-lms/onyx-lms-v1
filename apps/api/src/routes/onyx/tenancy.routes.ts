@@ -178,16 +178,38 @@ export function registerOnyxTenancyRoutes(app: FastifyInstance, ctx: AppContext)
     return ok(result, 'Member added.');
   });
 
+  /**
+   * A member's identity and their standing at this institution, edited
+   * together -- the tenant-side version of the same panel the platform
+   * console's own operators use. `role` alone still works exactly as before
+   * for any existing caller; everything else is additive.
+   */
   app.patch('/api/onyx/members/:id', async (req) => {
     const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
-    const body = validate(z.object({ role: RoleSchema }), req.body);
+    const body = validate(z.object({
+      name: z.string().min(1).max(255).optional(),
+      email: z.string().email().optional(),
+      phone: z.string().max(50).nullish(),
+      account_status: z.number().int().min(0).max(1).optional(),
+      role: RoleSchema.optional(),
+      membership_status: z.number().int().min(0).max(1).optional(),
+    }), req.body);
 
-    const change = await ctx.onyxTenancy.changeRole(claims.tenant_id, idOf(req), body.role);
-    await ctx.onyxAudit.record(claims, {
-      action: 'membership.role_changed', entityType: 'membership', entityId: idOf(req),
-      before: { role: change.from }, after: { role: change.to }, ip: ipOf(req),
-    });
-    return ok(change, 'Role updated.');
+    const result = await ctx.onyxTenancy.updateMember(claims.tenant_id, idOf(req), body);
+    if (result.userChange) {
+      await ctx.onyxAudit.record(claims, {
+        action: 'user.updated', entityType: 'user', entityId: idOf(req),
+        before: result.userChange.before, after: result.userChange.after, ip: ipOf(req),
+      });
+    }
+    if (result.membershipChange) {
+      await ctx.onyxAudit.record(claims, {
+        action: 'membership.updated', entityType: 'membership', entityId: idOf(req),
+        before: result.membershipChange.before, after: result.membershipChange.after,
+        ip: ipOf(req),
+      });
+    }
+    return ok(result, 'Updated.');
   });
 
   app.delete('/api/onyx/members/:id', async (req) => {

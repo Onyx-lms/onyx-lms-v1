@@ -8,13 +8,24 @@ import { SectionHead, StatTile } from '@/components/onyx-ui';
 
 export const metadata: Metadata = { title: 'People' };
 
-/** F-04 / F-06 -- the roster. Faculty may read it; administrators may change it. */
-export default async function OnyxPeoplePage() {
+const ROLE_TITLE: Partial<Record<Member['role'], string>> = {
+  student: 'Students', faculty: 'Faculty',
+};
+
+/** F-04 / F-06 -- the roster. Faculty may read it; administrators may change it.
+ * `?role=` narrows it to one role -- the Students and Faculty nav links land
+ * here with it set, rather than needing their own pages for what is the same
+ * roster with a different starting filter. */
+export default async function OnyxPeoplePage(
+  { searchParams }: { searchParams: Promise<{ role?: string }> },
+) {
   const claims = await requireOnyxPageRole('admin', 'faculty');
+  const { role } = await searchParams;
   const [me, members] = await Promise.all([
     onyxApi<Me>('/api/onyx/me'),
     onyxApi<Member[]>('/api/onyx/members'),
   ]);
+  const initialRole = role as Member['role'] | undefined;
 
   /**
    * A headcount by role, which is the question the strip answers.
@@ -32,7 +43,7 @@ export default async function OnyxPeoplePage() {
     <OnyxShell
       me={me}
       nav={navFor(me.role)}
-      title="People"
+      title={initialRole && ROLE_TITLE[initialRole] ? ROLE_TITLE[initialRole] : 'People'}
       subtitle={'Everyone at ' + me.tenant.name + '. Nobody from anywhere else.'}
     >
       <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -45,7 +56,8 @@ export default async function OnyxPeoplePage() {
       </div>
 
       <SectionHead title="Roster" />
-      <OnyxPeople members={members} canEdit={claims.tenant_role === 'admin'} />
+      <OnyxPeople members={members} canEdit={claims.tenant_role === 'admin'}
+        initialRole={initialRole} />
 
       {/* CMP-04: a guardian is a member of the institution in their own right,
           linked to a student. The link starts unaccepted -- the guardian

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useTransition } from 'react';
+import { Fragment, useState, useTransition } from 'react';
 import { ROLE_LABELS } from '@/lib/onyx-nav';
 import type { Role } from '@/lib/onyx-session';
 
@@ -15,8 +15,9 @@ import type { Role } from '@/lib/onyx-session';
 export interface Member {
   id: number;
   role: Role;
+  status: number;
   tenant_id: number;
-  user: { id: number; name: string; email: string } | null;
+  user: { id: number; name: string; email: string; phone: string | null; status: number } | null;
 }
 
 // Guardian belongs here too: CMP-04 gives a parent their own account, and
@@ -29,10 +30,14 @@ const ROLES: Role[] = [
 const field = 'rounded-lg border border-slate-300 px-3 py-2 text-sm '
   + 'focus:border-slate-900 focus:outline-none';
 
-export function OnyxPeople({ members, canEdit }: { members: Member[]; canEdit: boolean }) {
+export function OnyxPeople({ members, canEdit, initialRole }: {
+  members: Member[]; canEdit: boolean; initialRole?: Role;
+}) {
   const router = useRouter();
   const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState<Role | ''>(initialRole ?? '');
   const [notice, setNotice] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [pending, start] = useTransition();
 
   const call = (path: string, init: RequestInit, success: string) => {
@@ -50,11 +55,12 @@ export function OnyxPeople({ members, canEdit }: { members: Member[]; canEdit: b
   };
 
   const needle = search.trim().toLowerCase();
+  const byRole = roleFilter ? members.filter((m) => m.role === roleFilter) : members;
   const shown = needle
-    ? members.filter((m) =>
+    ? byRole.filter((m) =>
       (m.user?.name ?? '').toLowerCase().includes(needle)
       || (m.user?.email ?? '').toLowerCase().includes(needle))
-    : members;
+    : byRole;
 
   return (
     <div className="space-y-6">
@@ -107,13 +113,24 @@ export function OnyxPeople({ members, canEdit }: { members: Member[]; canEdit: b
         </form>
       ) : null}
 
-      <input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search by name or email"
-        aria-label="Search people"
-        className={field + ' w-full sm:max-w-xs'}
-      />
+      <div className="flex flex-wrap gap-2.5">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search by name or email"
+          aria-label="Search people"
+          className={field + ' w-full sm:max-w-xs'}
+        />
+        <select
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value as Role | '')}
+          aria-label="Filter by role"
+          className={field}
+        >
+          <option value="">Every role</option>
+          {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+        </select>
+      </div>
 
       {/* On a phone the email column is dropped rather than scrolled. A
           horizontally-scrolling table is a poor way to read a roster on a
@@ -140,76 +157,168 @@ export function OnyxPeople({ members, canEdit }: { members: Member[]; canEdit: b
               <th scope="col">Name</th>
               <th scope="col" className="hidden sm:table-cell">Email</th>
               <th scope="col">Role</th>
+              <th scope="col">Account</th>
               {canEdit ? <th scope="col"><span className="sr-only">Actions</span></th> : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
             {shown.map((m) => (
-              <tr key={m.id} className="hover:bg-brand-50/40">
-                <td className="px-4 py-3">
-                  <span className="flex items-center gap-2.5">
-                    {/* Initials, so a roster of forty reads as people rather
-                        than as forty lines of text. Decorative -- the name is
-                        right beside it, so a screen reader skips this. */}
-                    <span aria-hidden="true"
-                      className="grid h-8 w-8 shrink-0 place-items-center rounded-full
-                                 bg-gradient-to-br from-brand-500 to-brand-700 text-[11px]
-                                 font-bold text-white">
-                      {(m.user?.name ?? m.user?.email ?? '?').slice(0, 2).toUpperCase()}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate font-semibold">
-                        {m.user?.name ?? '—'}
+              <Fragment key={m.id}>
+                <tr className="hover:bg-brand-50/40">
+                  <td className="px-4 py-3">
+                    <span className="flex items-center gap-2.5">
+                      {/* Initials, so a roster of forty reads as people rather
+                          than as forty lines of text. Decorative -- the name is
+                          right beside it, so a screen reader skips this. */}
+                      <span aria-hidden="true"
+                        className="grid h-8 w-8 shrink-0 place-items-center rounded-full
+                                   bg-gradient-to-br from-brand-500 to-brand-700 text-[11px]
+                                   font-bold text-white">
+                        {(m.user?.name ?? m.user?.email ?? '?').slice(0, 2).toUpperCase()}
                       </span>
-                      {/* The address, folded under the name on a phone only. */}
-                      <span className="block truncate text-xs text-muted sm:hidden">
-                        {m.user?.email ?? ''}
+                      <span className="min-w-0">
+                        <span className="block truncate font-semibold">
+                          {m.user?.name ?? '—'}
+                        </span>
+                        {/* The address, folded under the name on a phone only. */}
+                        <span className="block truncate text-xs text-muted sm:hidden">
+                          {m.user?.email ?? ''}
+                        </span>
                       </span>
                     </span>
-                  </span>
-                </td>
-                <td className="hidden px-4 py-3 text-muted sm:table-cell">
-                  {m.user?.email ?? '—'}
-                </td>
-                <td className="px-4 py-3">
-                  {canEdit ? (
-                    <select
-                      aria-label={'Role for ' + (m.user?.name ?? 'this member')}
-                      defaultValue={m.role}
-                      disabled={pending}
-                      className={field}
-                      onChange={(e) => call('members/' + m.id, {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ role: e.target.value }),
-                      }, 'Role updated.')}
-                    >
-                      {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-                    </select>
-                  ) : ROLE_LABELS[m.role]}
-                </td>
-                {canEdit ? (
-                  <td className="px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      disabled={pending}
-                      onClick={() => call('members/' + m.id, { method: 'DELETE' }, 'Removed.')}
-                      // rose-600 is 4.7:1 on white and would pass on its own,
-                      // but `disabled:opacity-50` halves it to ~2.4:1 while
-                      // the control is still rendered. A dimmed colour token
-                      // says "disabled" without taking the text below AA.
-                      className="text-sm font-medium text-rose-700 hover:underline
-                                 disabled:text-muted disabled:no-underline"
-                    >
-                      Remove
-                    </button>
                   </td>
+                  <td className="hidden px-4 py-3 text-muted sm:table-cell">
+                    {m.user?.email ?? '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    {canEdit ? (
+                      <select
+                        aria-label={'Role for ' + (m.user?.name ?? 'this member')}
+                        defaultValue={m.role}
+                        disabled={pending}
+                        className={field}
+                        onChange={(e) => call('members/' + m.id, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ role: e.target.value }),
+                        }, 'Role updated.')}
+                      >
+                        {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                      </select>
+                    ) : ROLE_LABELS[m.role]}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={'inline-flex items-center gap-1.5 text-[12.5px] font-semibold '
+                      + (m.user?.status === 1 ? 'text-emerald-700' : 'text-rose-700')}>
+                      <span aria-hidden="true" className={'h-1.5 w-1.5 rounded-full '
+                        + (m.user?.status === 1 ? 'bg-emerald-600' : 'bg-rose-600')} />
+                      {m.user?.status === 1 ? 'Active' : 'Disabled'}
+                    </span>
+                  </td>
+                  {canEdit ? (
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex justify-end gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setEditingId(editingId === m.id ? null : m.id)}
+                          className="text-sm font-medium text-brand-700 hover:underline"
+                        >
+                          {editingId === m.id ? 'Close' : 'Edit'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() => call('members/' + m.id, { method: 'DELETE' }, 'Removed.')}
+                          // rose-600 is 4.7:1 on white and would pass on its own,
+                          // but `disabled:opacity-50` halves it to ~2.4:1 while
+                          // the control is still rendered. A dimmed colour token
+                          // says "disabled" without taking the text below AA.
+                          className="text-sm font-medium text-rose-700 hover:underline
+                                     disabled:text-muted disabled:no-underline"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </td>
+                  ) : null}
+                </tr>
+                {canEdit && editingId === m.id ? (
+                  <tr key={m.id + '-edit'}>
+                    <td colSpan={5} className="bg-slate-50 px-4 py-3.5">
+                      <form
+                        className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const data = new FormData(e.currentTarget);
+                          call('members/' + m.id, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              name: String(data.get('name') ?? ''),
+                              email: String(data.get('email') ?? ''),
+                              phone: String(data.get('phone') ?? '') || null,
+                              account_status: Number(data.get('account_status')),
+                            }),
+                          }, 'Updated.');
+                          setEditingId(null);
+                        }}
+                      >
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700"
+                            htmlFor={'pe-name-' + m.id}>
+                            Name
+                          </label>
+                          <input id={'pe-name-' + m.id} name="name" defaultValue={m.user?.name}
+                            required maxLength={255} className={field + ' mt-1 w-full'} />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700"
+                            htmlFor={'pe-email-' + m.id}>
+                            Email
+                          </label>
+                          <input id={'pe-email-' + m.id} name="email" type="email"
+                            defaultValue={m.user?.email} required
+                            className={field + ' mt-1 w-full'} />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700"
+                            htmlFor={'pe-phone-' + m.id}>
+                            Phone
+                          </label>
+                          <input id={'pe-phone-' + m.id} name="phone"
+                            defaultValue={m.user?.phone ?? ''} className={field + ' mt-1 w-full'} />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-slate-700"
+                            htmlFor={'pe-status-' + m.id}>
+                            Account
+                          </label>
+                          <select id={'pe-status-' + m.id} name="account_status"
+                            defaultValue={m.user?.status ?? 1} className={field + ' mt-1 w-full'}>
+                            <option value={1}>Active</option>
+                            <option value={0}>Disabled</option>
+                          </select>
+                        </div>
+                        <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-4">
+                          <button type="submit" disabled={pending}
+                            className="rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium
+                                       text-white hover:bg-brand-700 disabled:opacity-50">
+                            {pending ? 'Saving…' : 'Save'}
+                          </button>
+                          <button type="button" onClick={() => setEditingId(null)}
+                            className="rounded-lg border border-slate-300 px-4 py-2 text-sm">
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    </td>
+                  </tr>
                 ) : null}
-              </tr>
+              </Fragment>
             ))}
             {shown.length === 0 ? (
               <tr>
-                <td colSpan={canEdit ? 4 : 3} className="px-4 py-8 text-center text-muted">
+                <td colSpan={canEdit ? 5 : 4} className="px-4 py-8 text-center text-muted">
                   {members.length === 0 ? 'Nobody here yet.' : 'Nobody matches that.'}
                 </td>
               </tr>

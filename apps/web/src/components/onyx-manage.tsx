@@ -22,7 +22,7 @@ const btn = 'rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-bold text-white '
 const ghost = 'rounded-xl border border-line px-3 py-2 text-sm font-semibold';
 
 async function send(path: string, body?: unknown,
-  method: 'POST' | 'PUT' | 'DELETE' = 'POST') {
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'POST') {
   const res = await fetch('/api/proxy/onyx/' + path, {
     method,
     headers: body !== undefined ? { 'Content-Type': 'application/json' } : {},
@@ -165,6 +165,348 @@ export function EnterMarks({ examId, maxMarks, candidates }: {
         ) : null}
       </ul>
     </Shell>
+  );
+}
+
+/**
+ * Editing the exam record itself -- title, timing, marks scheme, status.
+ * `PATCH /api/onyx/exams/:id` is examinations-office only (canRunExams: admin
+ * or exams), same gate as scheduling it in the first place. Deliberately does
+ * not re-run the clash check `schedule()` does; see the service for why.
+ */
+export function ExamEditForm({ examId, exam }: {
+  examId: number;
+  exam: {
+    title: string; starts_at: string; duration_minutes: number;
+    max_marks: number; pass_marks: number; status: string;
+  };
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  // <input type="datetime-local"> wants "YYYY-MM-DDTHH:mm" in local time, not
+  // the ISO string the API gives back.
+  const localValue = (iso: string) => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+      `T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        className="inline-flex min-h-[38px] items-center gap-2 rounded-2xl border border-line
+                   px-3.5 text-[13px] font-bold text-slate-700 hover:bg-brand-50">
+        <Icon name="edit" className="h-4 w-4" />Edit exam
+      </button>
+    );
+  }
+  return (
+    <form
+      className="w-full space-y-2.5 rounded-xl border border-line bg-white p-3.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const data = new FormData(e.currentTarget);
+        start(async () => {
+          setError(null);
+          const startsAt = String(data.get('starts_at') ?? '');
+          const res = await send('exams/' + examId, {
+            title: String(data.get('title') ?? ''),
+            starts_at: startsAt ? new Date(startsAt).toISOString() : null,
+            duration_minutes: Number(data.get('duration_minutes') || 0),
+            max_marks: Number(data.get('max_marks') || 0),
+            pass_marks: Number(data.get('pass_marks') || 0),
+            status: String(data.get('status') ?? ''),
+          }, 'PATCH');
+          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+          setOpen(false);
+          router.refresh();
+        });
+      }}
+    >
+      {error ? <p role="alert" className="text-xs text-rose-700">{error}</p> : null}
+      <div>
+        <label className="block text-xs font-semibold text-slate-700" htmlFor="ex-title">Title</label>
+        <input id="ex-title" name="title" defaultValue={exam.title} required maxLength={255}
+          className={input + ' mt-1 w-full'} />
+      </div>
+      <div className="grid grid-cols-2 gap-2.5">
+        <div>
+          <label className="block text-xs font-semibold text-slate-700" htmlFor="ex-starts">
+            Starts
+          </label>
+          <input id="ex-starts" name="starts_at" type="datetime-local"
+            defaultValue={localValue(exam.starts_at)} className={input + ' mt-1 w-full'} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-700" htmlFor="ex-duration">
+            Duration (min)
+          </label>
+          <input id="ex-duration" name="duration_minutes" type="number" min={5} max={600}
+            defaultValue={exam.duration_minutes} className={input + ' mt-1 w-full'} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2.5">
+        <div>
+          <label className="block text-xs font-semibold text-slate-700" htmlFor="ex-max">
+            Out of
+          </label>
+          <input id="ex-max" name="max_marks" type="number" min={1} max={1000}
+            defaultValue={exam.max_marks} className={input + ' mt-1 w-full'} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-700" htmlFor="ex-pass">
+            Pass mark
+          </label>
+          <input id="ex-pass" name="pass_marks" type="number" min={0} max={1000}
+            defaultValue={exam.pass_marks} className={input + ' mt-1 w-full'} />
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs font-semibold text-slate-700" htmlFor="ex-status">
+          Status
+        </label>
+        <select id="ex-status" name="status" defaultValue={exam.status}
+          className={input + ' mt-1 w-full'}>
+          <option value="draft">Draft</option>
+          <option value="scheduled">Scheduled</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+      <div className="flex gap-2 pt-1">
+        <button type="submit" disabled={pending} className={btn}>
+          {pending ? 'Saving…' : 'Save'}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className={ghost}>Cancel</button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Overriding one candidate's mark, in place in the register. Distinct from
+ * `EnterMarks` (which fills in blanks, in bulk, before publication) -- this
+ * is the dispute-resolution path: it works on a single mark, at any status,
+ * including a paper that has already been published. `updateMark()` on the
+ * API enforces the same examinations-office-only gate.
+ */
+export function MarkOverride({ markId, maxMarks, current }: {
+  markId: number; maxMarks: number; current: number | null;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(current === null ? '' : String(current));
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        className="rounded-md p-0.5 text-faint hover:bg-brand-50 hover:text-brand-600"
+        aria-label="Override this mark">
+        <Icon name="edit" className="h-3.5 w-3.5" />
+      </button>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input type="number" min={0} max={maxMarks} value={value} autoFocus
+        aria-label="Override mark" className={input + ' w-16 py-1 text-right'}
+        onChange={(e) => setValue(e.target.value)} />
+      <button type="button" disabled={pending}
+        className="rounded-md bg-brand-600 px-1.5 py-1 text-[11px] font-bold text-white
+                   disabled:opacity-60"
+        onClick={() => start(async () => {
+          setError(null);
+          if (value.trim() === '') { setError('Enter a mark.'); return; }
+          const res = await send('exam-marks/' + markId, { final_marks: Number(value) }, 'PATCH');
+          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+          setOpen(false); router.refresh();
+        })}>
+        {pending ? '…' : 'Save'}
+      </button>
+      <button type="button" onClick={() => setOpen(false)} aria-label="Cancel"
+        className="rounded-md p-1 text-faint hover:bg-slate-100">
+        <Icon name="x" className="h-3.5 w-3.5" />
+      </button>
+      {error ? <span role="alert" className="text-[11px] text-rose-700">{error}</span> : null}
+    </span>
+  );
+}
+
+/**
+ * Editing the assessment record itself -- title, window, pass mark, duration,
+ * status. `PATCH /api/onyx/assessments/:id` is open to the same STAFF set
+ * (admin/faculty/exams) that can already create and publish one.
+ */
+export function AssessmentEditForm({ assessmentId, assessment }: {
+  assessmentId: number;
+  assessment: {
+    title: string; opens_at: string | null; closes_at: string | null;
+    pass_mark: number | null; duration_minutes: number; status: string;
+  };
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  const localValue = (iso: string | null) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+      `T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        className="inline-flex min-h-[38px] items-center gap-2 rounded-2xl border border-line
+                   px-3.5 text-[13px] font-bold text-slate-700 hover:bg-brand-50">
+        <Icon name="edit" className="h-4 w-4" />Edit assessment
+      </button>
+    );
+  }
+  return (
+    <form
+      className="w-full space-y-2.5 rounded-xl border border-line bg-white p-3.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const data = new FormData(e.currentTarget);
+        start(async () => {
+          setError(null);
+          const opensAt = String(data.get('opens_at') ?? '');
+          const closesAt = String(data.get('closes_at') ?? '');
+          const passMark = String(data.get('pass_mark') ?? '');
+          const res = await send('assessments/' + assessmentId, {
+            title: String(data.get('title') ?? ''),
+            opens_at: opensAt ? new Date(opensAt).toISOString() : null,
+            closes_at: closesAt ? new Date(closesAt).toISOString() : null,
+            pass_mark: passMark.trim() === '' ? null : Number(passMark),
+            duration_minutes: Number(data.get('duration_minutes') || 0),
+            status: String(data.get('status') ?? ''),
+          }, 'PATCH');
+          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+          setOpen(false);
+          router.refresh();
+        });
+      }}
+    >
+      {error ? <p role="alert" className="text-xs text-rose-700">{error}</p> : null}
+      <div>
+        <label className="block text-xs font-semibold text-slate-700" htmlFor="as-title">Title</label>
+        <input id="as-title" name="title" defaultValue={assessment.title} required maxLength={255}
+          className={input + ' mt-1 w-full'} />
+      </div>
+      <div className="grid grid-cols-2 gap-2.5">
+        <div>
+          <label className="block text-xs font-semibold text-slate-700" htmlFor="as-opens">
+            Opens
+          </label>
+          <input id="as-opens" name="opens_at" type="datetime-local"
+            defaultValue={localValue(assessment.opens_at)} className={input + ' mt-1 w-full'} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-700" htmlFor="as-closes">
+            Closes
+          </label>
+          <input id="as-closes" name="closes_at" type="datetime-local"
+            defaultValue={localValue(assessment.closes_at)} className={input + ' mt-1 w-full'} />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2.5">
+        <div>
+          <label className="block text-xs font-semibold text-slate-700" htmlFor="as-duration">
+            Duration (min)
+          </label>
+          <input id="as-duration" name="duration_minutes" type="number" min={1} max={1440}
+            defaultValue={assessment.duration_minutes} className={input + ' mt-1 w-full'} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-700" htmlFor="as-pass">
+            Pass mark
+          </label>
+          <input id="as-pass" name="pass_mark" type="number" min={0}
+            defaultValue={assessment.pass_mark ?? ''} className={input + ' mt-1 w-full'} />
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs font-semibold text-slate-700" htmlFor="as-status">
+          Status
+        </label>
+        <select id="as-status" name="status" defaultValue={assessment.status}
+          className={input + ' mt-1 w-full'}>
+          <option value="draft">Draft</option>
+          <option value="published">Published</option>
+          <option value="closed">Closed</option>
+        </select>
+      </div>
+      <div className="flex gap-2 pt-1">
+        <button type="submit" disabled={pending} className={btn}>
+          {pending ? 'Saving…' : 'Save'}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className={ghost}>Cancel</button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Overriding one candidate's total score, in place in the results table.
+ * Distinct from `OnyxMarker`'s per-question marking -- this sets the paper's
+ * final score directly, the dispute-resolution path for a result that has
+ * already gone through the ordinary marking flow (including a published
+ * one). `overrideScore()` on the API enforces the same STAFF-only gate.
+ */
+export function ScoreOverride({ attemptId, maxScore, current }: {
+  attemptId: number; maxScore: number; current: number;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(String(current));
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        className="rounded-md p-0.5 text-faint hover:bg-brand-50 hover:text-brand-600"
+        aria-label="Override this score">
+        <Icon name="edit" className="h-3.5 w-3.5" />
+      </button>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input type="number" min={0} max={maxScore} value={value} autoFocus
+        aria-label="Override score" className={input + ' w-16 py-1 text-right'}
+        onChange={(e) => setValue(e.target.value)} />
+      <button type="button" disabled={pending}
+        className="rounded-md bg-brand-600 px-1.5 py-1 text-[11px] font-bold text-white
+                   disabled:opacity-60"
+        onClick={() => start(async () => {
+          setError(null);
+          if (value.trim() === '') { setError('Enter a score.'); return; }
+          const res = await send('attempts/' + attemptId + '/score', { score: Number(value) },
+            'PATCH');
+          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+          setOpen(false); router.refresh();
+        })}>
+        {pending ? '…' : 'Save'}
+      </button>
+      <button type="button" onClick={() => setOpen(false)} aria-label="Cancel"
+        className="rounded-md p-1 text-faint hover:bg-slate-100">
+        <Icon name="x" className="h-3.5 w-3.5" />
+      </button>
+      {error ? <span role="alert" className="text-[11px] text-rose-700">{error}</span> : null}
+    </span>
   );
 }
 
@@ -947,5 +1289,336 @@ export function SemesterPicker({ semesters, selected }: {
         </select>
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------ course: who teaches it --- */
+
+/**
+ * A course is run by one or two people, not a crowd -- the cap is enforced
+ * server-side (AcademicsService.assignFaculty()), this just shows the reason
+ * rather than letting a submit fail with no explanation. Read-only for
+ * co-faculty (they can see who else teaches with them); assign/remove is
+ * an administrator's call.
+ */
+export function CourseFacultyManager({ courseId, current, options, canManage }: {
+  courseId: number;
+  current: { user_id: number; name: string }[];
+  options: { id: number; name: string }[];
+  canManage: boolean;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [userId, setUserId] = useState('');
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  const remaining = options.filter((o) => !current.some((c) => c.user_id === o.id));
+  const atCap = current.length >= 2;
+
+  return (
+    <div className="space-y-2.5">
+      {current.length === 0 ? (
+        <p className="text-sm text-muted">Nobody is assigned to teach this course yet.</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {current.map((f) => (
+            <li key={f.user_id}
+              className="flex items-center justify-between gap-2 rounded-xl border border-line
+                         bg-white px-3 py-2 text-sm">
+              <span className="font-semibold">{f.name}</span>
+              {canManage ? (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => start(async () => {
+                    setError(null);
+                    const res = await send(
+                      'courses/' + courseId + '/faculty/' + f.user_id, undefined, 'DELETE');
+                    if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+                    router.refresh();
+                  })}
+                  className="text-xs font-semibold text-rose-700 hover:underline disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+      {error ? <p role="alert" className="text-xs text-rose-700">{error}</p> : null}
+
+      {!canManage ? null : atCap ? (
+        <p className="text-xs text-muted">
+          This course already has two faculty -- remove one before assigning another.
+        </p>
+      ) : open ? (
+        <form
+          className="space-y-2 rounded-xl border border-line bg-white p-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!userId) return;
+            start(async () => {
+              setError(null);
+              const res = await send(
+                'courses/' + courseId + '/faculty', { user_id: Number(userId) });
+              if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+              setOpen(false); setUserId('');
+              router.refresh();
+            });
+          }}
+        >
+          <select value={userId} onChange={(e) => setUserId(e.target.value)} required
+            className={input + ' w-full'}>
+            <option value="">Choose a faculty member</option>
+            {remaining.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
+          <div className="flex gap-2">
+            <button type="submit" disabled={pending || !remaining.length} className={btn}>
+              {pending ? 'Assigning…' : 'Assign'}
+            </button>
+            <button type="button" onClick={() => setOpen(false)} className={ghost}>Cancel</button>
+          </div>
+        </form>
+      ) : (
+        <button type="button" onClick={() => setOpen(true)} disabled={!remaining.length}
+          className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-3 py-2 text-[13px]
+                     font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
+          <Icon name="users" className="h-4 w-4" />
+          {remaining.length ? 'Assign a teacher' : 'No other faculty to assign'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* --------------------------------------------------- course: who is on it --- */
+
+/**
+ * The roster, with a way to change it. Enrolling a student here is an
+ * administrator's act OR this specific course's own faculty -- the same
+ * boundary the API enforces (learn.routes.ts's requireCourseManager), not a
+ * tenant-wide "any faculty" hole.
+ */
+export function CourseRosterManager({ courseId, roster, options, canManage }: {
+  courseId: number;
+  roster: { user_id: number; name: string; email: string }[];
+  options: { id: number; name: string }[];
+  canManage: boolean;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [userId, setUserId] = useState('');
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  const remaining = options.filter((o) => !roster.some((r) => r.user_id === o.id));
+
+  return (
+    <div className="space-y-2.5">
+      {roster.length === 0 ? (
+        <p className="text-sm text-muted">Nobody is enrolled in this course yet.</p>
+      ) : (
+        <ul className="max-h-72 space-y-1.5 overflow-y-auto">
+          {roster.map((r) => (
+            <li key={r.user_id}
+              className="flex items-center justify-between gap-2 rounded-xl border border-line
+                         bg-white px-3 py-2 text-sm">
+              <span className="min-w-0">
+                <span className="block truncate font-semibold">{r.name}</span>
+                <span className="block truncate text-xs text-muted">{r.email}</span>
+              </span>
+              {canManage ? (
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => start(async () => {
+                    setError(null);
+                    const res = await send(
+                      'courses/' + courseId + '/enroll/' + r.user_id, undefined, 'DELETE');
+                    if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+                    router.refresh();
+                  })}
+                  className="shrink-0 text-xs font-semibold text-rose-700 hover:underline
+                             disabled:opacity-50"
+                >
+                  Withdraw
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+      {error ? <p role="alert" className="text-xs text-rose-700">{error}</p> : null}
+
+      {!canManage ? null : open ? (
+        <form
+          className="space-y-2 rounded-xl border border-line bg-white p-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!userId) return;
+            start(async () => {
+              setError(null);
+              const res = await send('courses/' + courseId + '/enroll', { user_id: Number(userId) });
+              if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+              setOpen(false); setUserId('');
+              router.refresh();
+            });
+          }}
+        >
+          <select value={userId} onChange={(e) => setUserId(e.target.value)} required
+            className={input + ' w-full'}>
+            <option value="">Choose a student</option>
+            {remaining.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
+          <div className="flex gap-2">
+            <button type="submit" disabled={pending || !remaining.length} className={btn}>
+              {pending ? 'Enrolling…' : 'Enrol'}
+            </button>
+            <button type="button" onClick={() => setOpen(false)} className={ghost}>Cancel</button>
+          </div>
+        </form>
+      ) : (
+        <button type="button" onClick={() => setOpen(true)} disabled={!remaining.length}
+          className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-3 py-2 text-[13px]
+                     font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
+          <Icon name="users" className="h-4 w-4" />
+          {remaining.length ? 'Enrol a student' : 'Every student is already enrolled'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* --------------------------------------------------------- timetable slot --- */
+
+/**
+ * `DELETE /api/onyx/timetable/:id` has always existed; nothing on the grid
+ * called it, so a wrongly-scheduled class was permanent -- fixable only by
+ * publishing over it with a correction that left the original still sitting
+ * there, unpublished but never gone.
+ */
+export function TimetableSlotDelete({ slotId }: { slotId: number }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [confirming, setConfirming] = useState(false);
+
+  if (!confirming) {
+    return (
+      <button type="button" onClick={() => setConfirming(true)}
+        className="absolute right-1 top-1 rounded-md p-0.5 text-current opacity-60
+                   hover:bg-white/60 hover:opacity-100" aria-label="Remove this session">
+        <Icon name="x" className="h-3 w-3" />
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      onClick={() => start(async () => {
+        const res = await send('timetable/' + slotId, undefined, 'DELETE');
+        if (!res.ok) { setConfirming(false); return; }
+        router.refresh();
+      })}
+      className="absolute right-1 top-1 rounded-md bg-rose-600 px-1.5 py-0.5 text-[10px]
+                 font-bold text-white disabled:opacity-60"
+    >
+      {pending ? '…' : 'Sure?'}
+    </button>
+  );
+}
+
+/* --------------------------------------------------- course: its own facts --- */
+
+/**
+ * Editing a course's own fields. `PATCH /api/onyx/courses/:id` has always
+ * existed -- it was wired into the platform console's operator view months
+ * before it was wired in here, which meant an institution's own admin had no
+ * way to fix a course's title or credits without asking a platform operator
+ * to do it from outside. Same endpoint, same validation, this is its first
+ * tenant-side door.
+ */
+export function CourseSettingsForm({ courseId, course }: {
+  courseId: number;
+  course: {
+    title: string; code: string; credits: number; description: string | null;
+    self_enroll: number;
+  };
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-2 rounded-xl border border-line px-3 py-2
+                   text-[13px] font-semibold text-slate-700 hover:bg-brand-50">
+        <Icon name="edit" className="h-4 w-4" />Edit course details
+      </button>
+    );
+  }
+  return (
+    <form
+      className="space-y-2.5 rounded-xl border border-line bg-white p-3.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const data = new FormData(e.currentTarget);
+        start(async () => {
+          setError(null);
+          const res = await send('courses/' + courseId, {
+            title: String(data.get('title') ?? ''),
+            code: String(data.get('code') ?? ''),
+            credits: Number(data.get('credits') || 0),
+            description: String(data.get('description') ?? '') || null,
+            self_enroll: data.get('self_enroll') === 'on',
+          }, 'PATCH');
+          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+          setOpen(false);
+          router.refresh();
+        });
+      }}
+    >
+      {error ? <p role="alert" className="text-xs text-rose-700">{error}</p> : null}
+      <div>
+        <label className="block text-xs font-semibold text-slate-700" htmlFor="cs-title">Title</label>
+        <input id="cs-title" name="title" defaultValue={course.title} required maxLength={255}
+          className={input + ' mt-1 w-full'} />
+      </div>
+      <div className="grid grid-cols-2 gap-2.5">
+        <div>
+          <label className="block text-xs font-semibold text-slate-700" htmlFor="cs-code">Code</label>
+          <input id="cs-code" name="code" defaultValue={course.code} required maxLength={50}
+            className={input + ' mt-1 w-full'} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-700" htmlFor="cs-credits">
+            Credits
+          </label>
+          <input id="cs-credits" name="credits" type="number" min={0}
+            defaultValue={course.credits} className={input + ' mt-1 w-full'} />
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs font-semibold text-slate-700" htmlFor="cs-description">
+          Description
+        </label>
+        <textarea id="cs-description" name="description" rows={3}
+          defaultValue={course.description ?? ''} className={input + ' mt-1 w-full'} />
+      </div>
+      <label className="flex items-center gap-2 text-sm text-slate-700">
+        <input type="checkbox" name="self_enroll" defaultChecked={course.self_enroll === 1} />
+        Students can enrol themselves
+      </label>
+      <div className="flex gap-2 pt-1">
+        <button type="submit" disabled={pending} className={btn}>
+          {pending ? 'Saving…' : 'Save'}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className={ghost}>Cancel</button>
+      </div>
+    </form>
   );
 }

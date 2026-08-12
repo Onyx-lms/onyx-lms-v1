@@ -8,6 +8,7 @@ import {
   ActionLink, Banner, Buckets, Card, CardGrid, DataTable, EmptyRow, Icon, Meter, Pill,
   Score, SectionHead, StackBar, State, StatTile,
 } from '@/components/onyx-ui';
+import { ScoreOverride } from '@/components/onyx-manage';
 
 export const metadata: Metadata = { title: 'Results' };
 
@@ -281,8 +282,14 @@ export default async function OnyxResultsPage({ params }: { params: Promise<{ id
                   {/* The band is never the only signal: the number lives
                       inside the chip, so the chip is emphasis and not
                       information anyone can be locked out of. */}
-                  <td><Score value={c.score} outOf={c.max_score}
-                    band={c.passed === false ? 'lo' : undefined} /></td>
+                  <td>
+                    <span className="inline-flex items-center gap-1">
+                      <Score value={c.score} outOf={c.max_score}
+                        band={c.passed === false ? 'lo' : undefined} />
+                      <ScoreOverride attemptId={c.attempt_id} maxScore={c.max_score}
+                        current={c.score} />
+                    </span>
+                  </td>
                   <td className="tabular-nums">{c.percent}%</td>
                   <td>
                     {c.passed === null

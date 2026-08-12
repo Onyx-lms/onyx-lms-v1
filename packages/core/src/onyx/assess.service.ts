@@ -315,6 +315,57 @@ export class AssessService {
     return data;
   }
 
+  /** Correct an assessment's own fields -- title, window, pass mark,
+   * duration. Auditing happens at the route, the same as this file's other
+   * writes (createAssessment, publish) -- this service has no AuditService
+   * of its own to call. */
+  async updateAssessment(tenantId: number, id: number, patch: {
+    title?: string; opens_at?: string | null; closes_at?: string | null;
+    pass_mark?: number | null; duration_minutes?: number; status?: string;
+  }) {
+    const current = await this.assessment(tenantId, id);
+    if (patch.opens_at !== undefined && patch.closes_at !== undefined
+      && patch.opens_at && patch.closes_at
+      && Date.parse(patch.closes_at) <= Date.parse(patch.opens_at)) {
+      throw new HttpError(422, 'The window closes before it opens.');
+    }
+
+    const before: Record<string, unknown> = {};
+    const after: Record<string, unknown> = {};
+    for (const key of
+      ['title', 'opens_at', 'closes_at', 'pass_mark', 'duration_minutes', 'status'] as const) {
+      const value = patch[key];
+      if (value !== undefined && value !== current[key]) {
+        before[key] = current[key]; after[key] = value;
+      }
+    }
+    if (!Object.keys(after).length) return { assessment: current, before, after };
+
+    const { data, error } = await this.#db.from('onyx_assessments')
+      .update({ ...after, updated_at: new Date(this.#now()).toISOString() })
+      .eq('tenant_id', tenantId).eq('id', id).select(ASSESSMENT_COLUMNS).maybeSingle();
+    if (error) throw new HttpError(500, 'Could not update the assessment: ' + error.message);
+    return { assessment: data, before, after };
+  }
+
+  /** Override one attempt's score directly -- a dispute or a data-entry fix,
+   * separate from mark() below, which is the marker's rubric-driven pass. */
+  async overrideScore(tenantId: number, attemptId: number, score: number) {
+    const { data: attempt } = await this.#db.from('onyx_assessment_attempts')
+      .select('id, tenant_id, max_score, score').eq('tenant_id', tenantId).eq('id', attemptId)
+      .maybeSingle();
+    if (!attempt) throw new HttpError(404, 'No such attempt.');
+    const maxScore = Number(attempt.max_score ?? 0);
+    if (maxScore > 0 && (score < 0 || score > maxScore)) {
+      throw new HttpError(422, 'A score has to be between 0 and ' + maxScore + '.');
+    }
+    const before = { score: attempt.score };
+    await this.#db.from('onyx_assessment_attempts')
+      .update({ score, manual_score: score, updated_at: new Date(this.#now()).toISOString() })
+      .eq('id', attemptId);
+    return { id: attemptId, score, before };
+  }
+
   async assessments(tenantId: number, role: Role, courseId?: number) {
     const staff = role === 'admin' || role === 'faculty' || role === 'exams';
     let q = this.#db.from('onyx_assessments').select(ASSESSMENT_COLUMNS).eq('tenant_id', tenantId);
