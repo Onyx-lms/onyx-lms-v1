@@ -10,10 +10,22 @@ import { useState, useTransition } from 'react';
  * cookie this origin owns, so no token ever touches page scripts.
  */
 
-const field = 'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm '
-  + 'focus:border-slate-900 focus:outline-none';
-const label = 'block text-sm font-medium text-slate-700';
-const button = 'w-full rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white '
+/*
+ * The controls, given the same weight as the rest of the product.
+ *
+ * `min-h-[46px]` rather than `py-2`: a sign-in field is the first thing a
+ * candidate touches on a phone, and 44px is the floor a target should meet.
+ * The focus ring is brand-600 (7.11:1) instead of the old `focus:border-
+ * slate-900`, which moved a 1px border and was easy to miss -- WCAG 2.4.7
+ * wants focus to be visible, not merely present.
+ */
+const field = 'mt-1.5 block min-h-[46px] w-full rounded-xl border border-line bg-white px-3.5 '
+  + 'text-[15px] text-ink transition placeholder:text-muted '
+  + 'hover:border-slate-300 focus:border-brand-500 focus:outline-none focus:ring-2 '
+  + 'focus:ring-brand-600/25';
+const label = 'block text-[13.5px] font-semibold text-slate-700';
+const button = 'inline-flex min-h-[46px] w-full items-center justify-center rounded-xl '
+  + 'bg-brand-600 px-4 text-[15px] font-bold text-white shadow-card transition '
   + 'hover:bg-brand-700 disabled:opacity-50';
 
 function Error_({ message }: { message: string | null }) {

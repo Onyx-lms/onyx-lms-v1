@@ -12,11 +12,17 @@ import { useState, useTransition } from 'react';
  * than a tenant cookie -- there is no tenant to attach here.
  */
 
-const field = 'mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm '
-  + 'focus:border-slate-900 focus:outline-none';
-const label = 'block text-sm font-medium text-slate-700';
-const button = 'rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white '
-  + 'hover:bg-brand-700 disabled:opacity-50';
+/* Matched to onyx-auth-forms: two doors that look like different products are
+   two doors somebody mistrusts. The button is ink here rather than teal,
+   because that is what distinguishes this console everywhere else. */
+const field = 'mt-1.5 block min-h-[46px] w-full rounded-xl border border-line bg-white px-3.5 '
+  + 'text-[15px] text-ink transition placeholder:text-muted '
+  + 'hover:border-slate-300 focus:border-slate-500 focus:outline-none focus:ring-2 '
+  + 'focus:ring-ink/20';
+const label = 'block text-[13.5px] font-semibold text-slate-700';
+const button = 'inline-flex min-h-[46px] w-full items-center justify-center rounded-xl bg-ink '
+  + 'px-4 text-[15px] font-bold text-white shadow-card transition hover:bg-slate-800 '
+  + 'disabled:opacity-50';
 
 function Error_({ message }: { message: string | null }) {
   if (!message) return null;
