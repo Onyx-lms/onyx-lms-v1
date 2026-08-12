@@ -69,14 +69,14 @@ const I = {
 const NAV: Record<Role, OnyxNavGroup[]> = {
   student: [
     { items: [I.dashboard, I.courses, I.practice, I.spaces] },
-    { label: 'Assessment', items: [I.assess, I.results, I.contests] },
+    { label: 'Assessment', items: [I.assess, I.exams, I.results, I.contests] },
     { label: 'Campus', items: [I.timetable, I.fees, I.support] },
     { label: 'Career', items: [I.jobs, I.interviews, I.profile] },
     { items: [I.inbox] },
   ],
   faculty: [
     { items: [I.dashboard, I.courses, I.practice, I.spaces] },
-    { label: 'Assessment', items: [I.assess, I.invigilate] },
+    { label: 'Assessment', items: [I.assess, I.exams, I.invigilate] },
     { label: 'Teaching', items: [I.programs, I.timetable, I.allocate, I.people] },
     { label: 'Support', items: [I.mentor, I.inbox] },
   ],

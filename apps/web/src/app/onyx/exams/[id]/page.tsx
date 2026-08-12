@@ -67,18 +67,28 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
     onyxApi<Me>('/api/onyx/me'),
     onyxApi<Exam>('/api/onyx/exams/' + id),
   ]);
+  // `staff` runs the examinations office: scheduling, seating, moderation,
+  // publication -- EXAM_STAFF on both the API and here. `canMark` is wider:
+  // examinations.service.ts's enterMarks() and marksForExam() have always
+  // let a course's own faculty in too (grep EXAM_STAFF there, then
+  // `role !== 'faculty'`), so a faculty member could already enter marks
+  // through the API. This page just never gave them a way to reach it.
   const staff = EXAM_STAFF.includes(me.role);
+  const canMark = staff || me.role === 'faculty';
 
   const [seat, plan, halls, marks, roster, members] = await Promise.all([
-    staff ? null : onyxApiSafe<Seat>('/api/onyx/exams/' + id + '/seat'),
+    canMark ? null : onyxApiSafe<Seat>('/api/onyx/exams/' + id + '/seat'),
+    // The seating plan itself stays staff-only on the API (every candidate's
+    // name against a room and a seat) -- faculty get the marks register
+    // below instead, not this.
     staff ? onyxApiSafe<SeatingPlan>('/api/onyx/exams/' + id + '/seating') : null,
     staff ? onyxApiSafe<Hall[]>('/api/onyx/halls') : null,
-    staff ? onyxApiSafe<ExamMark[]>('/api/onyx/exams/' + id + '/marks') : null,
+    canMark ? onyxApiSafe<ExamMark[]>('/api/onyx/exams/' + id + '/marks') : null,
     // Who sits this paper: whoever is enrolled on the course it belongs to.
     // The roster is enrolments only, so names come from the member list.
-    staff ? onyxApiSafe<{ user_id: number }[]>(
+    canMark ? onyxApiSafe<{ user_id: number }[]>(
       '/api/onyx/courses/' + exam.course_id + '/roster') : null,
-    staff ? onyxApiSafe<{ user_id: number; user: { name: string } | null }[]>(
+    canMark ? onyxApiSafe<{ user_id: number; user: { name: string } | null }[]>(
       '/api/onyx/members') : null,
   ]);
 
@@ -141,38 +151,45 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
           {exam.status === 'cancelled'
             ? <Pill tone="late">Cancelled</Pill>
             : exam.status === 'draft' ? <Pill tone="neutral">Draft</Pill> : null}
-          {staff && exam.status !== 'cancelled' ? <Stepper steps={steps} /> : null}
+          {canMark && exam.status !== 'cancelled' ? <Stepper steps={steps} /> : null}
         </div>
 
         {/* CMP-02 end to end: seat the hall, enter the marks, moderate them,
             publish the results. Every step already existed on the API and had
-            no way to reach it from a browser. */}
-        {staff ? (
+            no way to reach it from a browser. Seating/moderation/publication
+            stay staff-only (examinations office); marking is wider -- a
+            faculty member marking their own course's paper is the ordinary
+            case, not the exception. */}
+        {canMark ? (
           <div className="flex flex-wrap items-start gap-2">
-            <AllocateSeating examId={Number(id)} halls={halls ?? []} />
+            {staff ? <AllocateSeating examId={Number(id)} halls={halls ?? []} /> : null}
             <EnterMarks examId={Number(id)} maxMarks={exam.max_marks}
               candidates={candidates} />
-            <CreatePanel
-              title="Moderate this paper" cta="Moderate" icon="chart" compact
-              endpoint={'exams/' + id + '/moderate'}
-              fields={[
-                { name: 'delta', label: 'Add to every mark', type: 'number',
-                  min: -100, max: 100, required: true,
-                  help: 'The raw mark is kept; this is recorded beside it.' },
-                { name: 'reason', label: 'Reason', required: true, wide: true,
-                  placeholder: 'Paper harder than intended' },
-              ]}
-            />
-            {published ? (
-              <span className="inline-flex min-h-[38px] items-center gap-1.5 rounded-2xl
-                               bg-green-50 px-3.5 text-[13px] font-bold text-green-700">
-                <Icon name="check" className="h-4 w-4" />
-                Results published
-              </span>
-            ) : (
-              <ActionButton endpoint={'exams/' + id + '/publish'} label="Publish results"
-                confirm="Publish results to every candidate?" />
-            )}
+            {staff ? (
+              <CreatePanel
+                title="Moderate this paper" cta="Moderate" icon="chart" compact
+                endpoint={'exams/' + id + '/moderate'}
+                fields={[
+                  { name: 'delta', label: 'Add to every mark', type: 'number',
+                    min: -100, max: 100, required: true,
+                    help: 'The raw mark is kept; this is recorded beside it.' },
+                  { name: 'reason', label: 'Reason', required: true, wide: true,
+                    placeholder: 'Paper harder than intended' },
+                ]}
+              />
+            ) : null}
+            {staff ? (
+              published ? (
+                <span className="inline-flex min-h-[38px] items-center gap-1.5 rounded-2xl
+                                 bg-green-50 px-3.5 text-[13px] font-bold text-green-700">
+                  <Icon name="check" className="h-4 w-4" />
+                  Results published
+                </span>
+              ) : (
+                <ActionButton endpoint={'exams/' + id + '/publish'} label="Publish results"
+                  confirm="Publish results to every candidate?" />
+              )
+            ) : null}
           </div>
         ) : null}
 
@@ -184,6 +201,9 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
           {staff ? (
             <StatTile label="Seats used" value={plan?.total ?? 0}
               note={candidates.length + ' on the roster'} />
+          ) : canMark ? (
+            <StatTile label="Marked" value={marked}
+              note={candidates.length + ' on the roster'} />
           ) : (
             <StatTile label="Pass mark" value={exam.pass_marks} />
           )}
@@ -194,7 +214,7 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
             phone, instead of the table scrolling inside its own box. */}
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_290px] lg:items-start">
           <div className="min-w-0 space-y-6">
-            {!staff ? (
+            {!canMark ? (
               seat ? (
                 <Card className="p-4">
                   <div className="text-[10.5px] font-bold uppercase tracking-[.08em] text-muted">
@@ -210,6 +230,55 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
                   <Empty icon="calendar">Seating has not been published yet.</Empty>
                 </Card>
               )
+            ) : !staff ? (
+              /* Faculty: the register they actually need -- who is on the
+                 course and what they got, not the hall-by-hall seating plan,
+                 which stays an examinations-office document (see the
+                 /seating guard's comment above). */
+              <section>
+                <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-3">
+                  <h2 className="text-[11.5px] font-bold uppercase tracking-[.085em] text-muted">
+                    Candidates &mdash; {candidates.length} on the roster
+                  </h2>
+                </div>
+                <div tabIndex={0} role="region" aria-label="Candidates and marks">
+                  <DataTable
+                    caption="Candidates enrolled on this course, and their mark for this paper."
+                    head={
+                      <>
+                        <th scope="col">Candidate</th>
+                        <th scope="col">Grade</th>
+                        <th scope="col">Mark</th>
+                      </>
+                    }
+                  >
+                    {candidates.length === 0 ? (
+                      <EmptyRow colSpan={3} icon="users">
+                        Nobody is enrolled on this course yet.
+                      </EmptyRow>
+                    ) : candidates.map((c) => {
+                      const m = markOf.get(c.user_id);
+                      return (
+                        <tr key={c.user_id}>
+                          <td className="font-semibold">{c.name}</td>
+                          <td className="text-[13px] text-muted">
+                            {m?.grade ?? <span aria-hidden>&mdash;</span>}
+                            {m ? null : <span className="sr-only">Not marked</span>}
+                          </td>
+                          <td>
+                            {m ? (
+                              <Score value={m.final_marks} outOf={exam.max_marks}
+                                band={m.final_marks >= exam.pass_marks ? 'hi' : 'lo'} />
+                            ) : (
+                              <Score value="—" band="none" />
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </DataTable>
+                </div>
+              </section>
             ) : plan && plan.total > 0 ? (
               <section>
                 <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-3">
@@ -293,7 +362,7 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
           </div>
 
           <aside className="min-w-0 space-y-6">
-            {staff ? (
+            {canMark ? (
               <section>
                 <SectionHead title="Marking" />
                 <Card className="p-4">
