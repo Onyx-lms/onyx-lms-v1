@@ -2,10 +2,36 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: light dark; }
+/*
+ * `light`, not `light dark`.
+ *
+ * This used to claim both, and the claim was false: there is not one `dark:`
+ * style in the application. Every surface is a hardcoded light one. What the
+ * declaration actually did was tell the browser "I handle dark mode", so on a
+ * phone set to dark it rendered the controls IT owns -- inputs, selects,
+ * textareas -- with dark defaults while everything we style stayed white.
+ *
+ * The result on the sign-in page was a black field with the body's dark slate
+ * text still inside it: background rgb(59,59,59) against text rgb(30,41,59),
+ * about 1.1:1, so a candidate could not read their own email address as they
+ * typed it. Declaring the truth fixes it everywhere at once.
+ */
+:root { color-scheme: light; }
 
 @layer base {
   body { @apply bg-white text-slate-800 antialiased; }
+
+  /*
+   * And belt-and-braces for the controls themselves.
+   *
+   * These live in @layer base, so any explicit background or text utility on
+   * an element still wins -- this only replaces the user agent's default,
+   * which is the thing that follows the platform theme. It also covers Android
+   * Chrome's "auto dark theme", which will re-tint an unstyled control even
+   * when color-scheme says light.
+   */
+  input, select, textarea { @apply bg-white text-ink; }
+  input::placeholder, textarea::placeholder { @apply text-muted; }
 
   /*
    * WCAG 2.2 AA -- 2.4.7 Focus Visible and 2.4.11 Focus Not Obscured.
