@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { requirePlatformSession } from '@/lib/onyx-platform-session';
 import {
-  attempt, DueCell, SCROLLER, Unavailable, Workflow, type AcademicsPayload,
+  attempt, DueCell, SCROLLER, TenantBackLink, Unavailable, Workflow, type AcademicsPayload,
 } from '@/lib/onyx-platform-tenant';
 import {
   CreateAssignmentForm, AssignmentEditToggle, AssignmentSubmissionsToggle,
@@ -23,6 +23,7 @@ export default async function OnyxPlatformAssignmentsPage(
 
   return (
     <div className="min-w-0 space-y-4">
+      <TenantBackLink tenantId={tenantId} />
       <CreateAssignmentForm tenantId={tenantId} courses={courses} />
 
       {academics === null ? <Unavailable what="assignment list" /> : (

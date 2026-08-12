@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { requirePlatformSession } from '@/lib/onyx-platform-session';
 import {
-  attempt, DueCell, SCROLLER, Unavailable, Workflow, type AcademicsPayload, type Semester,
+  attempt, DueCell, SCROLLER, TenantBackLink, Unavailable, Workflow,
+  type AcademicsPayload, type Semester,
 } from '@/lib/onyx-platform-tenant';
 import { CreateExamForm, ExamEditToggle } from '@/components/onyx-platform-forms';
 import { DataTable, EmptyRow } from '@/components/onyx-ui';
@@ -24,6 +25,7 @@ export default async function OnyxPlatformExamsPage(
 
   return (
     <div className="min-w-0 space-y-4">
+      <TenantBackLink tenantId={tenantId} />
       <CreateExamForm tenantId={tenantId} courses={courses} semesters={semesters ?? []} />
 
       {academics === null ? <Unavailable what="examination list" /> : (

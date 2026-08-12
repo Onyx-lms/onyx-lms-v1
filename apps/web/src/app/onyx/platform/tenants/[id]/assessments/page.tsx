@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { requirePlatformSession } from '@/lib/onyx-platform-session';
 import {
-  attempt, DueCell, SCROLLER, Unavailable, Workflow, type AcademicsPayload,
+  attempt, DueCell, SCROLLER, TenantBackLink, Unavailable, Workflow, type AcademicsPayload,
 } from '@/lib/onyx-platform-tenant';
 import { CreateAssessmentForm, AssessmentEditToggle } from '@/components/onyx-platform-forms';
 import { DataTable, EmptyRow } from '@/components/onyx-ui';
@@ -21,6 +21,7 @@ export default async function OnyxPlatformAssessmentsPage(
 
   return (
     <div className="min-w-0 space-y-4">
+      <TenantBackLink tenantId={tenantId} />
       <CreateAssessmentForm tenantId={tenantId} courses={courses} />
 
       {academics === null ? <Unavailable what="assessment list" /> : (

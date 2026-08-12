@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
+import { Modal } from '@/components/onyx-modal';
 
 /**
  * The platform console's forms -- signing in, provisioning an institution,
@@ -20,9 +21,9 @@ const field = 'mt-1.5 block min-h-[46px] w-full rounded-xl border border-line bg
   + 'hover:border-slate-300 focus:border-slate-500 focus:outline-none focus:ring-2 '
   + 'focus:ring-ink/20';
 const label = 'block text-[13.5px] font-semibold text-slate-700';
-const button = 'inline-flex min-h-[46px] w-full items-center justify-center rounded-xl bg-ink '
-  + 'px-4 text-[15px] font-bold text-white shadow-card transition hover:bg-slate-800 '
-  + 'disabled:opacity-50';
+const button = 'inline-flex min-h-[46px] w-full items-center justify-center rounded-xl '
+  + 'bg-brand-600 px-4 text-[15px] font-bold text-white shadow-card transition '
+  + 'hover:bg-brand-700 disabled:opacity-50';
 
 function Error_({ message }: { message: string | null }) {
   if (!message) return null;
@@ -107,74 +108,237 @@ export function PlatformSignOut() {
   );
 }
 
+const navButton = 'flex w-full items-center justify-center gap-2 rounded-xl bg-brand-600 '
+  + 'px-3 py-2.5 text-[13.5px] font-bold text-white hover:bg-brand-700';
+const navButtonQuiet = 'flex w-full items-center justify-center gap-2 rounded-xl border '
+  + 'border-brand-200 bg-white px-3 py-2.5 text-[13.5px] font-bold text-brand-700 '
+  + 'hover:bg-brand-50';
+
 export function CreateTenantForm() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
-  if (!open) {
-    return (
-      <button type="button" onClick={() => setOpen(true)} className={button}>
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className={navButton}>
         Create an institution
       </button>
-    );
+      {open ? (
+        <Modal title="Create an institution" onClose={() => setOpen(false)}>
+          <form
+            className="space-y-3"
+            autoComplete="off"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const data = new FormData(e.currentTarget);
+              setError(null);
+              start(async () => {
+                const res = await post('onyx/platform/tenants', {
+                  name: String(data.get('name') ?? ''),
+                  admin: {
+                    name: String(data.get('admin_name') ?? ''),
+                    email: String(data.get('admin_email') ?? ''),
+                    password: String(data.get('admin_password') ?? ''),
+                  },
+                });
+                if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+                setOpen(false);
+                router.refresh();
+              });
+            }}
+          >
+            <p className="text-xs text-muted">
+              Provisioned directly, the way an operator sets one up on someone&rsquo;s
+              behalf -- distinct from the self-service form at /onyx/signup.
+            </p>
+            <div>
+              <label className={label} htmlFor="ct-name">Institution name</label>
+              <input id="ct-name" name="name" required maxLength={255} autoComplete="off"
+                className={field} />
+            </div>
+            <div>
+              <label className={label} htmlFor="ct-admin-name">Administrator&rsquo;s name</label>
+              <input id="ct-admin-name" name="admin_name" required maxLength={255}
+                autoComplete="off" className={field} />
+            </div>
+            <div>
+              <label className={label} htmlFor="ct-admin-email">Administrator&rsquo;s email</label>
+              {/* autoComplete="off" on an email input next to a password input is the
+                  difference between the browser treating this as a login form (and
+                  offering to fill it with the operator's own saved credentials -- a
+                  real, dangerous mistake in a form that CREATES an account) and not. */}
+              <input id="ct-admin-email" name="admin_email" type="email" required
+                autoComplete="off" className={field} />
+            </div>
+            <div>
+              <label className={label} htmlFor="ct-admin-password">
+                Administrator&rsquo;s password
+              </label>
+              <input id="ct-admin-password" name="admin_password" type="password" required
+                minLength={8} autoComplete="new-password" className={field} />
+            </div>
+            {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
+            <div className="flex gap-2 pt-1">
+              <button type="submit" disabled={pending} className={button}>
+                {pending ? 'Creating…' : 'Create'}
+              </button>
+              <button type="button" onClick={() => setOpen(false)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm">
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+    </>
+  );
+}
+
+interface TenantOption { id: number; name: string }
+type ProfileType = 'student' | 'faculty' | 'admin' | 'platform';
+
+/**
+ * The one place to create any kind of person on the platform -- a student or
+ * faculty member or administrator at a specific institution, or another
+ * platform admin. Institution profiles and platform admins used to need two
+ * different screens (open an institution, then its People tab; or the
+ * separate Platform admins page) -- this is the same two writes
+ * (POST .../members and POST .../admins, both already real) behind one
+ * decision an operator actually starts from: "who am I creating, and for
+ * where."
+ *
+ * Two places this gets rendered:
+ *   - Unlocked, in the platform-wide sidebar (present on every screen,
+ *     including inside an institution): fetches the institution list itself
+ *     when opened, so no page has to thread it through as a prop.
+ *   - Locked, inside one institution's own sidebar (`lockedTenant`): skips
+ *     the institution picker and the platform-admin option entirely --
+ *     "create a profile for THIS institution" has already answered "where".
+ */
+export function CreateProfileForm({ lockedTenant, defaultType }: {
+  lockedTenant?: { id: number; name?: string };
+  defaultType?: ProfileType;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [type, setType] = useState<ProfileType>(defaultType ?? 'student');
+  const [tenants, setTenants] = useState<TenantOption[] | null>(null);
+  const [loadingTenants, setLoadingTenants] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  async function openModal() {
+    setOpen(true);
+    if (lockedTenant || tenants !== null) return;
+    setLoadingTenants(true);
+    const res = await fetch('/api/proxy/onyx/platform/tenants');
+    const body = await res.json().catch(() => ({ ok: false }));
+    setLoadingTenants(false);
+    if (body.ok) {
+      setTenants((body.data as { id: number; name: string }[])
+        .map((t) => ({ id: t.id, name: t.name })));
+    }
   }
 
+  const title = lockedTenant
+    ? 'Create a profile for ' + (lockedTenant.name ?? 'this institution')
+    : 'Create a profile';
+
   return (
-    <form
-      className="space-y-3 rounded-2xl border border-line p-4"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const data = new FormData(e.currentTarget);
-        setError(null);
-        start(async () => {
-          const res = await post('onyx/platform/tenants', {
-            name: String(data.get('name') ?? ''),
-            admin: {
-              name: String(data.get('admin_name') ?? ''),
-              email: String(data.get('admin_email') ?? ''),
-              password: String(data.get('admin_password') ?? ''),
-            },
-          });
-          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
-          setOpen(false);
-          router.refresh();
-        });
-      }}
-    >
-      <p className="text-xs text-muted">
-        Provisioned directly, the way an operator sets one up on someone&rsquo;s
-        behalf -- distinct from the self-service form at /onyx/signup.
-      </p>
-      <div>
-        <label className={label} htmlFor="ct-name">Institution name</label>
-        <input id="ct-name" name="name" required maxLength={255} className={field} />
-      </div>
-      <div>
-        <label className={label} htmlFor="ct-admin-name">Administrator&rsquo;s name</label>
-        <input id="ct-admin-name" name="admin_name" required maxLength={255} className={field} />
-      </div>
-      <div>
-        <label className={label} htmlFor="ct-admin-email">Administrator&rsquo;s email</label>
-        <input id="ct-admin-email" name="admin_email" type="email" required className={field} />
-      </div>
-      <div>
-        <label className={label} htmlFor="ct-admin-password">Administrator&rsquo;s password</label>
-        <input id="ct-admin-password" name="admin_password" type="password" required
-          minLength={8} className={field} />
-      </div>
-      {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
-      <div className="flex gap-2">
-        <button type="submit" disabled={pending} className={button}>
-          {pending ? 'Creating…' : 'Create'}
-        </button>
-        <button type="button" onClick={() => setOpen(false)}
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm">
-          Cancel
-        </button>
-      </div>
-    </form>
+    <>
+      <button type="button" onClick={openModal} className={lockedTenant ? button : navButtonQuiet}>
+        Create a profile
+      </button>
+      {open ? (
+        <Modal title={title} onClose={() => setOpen(false)}>
+          <form
+            className="space-y-3"
+            autoComplete="off"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const data = new FormData(e.currentTarget);
+              setError(null);
+              start(async () => {
+                const name = String(data.get('name') ?? '');
+                const email = String(data.get('email') ?? '');
+                const password = String(data.get('password') ?? '');
+
+                const res = type === 'platform'
+                  ? await post('onyx/platform/admins', { name, email, password })
+                  : await (async () => {
+                    const tenantId = lockedTenant?.id ?? Number(data.get('tenant_id') ?? '');
+                    if (!tenantId) return { ok: false, message: 'Choose an institution.' };
+                    return post('onyx/platform/tenants/' + tenantId + '/members',
+                      { name, email, role: type, password });
+                  })();
+
+                if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+                setOpen(false);
+                router.refresh();
+              });
+            }}
+          >
+            {error ? <p role="alert" className="text-[13px] text-red-700">{error}</p> : null}
+            <div>
+              <label className={label} htmlFor="cp-type">Profile type</label>
+              <select id="cp-type" name="type" value={type}
+                onChange={(e) => setType(e.target.value as ProfileType)} className={field}>
+                <option value="student">Student</option>
+                <option value="faculty">Faculty</option>
+                <option value="admin">Institution admin</option>
+                {lockedTenant ? null : (
+                  <option value="platform">Platform admin (superadmin)</option>
+                )}
+              </select>
+            </div>
+            {type === 'platform' ? (
+              <p className="text-[12.5px] text-muted">
+                A platform admin belongs to no institution -- they operate the whole platform.
+              </p>
+            ) : lockedTenant ? null : (
+              <div>
+                <label className={label} htmlFor="cp-tenant">Institution</label>
+                <select id="cp-tenant" name="tenant_id" required defaultValue="" className={field}
+                  disabled={loadingTenants}>
+                  <option value="" disabled>
+                    {loadingTenants ? 'Loading…' : 'Choose one'}
+                  </option>
+                  {(tenants ?? []).map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              </div>
+            )}
+            <div>
+              <label className={label} htmlFor="cp-name">Name</label>
+              <input id="cp-name" name="name" required maxLength={255} autoComplete="off"
+                className={field} />
+            </div>
+            <div>
+              <label className={label} htmlFor="cp-email">Email</label>
+              {/* See CreateTenantForm's comment on this same pairing: off, not the
+                  default, or Chrome offers the operator's own saved login here. */}
+              <input id="cp-email" name="email" type="email" required autoComplete="off"
+                className={field} />
+            </div>
+            <div>
+              <label className={label} htmlFor="cp-password">Password</label>
+              <input id="cp-password" name="password" type="password" required minLength={8}
+                autoComplete="new-password" className={field} />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button type="submit" disabled={pending} className={button}>
+                {pending ? 'Creating…' : 'Create'}
+              </button>
+              <button type="button" onClick={() => setOpen(false)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm">
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+    </>
   );
 }
 
@@ -208,45 +372,67 @@ export function SuspendToggle({ tenantId, suspended }: { tenantId: number; suspe
 
 export function GrantAdminForm() {
   const router = useRouter();
+  const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
   return (
-    <form
-      className="flex flex-wrap items-end gap-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const data = new FormData(e.currentTarget);
-        setError(null);
-        start(async () => {
-          const res = await post('onyx/platform/admins', {
-            email: String(data.get('email') ?? ''),
-            name: String(data.get('name') ?? '') || undefined,
-            password: String(data.get('password') ?? '') || undefined,
-          });
-          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
-          (e.target as HTMLFormElement).reset();
-          router.refresh();
-        });
-      }}
-    >
-      <div>
-        <label className={label} htmlFor="ga-email">Email</label>
-        <input id="ga-email" name="email" type="email" required className={field} />
-      </div>
-      <div>
-        <label className={label} htmlFor="ga-name">Name (new account only)</label>
-        <input id="ga-name" name="name" className={field} />
-      </div>
-      <div>
-        <label className={label} htmlFor="ga-password">Password (new account only)</label>
-        <input id="ga-password" name="password" type="password" minLength={8} className={field} />
-      </div>
-      <button type="submit" disabled={pending} className={button}>
-        {pending ? 'Granting…' : 'Grant'}
+    <>
+      <button type="button" onClick={() => setOpen(true)} className={button}>
+        Grant platform admin
       </button>
-      {error ? <p role="alert" className="w-full text-sm text-red-700">{error}</p> : null}
-    </form>
+      {open ? (
+        <Modal title="Grant platform admin" onClose={() => setOpen(false)}>
+          <form
+            className="space-y-3"
+            autoComplete="off"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const data = new FormData(e.currentTarget);
+              setError(null);
+              start(async () => {
+                const res = await post('onyx/platform/admins', {
+                  email: String(data.get('email') ?? ''),
+                  name: String(data.get('name') ?? '') || undefined,
+                  password: String(data.get('password') ?? '') || undefined,
+                });
+                if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+                setOpen(false);
+                router.refresh();
+              });
+            }}
+          >
+            <p className="text-xs text-muted">
+              An existing account is reused by email; a new one needs a name and password too.
+            </p>
+            {error ? <p role="alert" className="text-sm text-red-700">{error}</p> : null}
+            <div>
+              <label className={label} htmlFor="ga-email">Email</label>
+              <input id="ga-email" name="email" type="email" required autoComplete="off"
+                className={field} />
+            </div>
+            <div>
+              <label className={label} htmlFor="ga-name">Name (new account only)</label>
+              <input id="ga-name" name="name" autoComplete="off" className={field} />
+            </div>
+            <div>
+              <label className={label} htmlFor="ga-password">Password (new account only)</label>
+              <input id="ga-password" name="password" type="password" minLength={8}
+                autoComplete="new-password" className={field} />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button type="submit" disabled={pending} className={button}>
+                {pending ? 'Granting…' : 'Grant'}
+              </button>
+              <button type="button" onClick={() => setOpen(false)}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm">
+                Cancel
+              </button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+    </>
   );
 }
 
@@ -264,8 +450,8 @@ const smallField = 'block min-h-[36px] w-full rounded-lg border border-line bg-w
   + 'focus:ring-ink/20';
 const smallLabel = 'block text-[11px] font-bold uppercase tracking-[.06em] text-muted';
 const linkButton = 'text-[12.5px] font-semibold text-brand-700 hover:underline disabled:opacity-50';
-const saveButton = 'rounded-lg bg-ink px-3 py-1.5 text-[12.5px] font-bold text-white '
-  + 'hover:bg-slate-800 disabled:opacity-50';
+const saveButton = 'rounded-lg bg-brand-600 px-3 py-1.5 text-[12.5px] font-bold text-white '
+  + 'hover:bg-brand-700 disabled:opacity-50';
 const cancelButton = 'rounded-lg border border-slate-300 px-3 py-1.5 text-[12.5px] '
   + 'hover:bg-slate-50';
 
@@ -1144,75 +1330,6 @@ export function DeleteTenantButton({ tenantId, tenantName }: { tenantId: number;
         </button>
       </div>
     </div>
-  );
-}
-
-/** Add someone to this institution -- name, email, role. Reuses the same
- * shape as GrantAdminForm/CreateTenantForm: a toggle button that opens into
- * a small form. */
-export function AddMemberForm({ tenantId, defaultRole }: { tenantId: number; defaultRole?: string }) {
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, start] = useTransition();
-
-  if (!open) {
-    return (
-      <button type="button" onClick={() => setOpen(true)} className={button}>
-        Add {defaultRole ?? 'a member'}
-      </button>
-    );
-  }
-  return (
-    <form
-      className="grid gap-3 rounded-2xl border border-line bg-slate-50 p-4 sm:grid-cols-2
-                 lg:grid-cols-4"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const data = new FormData(e.currentTarget);
-        setError(null);
-        start(async () => {
-          const res = await post('onyx/platform/tenants/' + tenantId + '/members', {
-            name: String(data.get('name') ?? ''),
-            email: String(data.get('email') ?? ''),
-            role: String(data.get('role') ?? defaultRole ?? 'student'),
-            password: String(data.get('password') ?? '') || undefined,
-          });
-          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
-          setOpen(false);
-          router.refresh();
-        });
-      }}
-    >
-      {error ? <p role="alert" className="col-span-full text-[13px] text-red-700">{error}</p> : null}
-      <div>
-        <label className={label} htmlFor="am-name">Name</label>
-        <input id="am-name" name="name" required maxLength={255} className={field} />
-      </div>
-      <div>
-        <label className={label} htmlFor="am-email">Email</label>
-        <input id="am-email" name="email" type="email" required className={field} />
-      </div>
-      <div>
-        <label className={label} htmlFor="am-role">Role</label>
-        <select id="am-role" name="role" defaultValue={defaultRole ?? 'student'} className={field}>
-          {ROLE_OPTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
-        </select>
-      </div>
-      <div>
-        <label className={label} htmlFor="am-password">Password (new account only)</label>
-        <input id="am-password" name="password" type="password" minLength={8} className={field} />
-      </div>
-      <div className="col-span-full flex gap-2">
-        <button type="submit" disabled={pending} className={button}>
-          {pending ? 'Adding…' : 'Add'}
-        </button>
-        <button type="button" onClick={() => setOpen(false)}
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm">
-          Cancel
-        </button>
-      </div>
-    </form>
   );
 }
 

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { requirePlatformSession } from '@/lib/onyx-platform-session';
 import {
-  attempt, SCROLLER, Unavailable, Workflow, money, type FeesPayload,
+  attempt, SCROLLER, TenantBackLink, Unavailable, Workflow, money, type FeesPayload,
 } from '@/lib/onyx-platform-tenant';
 import {
   CreateFeeHeadForm, CreateFeeStructureForm, FeeStructureStatusButtons,
@@ -22,10 +22,18 @@ export default async function OnyxPlatformFeesPage(
   const fees = await attempt<FeesPayload>(
     '/api/onyx/platform/tenants/' + encodeURIComponent(id) + '/fees');
 
-  if (fees === null) return <Unavailable what="fees" />;
+  if (fees === null) {
+    return (
+      <div className="min-w-0 space-y-4">
+        <TenantBackLink tenantId={tenantId} />
+        <Unavailable what="fees" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-w-0 space-y-6">
+      <TenantBackLink tenantId={tenantId} />
       <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <StatTile label="Fee heads" value={fees.heads.length} note="categories of charge" />
         <StatTile label="Structures" value={fees.structures.length} note="fee plans defined" />

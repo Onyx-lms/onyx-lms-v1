@@ -85,8 +85,8 @@ export default async function OnyxPlatformAuditPage(
             </select>
           </div>
           <button type="submit"
-            className="min-h-[42px] rounded-xl bg-ink px-4 text-[14px] font-bold text-white
-                       hover:bg-slate-800">
+            className="min-h-[42px] rounded-xl bg-brand-600 px-4 text-[14px] font-bold text-white
+                       hover:bg-brand-700">
             Filter
           </button>
           {filtered ? (

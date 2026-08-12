@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import { requirePlatformSession, platformApi } from '@/lib/onyx-platform-session';
-import { attempt, ago, SCROLLER, Unavailable, Workflow, type GradesPayload } from '@/lib/onyx-platform-tenant';
+import {
+  attempt, ago, SCROLLER, TenantBackLink, Unavailable, Workflow, type GradesPayload,
+} from '@/lib/onyx-platform-tenant';
 import { ExamMarkEditToggle, AssessmentGradeActions } from '@/components/onyx-platform-forms';
 import { Banner, Card, DataTable, EmptyRow, Meter, Score } from '@/components/onyx-ui';
 
@@ -26,6 +28,7 @@ export default async function OnyxPlatformGradesPage(
 
   return (
     <div className="min-w-0 space-y-3">
+      <TenantBackLink tenantId={tenantId} />
       {grades === null ? <Unavailable what="results" /> : (
         <>
           <Banner tone="info" icon="shield">

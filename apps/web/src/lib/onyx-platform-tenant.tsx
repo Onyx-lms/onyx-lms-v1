@@ -1,5 +1,6 @@
+import Link from 'next/link';
 import { platformApi } from '@/lib/onyx-platform-session';
-import { Banner, Pill, State, relativeDue } from '@/components/onyx-ui';
+import { Banner, Icon, Pill, State, relativeDue } from '@/components/onyx-ui';
 
 /**
  * Shared shapes and small presentational pieces for the tenant-scoped
@@ -194,6 +195,24 @@ export function Unavailable({ what }: { what: string }) {
       The {what} for this institution could not be loaded just now. Nothing has been
       changed — reload the page to try again.
     </Banner>
+  );
+}
+
+/**
+ * A way back that does not depend on noticing the sidebar. The sidebar nav
+ * is always there, but an operator who just finished a task on this page has
+ * their eyes and mouse here, not over on the left -- a local "go up one
+ * level" link is what browser back does when it works, and a step cheaper
+ * when a click along the way changed the URL enough that back does not.
+ */
+export function TenantBackLink({ tenantId }: { tenantId: number }) {
+  return (
+    <Link href={'/onyx/platform/tenants/' + tenantId}
+      className="inline-flex items-center gap-1 text-[13px] font-semibold text-muted
+                 hover:text-brand-700 hover:underline">
+      <Icon name="chevron" className="h-3.5 w-3.5 rotate-180" />
+      Overview
+    </Link>
   );
 }
 

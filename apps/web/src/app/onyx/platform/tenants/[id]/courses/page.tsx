@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import { requirePlatformSession } from '@/lib/onyx-platform-session';
-import { attempt, SCROLLER, Unavailable, type AcademicsPayload } from '@/lib/onyx-platform-tenant';
+import {
+  attempt, SCROLLER, TenantBackLink, Unavailable, type AcademicsPayload,
+} from '@/lib/onyx-platform-tenant';
 import { CreateCourseForm, CourseEditToggle } from '@/components/onyx-platform-forms';
 import { DataTable, EmptyRow, State } from '@/components/onyx-ui';
 
@@ -18,6 +20,7 @@ export default async function OnyxPlatformCoursesPage(
 
   return (
     <div className="min-w-0 space-y-4">
+      <TenantBackLink tenantId={tenantId} />
       <CreateCourseForm tenantId={tenantId} />
 
       {academics === null ? <Unavailable what="course list" /> : (

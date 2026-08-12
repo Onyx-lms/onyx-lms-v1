@@ -69,7 +69,7 @@ export function TenantSidebarNav({ tenantId, tenantName }: { tenantId: number; t
                   aria-current={active ? 'page' : undefined}
                   className={'flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm '
                     + (active
-                      ? 'bg-ink font-semibold text-white'
+                      ? 'bg-brand-600 font-semibold text-white'
                       : 'font-medium text-slate-700 hover:bg-brand-50 hover:text-brand-700')}
                 >
                   <Icon name={item.icon} className={'h-[19px] w-[19px] ' + (active ? '' : 'opacity-85')} />

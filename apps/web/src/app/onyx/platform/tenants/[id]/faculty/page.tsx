@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 import { requirePlatformSession } from '@/lib/onyx-platform-session';
 import {
-  attempt, ago, SCROLLER, AccountState, Unavailable, type PeoplePayload,
+  attempt, ago, SCROLLER, AccountState, TenantBackLink, Unavailable, type PeoplePayload,
 } from '@/lib/onyx-platform-tenant';
-import { AddMemberForm, MemberEditToggle, RemoveMemberButton } from '@/components/onyx-platform-forms';
+import { MemberEditToggle, RemoveMemberButton } from '@/components/onyx-platform-forms';
 import { DataTable, EmptyRow, Pill } from '@/components/onyx-ui';
 
 export const metadata: Metadata = { title: 'Faculty' };
@@ -20,7 +20,7 @@ export default async function OnyxPlatformFacultyPage(
 
   return (
     <div className="min-w-0 space-y-4">
-      <AddMemberForm tenantId={tenantId} defaultRole="faculty" />
+      <TenantBackLink tenantId={tenantId} />
 
       {people === null ? <Unavailable what="staff list" /> : (
         <div tabIndex={0} role="region" aria-label="Faculty" className={SCROLLER}>

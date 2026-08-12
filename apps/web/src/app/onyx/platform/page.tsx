@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import type { Metadata } from 'next';
 import { OnyxPlatformShell } from '@/components/onyx-platform-shell';
-import { CreateTenantForm } from '@/components/onyx-platform-forms';
 import { requirePlatformSession, platformApi } from '@/lib/onyx-platform-session';
 import {
   ActionLink, DataTable, EmptyRow, StatTile, StatusDot,
@@ -46,7 +45,6 @@ export default async function OnyxPlatformPage(
       subtitle={headline.length === 1
         ? 'One institution on the platform.'
         : headline.length + ' institutions on the platform.'}
-      action={<CreateTenantForm />}
     >
       <div className="space-y-6">
         {/* Three numbers an operator checks before anything else: how many
@@ -102,8 +100,8 @@ export default async function OnyxPlatformPage(
             </div>
           ) : null}
           <button type="submit"
-            className="min-h-[42px] rounded-xl bg-ink px-4 text-[14px] font-bold text-white
-                       hover:bg-slate-800">
+            className="min-h-[42px] rounded-xl bg-brand-600 px-4 text-[14px] font-bold text-white
+                       hover:bg-brand-700">
             Filter
           </button>
           {filtered ? (

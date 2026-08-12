@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { OnyxMark } from '@/components/onyx-brand';
-import { PlatformSignOut } from '@/components/onyx-platform-forms';
+import { PlatformSignOut, CreateProfileForm, CreateTenantForm } from '@/components/onyx-platform-forms';
 import { PlatformNavLinks } from '@/components/onyx-platform-nav-links';
 
 /**
@@ -67,6 +67,15 @@ export function OnyxPlatformShell({ email, title, subtitle, children, action, si
             </div>
             <div className="mt-0.5 truncate text-sm font-bold" title={email}>{email}</div>
             <div className="text-xs text-muted">Every institution</div>
+          </div>
+
+          {/* The two creation actions live in the navbar itself, not a
+              page header -- so they are reachable from every screen,
+              including from inside an institution, not just the
+              Institutions list. Each opens as its own modal. */}
+          <div className="mt-4 space-y-2">
+            <CreateProfileForm />
+            <CreateTenantForm />
           </div>
 
           <PlatformNavLinks />
