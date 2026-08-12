@@ -344,6 +344,21 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
     return ok(await ctx.onyxExams.verifyTranscript(claims.tenant_id, serial));
   });
 
+  /**
+   * The public verification page's data. No token, by design -- matching
+   * /api/onyx/verify/:credentialId exactly.
+   *
+   * This route did not exist. The route above requires a signed-in session and
+   * that session's own tenant, so the one person a "verifiable transcript" is
+   * FOR -- an employer with no Onyx account, checking a document they were
+   * handed -- had no way to call it at all. `verifyTranscriptPublic` looks up
+   * by serial alone for exactly that reason.
+   */
+  app.get('/api/onyx/verify/transcript/:serial', async (req) => {
+    const serial = String((req.params as { serial: string }).serial ?? '');
+    return ok(await ctx.onyxExams.verifyTranscriptPublic(serial));
+  });
+
   // =========================================================================
   // CMP-03 -- fees, invoices, payment
   // =========================================================================

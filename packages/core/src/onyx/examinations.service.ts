@@ -692,6 +692,81 @@ export class ExaminationsService {
     };
   }
 
+  /**
+   * The same reconciliation as `verifyTranscript`, but for the person who
+   * cannot call that one at all: an employer holding a printed transcript has
+   * no Onyx account and no tenant id to send, and `verifyTranscript` requires
+   * both. This was the gap -- CMP-02 promises "transcript generation end to
+   * end", and end to end has to include the third party who was handed the
+   * document being able to check it. CAR-03 already solved exactly this shape
+   * of problem for certificates; this is the same answer for transcripts.
+   *
+   * Looked up by serial ALONE, deliberately not tenant-scoped, for the same
+   * reason certificate verification is not: a verifier does not know which
+   * institution issued what they are holding, and requiring them to know
+   * would make the feature useless to them.
+   *
+   * "Not found" and "malformed serial" are the same answer for the same
+   * reason as CAR-03's: a verifier learns only whether the one in their hand
+   * is good, never whether some OTHER serial would have worked.
+   */
+  async verifyTranscriptPublic(serial: string) {
+    const trimmed = serial.trim().toUpperCase();
+    if (!/^TR-[0-9A-F]{8,64}$/.test(trimmed)) {
+      return { found: false as const };
+    }
+
+    const { data } = await this.#db.from('onyx_transcripts').select(TRANSCRIPT_COLUMNS)
+      .eq('serial', trimmed).maybeSingle();
+    if (!data) return { found: false as const };
+
+    const stored = data.payload as { user_id: number; program_id: number | null; lines: { exam_id: number; final_marks: number; max_marks: number; grade: string }[] };
+    const intact = checksumOf(canonicalise(stored)) === data.checksum;
+
+    const [{ data: tenant }, { data: holder }] = await Promise.all([
+      this.#db.from('onyx_tenants').select('id, name').eq('id', data.tenant_id).maybeSingle(),
+      // Name only, matching CAR-03: not the email, not the id, not the marks
+      // themselves -- a verifier needs to match a name on a document, not be
+      // handed the record.
+      this.#db.from('onyx_users').select('name').eq('id', data.user_id).maybeSingle(),
+    ]);
+
+    // "Current" needs the live register, and that register is tenant-scoped --
+    // this is the one place data.tenant_id is used, read off the row itself
+    // rather than trusted from the caller, which is exactly why this can be
+    // public at all: the tenant comes from what was found, never from input.
+    const { data: marks } = await this.#db.from('onyx_exam_marks').select(MARK_COLUMNS)
+      .eq('tenant_id', data.tenant_id).eq('user_id', Number(data.user_id)).eq('status', 'published')
+      .order('exam_id', { ascending: true });
+    const liveLines: { exam_id: number; final_marks: number; max_marks: number; grade: string }[] = [];
+    for (const mark of marks ?? []) {
+      const exam = await this.exam(Number(data.tenant_id), Number(mark.exam_id));
+      liveLines.push({
+        exam_id: Number(mark.exam_id), final_marks: Number(mark.final_marks),
+        max_marks: Number(exam.max_marks), grade: String(mark.grade ?? ''),
+      });
+    }
+    const live = checksumOf(canonicalise({
+      user_id: Number(data.user_id),
+      program_id: data.program_id === null ? null : Number(data.program_id),
+      lines: liveLines,
+    }));
+
+    return {
+      found: true as const,
+      serial: data.serial,
+      holder: holder?.name ?? null,
+      issuer: tenant?.name ?? null,
+      issued_at: data.issued_at,
+      revoked_at: data.revoked_at,
+      gpa: data.gpa,
+      credits_earned: data.credits_earned,
+      intact,
+      current: live === data.checksum,
+      lines: stored.lines.length,
+    };
+  }
+
   async transcripts(tenantId: number, userId: number, viewer: { userId: number; role: Role }) {
     if (viewer.userId !== userId && !canRunExams(viewer.role)) {
       throw new HttpError(403, 'Those are not your transcripts.');

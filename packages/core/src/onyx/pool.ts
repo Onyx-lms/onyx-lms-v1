@@ -109,7 +109,24 @@ export function onyxSql(opts: PoolOptions = {}): {
 } {
   return {
     async query(text, values) {
-      resolving ??= resolvePool(opts);
+      // `??=` only reassigns when the left side is null/undefined, and a
+      // REJECTED promise is neither -- it is a settled value like any other.
+      // So a single transient failure (the network blinks the moment the
+      // first query runs after boot) used to poison `resolving` forever: every
+      // later call awaited the same cached rejection and got the exact same
+      // stale error, even minutes after the database was reachable again. The
+      // queue -- and with it every Code Lab run and submission -- stayed dead
+      // until someone noticed and restarted the process.
+      //
+      // Caught here, not by hoping poolCandidates() finds another route: the
+      // point of `resolving` is to share ONE successful resolution across
+      // concurrent callers, not to remember a failure. On rejection the slot
+      // is cleared so the next call resolves fresh, and this attempt still
+      // reports the real error to its own caller.
+      resolving ??= resolvePool(opts).catch((error: unknown) => {
+        resolving = null;
+        throw error;
+      });
       const pool = await resolving;
       return pool.query(text, values as never) as never;
     },
