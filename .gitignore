@@ -33,3 +33,8 @@ test-results/
 playwright-report/
 .vercel
 .env*
+
+# Generated credential exports hold plaintext passwords for real seeded
+# accounts -- never commit one of these, wherever it ends up.
+*Credentials*.xlsx
+*credentials*.csv
