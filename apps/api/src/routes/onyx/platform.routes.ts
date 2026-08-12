@@ -382,7 +382,16 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
 
   app.get('/api/onyx/platform/audit', async (req) => {
     requirePlatformAdmin(asReq(req), ctx.jwtSecret);
-    const q = req.query as { limit?: string };
-    return ok(await ctx.onyxPlatform.auditLog({ limit: q.limit ? Number(q.limit) : undefined }));
+    const q = req.query as { limit?: string; action?: string; entity_type?: string };
+    return ok(await ctx.onyxPlatform.auditLog({
+      limit: q.limit ? Number(q.limit) : undefined,
+      action: q.action || undefined,
+      entityType: q.entity_type || undefined,
+    }));
+  });
+
+  app.get('/api/onyx/platform/audit/filters', async (req) => {
+    requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    return ok(await ctx.onyxPlatform.auditFilterOptions());
   });
 }

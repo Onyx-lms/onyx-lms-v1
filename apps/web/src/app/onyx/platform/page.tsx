@@ -127,6 +127,7 @@ export default async function OnyxPlatformPage(
             <>
               <th scope="col">Institution</th>
               <th scope="col">Address</th>
+              <th scope="col">Plan</th>
               <th scope="col">Members</th>
               <th scope="col">Created</th>
               <th scope="col">Status</th>
@@ -143,6 +144,9 @@ export default async function OnyxPlatformPage(
                 </Link>
               </td>
               <td className="font-mono text-[12.5px] text-muted">{t.slug}</td>
+              <td className="text-[13px]">
+                {t.plan ?? <span className="text-muted">—</span>}
+              </td>
               <td className="tabular-nums">{t.member_count}</td>
               <td className="whitespace-nowrap text-muted">
                 {new Date(t.created_at).toLocaleDateString(undefined,
@@ -155,7 +159,7 @@ export default async function OnyxPlatformPage(
             </tr>
           ))}
           {tenants.length === 0 ? (
-            <EmptyRow colSpan={6} icon="building">
+            <EmptyRow colSpan={7} icon="building">
               {filtered
                 ? 'Nothing matches that filter.'
                 : 'No institutions yet. Creating one seeds its roles and its first administrator.'}

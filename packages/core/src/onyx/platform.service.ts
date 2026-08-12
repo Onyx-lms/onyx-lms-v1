@@ -1534,11 +1534,37 @@ export class PlatformService {
 
   // -------------------------------------------------------------------------
 
-  async auditLog(filters: { limit?: number } = {}) {
+  async auditLog(filters: { limit?: number; action?: string; entityType?: string } = {}) {
+    let q = this.#db.from('onyx_platform_audit_logs')
+      .select('id, actor_id, action, entity_type, entity_id, before, after, created_at');
+    if (filters.action) q = q.eq('action', filters.action);
+    if (filters.entityType) q = q.eq('entity_type', filters.entityType);
+    const { data } = await q.order('created_at', { ascending: false }).limit(filters.limit ?? 100);
+    const rows = data ?? [];
+    if (!rows.length) return [];
+
+    const actors = await this.#usersById([...new Set(
+      rows.map((r) => r.actor_id).filter((id): id is number => id != null).map(num))]);
+    return rows.map((r) => ({
+      ...r, actor: r.actor_id == null ? null : actors.get(num(r.actor_id)) ?? null,
+    }));
+  }
+
+  /**
+   * Every distinct action and entity type recorded, for the audit page's two
+   * filter dropdowns -- read off the data itself, not guessed from splitting
+   * the action string on its dot (that undercounts: "marks.overridden"'s
+   * entity_type is "exam_mark", not "marks" -- the column is the only source
+   * of truth for what #log() actually wrote).
+   */
+  async auditFilterOptions() {
     const { data } = await this.#db.from('onyx_platform_audit_logs')
-      .select('id, actor_id, action, entity_type, entity_id, before, after, created_at')
-      .order('created_at', { ascending: false }).limit(filters.limit ?? 100);
-    return data ?? [];
+      .select('action, entity_type').limit(5000);
+    const rows = data ?? [];
+    return {
+      actions: [...new Set(rows.map((r) => String(r.action)))].sort(),
+      entityTypes: [...new Set(rows.map((r) => String(r.entity_type)))].sort(),
+    };
   }
 
   async #log(actorId: number | null, action: string, entityType: string, entityId: number | null,

@@ -2,51 +2,84 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { Icon, type IconName } from '@/components/onyx-ui';
 
 /**
- * The sub-nav for one open institution -- Overview, Students, Faculty,
- * Courses... each its own route now, not a scroll position on one long page.
- * Needs the current path to mark which tab is open, which is the one reason
- * this is a client component rather than folded into the server-rendered
- * layout around it.
+ * The nav for one open institution -- Overview, Students, Faculty, Courses...
+ * a grouped left sidebar, the same shape OnyxShell already uses for every
+ * tenant-side role (onyx-nav.ts's NAV, rendered by OnyxShell's NavGroup).
+ * This used to be a horizontal tab strip under the identity card, which read
+ * as a second, different navigation idiom bolted onto a product that
+ * otherwise always navigates from the left. Consistency meant becoming the
+ * same kind of nav, not a nicer version of the different one.
+ *
+ * The identity card and its destructive controls (edit, suspend, delete)
+ * stay in the main content area, in layout.tsx -- those are actions on this
+ * record, not places to go, the same distinction OnyxShell draws between its
+ * TenantCard (who/where) and its NavGroup (navigation).
  */
-const TABS = [
-  { seg: '', label: 'Overview' },
-  { seg: 'students', label: 'Students' },
-  { seg: 'faculty', label: 'Faculty' },
-  { seg: 'courses', label: 'Courses' },
-  { seg: 'assignments', label: 'Assignments' },
-  { seg: 'examinations', label: 'Examinations' },
-  { seg: 'assessments', label: 'Assessments' },
-  { seg: 'grades', label: 'Grades' },
-  { seg: 'fees', label: 'Fees' },
-] as const;
+interface TenantNavItem { seg: string; label: string; icon: IconName }
+interface TenantNavGroup { label?: string; items: TenantNavItem[] }
 
-export function TenantSubnav({ tenantId }: { tenantId: number }) {
+const GROUPS: TenantNavGroup[] = [
+  { items: [{ seg: '', label: 'Overview', icon: 'home' }] },
+  { label: 'People', items: [
+    { seg: 'students', label: 'Students', icon: 'users' },
+    { seg: 'faculty', label: 'Faculty', icon: 'user' },
+  ] },
+  { label: 'Academics', items: [
+    { seg: 'courses', label: 'Courses', icon: 'book' },
+    { seg: 'assignments', label: 'Assignments', icon: 'edit' },
+    { seg: 'examinations', label: 'Examinations', icon: 'award' },
+    { seg: 'assessments', label: 'Assessments', icon: 'target' },
+  ] },
+  { label: 'Records', items: [
+    { seg: 'grades', label: 'Grades', icon: 'trophy' },
+    { seg: 'fees', label: 'Fees', icon: 'wallet' },
+  ] },
+];
+
+export function TenantSidebarNav({ tenantId, tenantName }: { tenantId: number; tenantName: string }) {
   const pathname = usePathname();
   const base = '/onyx/platform/tenants/' + tenantId;
 
   return (
-    <nav aria-label="Institution sections"
-      className="flex min-w-0 gap-1 overflow-x-auto rounded-2xl border border-line
-                 bg-white p-1.5">
-      {TABS.map((t) => {
-        const href = t.seg ? base + '/' + t.seg : base;
-        const active = pathname === href;
-        return (
-          <Link
-            key={t.seg}
-            href={href}
-            aria-current={active ? 'page' : undefined}
-            className={
-              'shrink-0 rounded-xl px-3.5 py-2 text-[13px] font-bold whitespace-nowrap transition ' +
-              (active ? 'bg-ink text-white' : 'text-slate-700 hover:bg-brand-50 hover:text-brand-700')
-            }
-          >
-            {t.label}
-          </Link>
-        );
-      })}
-    </nav>
+    <div className="mt-4 border-t border-line pt-4">
+      <div className="mb-1.5 px-2.5 text-[10.5px] font-bold uppercase tracking-[.09em] text-muted">
+        This institution
+      </div>
+      <div className="mb-2 truncate px-2.5 text-[13px] font-bold" title={tenantName}>
+        {tenantName}
+      </div>
+      <nav aria-label="Institution sections">
+        {GROUPS.map((g, i) => (
+          <div key={g.label ?? i} className="mb-3.5">
+            {g.label ? (
+              <div className="mb-1 px-2.5 text-[10px] font-bold uppercase tracking-[.08em] text-faint">
+                {g.label}
+              </div>
+            ) : null}
+            {g.items.map((item) => {
+              const href = item.seg ? base + '/' + item.seg : base;
+              const active = pathname === href;
+              return (
+                <Link
+                  key={item.seg}
+                  href={href}
+                  aria-current={active ? 'page' : undefined}
+                  className={'flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm '
+                    + (active
+                      ? 'bg-ink font-semibold text-white'
+                      : 'font-medium text-slate-700 hover:bg-brand-50 hover:text-brand-700')}
+                >
+                  <Icon name={item.icon} className={'h-[19px] w-[19px] ' + (active ? '' : 'opacity-85')} />
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
+      </nav>
+    </div>
   );
 }

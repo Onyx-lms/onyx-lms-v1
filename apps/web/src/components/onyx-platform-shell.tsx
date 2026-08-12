@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { OnyxMark } from '@/components/onyx-brand';
 import { PlatformSignOut } from '@/components/onyx-platform-forms';
+import { PlatformNavLinks } from '@/components/onyx-platform-nav-links';
 
 /**
  * The platform console's own shell -- not OnyxShell.
@@ -21,13 +22,21 @@ import { PlatformSignOut } from '@/components/onyx-platform-forms';
  * as the platform, because an operator who forgets which console they are in is
  * one click from acting on the wrong institution.
  */
-export function OnyxPlatformShell({ email, title, subtitle, children, action }: {
+export function OnyxPlatformShell({ email, title, subtitle, children, action, sidebarNav }: {
   email: string;
   title: string;
   subtitle?: string;
   children: React.ReactNode;
   /** The primary action for this screen, beside the title. */
   action?: React.ReactNode;
+  /**
+   * Institution-scoped navigation, rendered below the platform-wide links
+   * rather than instead of them -- Institutions and Platform admins stay one
+   * click away the same way OnyxShell's own sidebar never hides the way back
+   * out. Passed by the tenant layout when a tenant is open; absent everywhere
+   * else. See onyx-platform-tenant-nav.tsx for what fills this in.
+   */
+  sidebarNav?: React.ReactNode;
 }) {
   return (
     <div className="min-h-screen bg-canvas">
@@ -60,10 +69,9 @@ export function OnyxPlatformShell({ email, title, subtitle, children, action }: 
             <div className="text-xs text-muted">Every institution</div>
           </div>
 
-          <nav className="mt-4" aria-label="Platform">
-            <NavLink href="/onyx/platform" label="Institutions" />
-            <NavLink href="/onyx/platform/admins" label="Platform admins" />
-          </nav>
+          <PlatformNavLinks />
+
+          {sidebarNav}
 
           <div className="mt-4 rounded-2xl border border-line bg-white p-3">
             <PlatformSignOut />
@@ -85,19 +93,3 @@ export function OnyxPlatformShell({ email, title, subtitle, children, action }: 
   );
 }
 
-/**
- * A sidebar link.
- *
- * Not marked active. There are two of them and the `<h1>` already names the
- * screen; a client component to read the pathname would be the only reason
- * this whole shell could not be a server component.
- */
-function NavLink({ href, label }: { href: string; label: string }) {
-  return (
-    <Link href={href}
-      className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-medium
-                 text-slate-700 hover:bg-brand-50 hover:text-brand-700">
-      {label}
-    </Link>
-  );
-}

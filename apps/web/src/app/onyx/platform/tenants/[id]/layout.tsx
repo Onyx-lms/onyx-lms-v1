@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { OnyxPlatformShell } from '@/components/onyx-platform-shell';
-import { TenantSubnav } from '@/components/onyx-platform-tenant-nav';
+import { TenantSidebarNav } from '@/components/onyx-platform-tenant-nav';
 import { SuspendToggle, TenantEditForm, DeleteTenantButton } from '@/components/onyx-platform-forms';
 import { requirePlatformSession, platformApi } from '@/lib/onyx-platform-session';
 import type { TenantDetail } from '@/lib/onyx-platform-tenant';
@@ -10,15 +10,18 @@ import { Card, Icon, StatusDot } from '@/components/onyx-ui';
 /**
  * Shared chrome for every `/onyx/platform/tenants/[id]/...` page: the
  * identity card (who this institution is, whether it can sign in, the
- * destructive controls) and the sub-nav that replaced one long scrolling
- * page with Overview/Students/Faculty/Courses/Assignments/Examinations/
- * Assessments/Grades/Fees as their own routes.
+ * destructive controls) in the main content, and -- in the shell's own left
+ * sidebar, via `sidebarNav` -- the grouped nav that replaced one long
+ * scrolling page with Overview/Students/Faculty/Courses/Assignments/
+ * Examinations/Assessments/Grades/Fees as their own routes, navigated the
+ * same way every tenant-side role already navigates (OnyxShell's NavGroup).
  *
- * The tenant read is fetched here, once, for the identity card -- each child
- * page still reads its own section data independently (a Next layout cannot
- * hand a server-fetched value to a page except through this file's own
- * children prop, and every section already degrades to its own "could not
- * load" banner on a failed read, which a shared fetch would not preserve).
+ * The tenant read is fetched here, once, for the identity card and the nav's
+ * institution name -- each child page still reads its own section data
+ * independently (a Next layout cannot hand a server-fetched value to a page
+ * except through this file's own children prop, and every section already
+ * degrades to its own "could not load" banner on a failed read, which a
+ * shared fetch would not preserve).
  */
 export default async function OnyxPlatformTenantLayout(
   { params, children }: { params: Promise<{ id: string }>; children: React.ReactNode },
@@ -34,6 +37,7 @@ export default async function OnyxPlatformTenantLayout(
       email={session.email}
       title={tenant.name}
       subtitle={plural(tenant.member_count, 'member') + ' · ' + plural(tenant.counts.courses, 'course')}
+      sidebarNav={<TenantSidebarNav tenantId={tenant.id} tenantName={tenant.name} />}
     >
       <div className="min-w-0 space-y-5">
         <Link href="/onyx/platform"
@@ -73,8 +77,6 @@ export default async function OnyxPlatformTenantLayout(
             <DeleteTenantButton tenantId={tenant.id} tenantName={tenant.name} />
           </div>
         </Card>
-
-        <TenantSubnav tenantId={tenant.id} />
 
         <div className="min-w-0">{children}</div>
       </div>
