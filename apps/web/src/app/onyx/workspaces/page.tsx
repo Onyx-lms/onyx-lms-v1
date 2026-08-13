@@ -49,10 +49,15 @@ export default async function OnyxWorkspacesPage() {
     onyxApi<Course[]>('/api/onyx/my/courses'),
   ]);
 
-  // An administrator does not create workspaces here -- they monitor
-  // everyone who does. `/all` and the members list to name whose project is
-  // whose are both admin-only, so both are skipped entirely for anyone else.
-  const [everyProject, members] = me.role === 'admin'
+  // Neither an administrator nor faculty create workspaces here -- they
+  // monitor whoever does. An admin's `/all` is every project at the
+  // institution; a faculty member's is the same route narrowed server-side
+  // to workspaces attached to a course they actually teach (see the route's
+  // own comment) -- never the whole institution's. `/members` is
+  // admin-and-faculty already; `?all=1` so a course only a faculty member's
+  // own draft is still named correctly rather than falling back to an id.
+  const staff = me.role === 'admin' || me.role === 'faculty';
+  const [everyProject, members] = staff
     ? await Promise.all([
       onyxApiSafe<Workspace[]>('/api/onyx/workspaces/all'),
       onyxApiSafe<{ user: { id: number; name: string; email: string } | null }[]>(
@@ -62,8 +67,8 @@ export default async function OnyxWorkspacesPage() {
   const ownerOf = new Map((members ?? [])
     .filter((m) => m.user)
     .map((m) => [m.user!.id, m.user!]));
-  const allCourses = me.role === 'admin'
-    ? await onyxApiSafe<Course[]>('/api/onyx/courses')
+  const allCourses = staff
+    ? await onyxApiSafe<Course[]>('/api/onyx/courses?all=1')
     : null;
   const courseByIdAll = new Map((allCourses ?? []).map((c) => [c.id, c]));
 
@@ -164,23 +169,36 @@ export default async function OnyxWorkspacesPage() {
         )}
       </div>
 
-      {/* An administrator does not build here -- they oversee everyone who
-          does. Reachable because WorkspaceService now lets admin open any
-          project, personal or course-attached (view and comment only; the
-          editor, run and delete stay owner-only regardless of role). */}
-      {me.role === 'admin' && everyProject !== null ? (
+      {/* Neither an administrator nor faculty build here -- they oversee
+          whoever does. Reachable because WorkspaceService lets admin open
+          any project and faculty open one attached to a course they teach
+          (view and comment only; the editor, run and delete stay
+          owner-only regardless of role). */}
+      {staff && everyProject !== null ? (
         <div className="mt-9">
-          <SectionHead title={'Every project at ' + me.tenant.name + ' · ' + everyProject.length} />
+          <SectionHead title={(me.role === 'admin'
+            ? 'Every project at ' + me.tenant.name
+            : 'Every project on your courses') + ' · ' + everyProject.length} />
           {everyProject.length === 0 ? (
             <Card>
-              <Empty icon="layers">Nobody has started a project yet.</Empty>
+              <Empty icon="layers">
+                {me.role === 'admin'
+                  ? 'Nobody has started a project yet.'
+                  : 'No student has started a project on a course you teach yet.'}
+              </Empty>
             </Card>
           ) : (
-            <div tabIndex={0} role="region" aria-label="Every project at this institution"
+            <div tabIndex={0} role="region"
+              aria-label={me.role === 'admin'
+                ? 'Every project at this institution' : 'Every project on your courses'}
               className="relative min-w-0 max-w-full overflow-x-auto rounded-2xl border
                          border-line bg-white shadow-card">
               <table className="w-full text-sm">
-                <caption className="sr-only">Every project workspace at this institution</caption>
+                <caption className="sr-only">
+                  {me.role === 'admin'
+                    ? 'Every project workspace at this institution'
+                    : 'Every project workspace on a course you teach'}
+                </caption>
                 <thead>
                   <tr className="border-b border-line bg-slate-50 text-left text-[11px]
                                  uppercase tracking-[.06em] text-muted [&>th]:whitespace-nowrap

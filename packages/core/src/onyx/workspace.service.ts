@@ -114,6 +114,23 @@ export class WorkspaceService {
     return data ?? [];
   }
 
+  /**
+   * The same monitoring view as listAll(), narrowed to one person's own
+   * classes -- faculty do not get every project at the institution, only
+   * the ones their students built for a course they actually teach.
+   * `#assertReachable` already let a faculty member open one of these
+   * individually if they somehow had its id; this is the list that makes
+   * them discoverable in the first place.
+   */
+  async listForCourses(tenantId: number, courseIds: number[]) {
+    if (!courseIds.length) return [];
+    const { data } = await this.#db.from('onyx_workspaces')
+      .select(WORKSPACE_COLUMNS)
+      .eq('tenant_id', tenantId).in('course_id', courseIds)
+      .order('id', { ascending: false });
+    return data ?? [];
+  }
+
   /** The workspace with its tree, its snapshots and its review comments. */
   async open(tenantId: number, workspaceId: number, userId: number, role: Role) {
     const workspace = await this.#assertReachable(tenantId, workspaceId, userId, role);

@@ -164,6 +164,14 @@ export class AcademicsService {
 
   // ---- courses ----
 
+  /**
+   * The catalogue, with two facts a browsing card is judged on and neither
+   * worth a follow-up request per course: how many are enrolled, and who
+   * teaches it. Two bulk queries against the id list the first query just
+   * returned, not one query per course -- the shape every other list-with-
+   * counts read in this codebase already uses (see PlatformService's
+   * tenantAcademics()).
+   */
   async courses(tenantId: number, filters: {
     programId?: number; semesterId?: number; status?: number; search?: string;
   } = {}) {
@@ -179,7 +187,38 @@ export class AcademicsService {
       rows = rows.filter((c) => (c.title ?? '').toLowerCase().includes(needle)
         || (c.code ?? '').toLowerCase().includes(needle));
     }
-    return rows;
+
+    const ids = rows.map((c) => Number(c.id));
+    const [enrolQ, facQ] = ids.length ? await Promise.all([
+      this.#db.from('onyx_enrollments').select('course_id')
+        .eq('tenant_id', tenantId).eq('status', 1).in('course_id', ids),
+      this.#db.from('onyx_course_faculty').select('course_id, user_id')
+        .eq('tenant_id', tenantId).in('course_id', ids),
+    ]) : [{ data: [] }, { data: [] }];
+
+    const enrolCount = new Map<number, number>();
+    for (const e of enrolQ.data ?? []) {
+      const c = Number(e.course_id);
+      enrolCount.set(c, (enrolCount.get(c) ?? 0) + 1);
+    }
+    const facultyIds = [...new Set((facQ.data ?? []).map((f) => Number(f.user_id)))];
+    const { data: facultyUsers } = facultyIds.length
+      ? await this.#db.from('onyx_users').select('id, name').in('id', facultyIds)
+      : { data: [] };
+    const nameOf = new Map((facultyUsers ?? []).map((u) => [Number(u.id), String(u.name)]));
+    const facultyByCourse = new Map<number, { user_id: number; name: string }[]>();
+    for (const f of facQ.data ?? []) {
+      const c = Number(f.course_id);
+      const list = facultyByCourse.get(c) ?? [];
+      list.push({ user_id: Number(f.user_id), name: nameOf.get(Number(f.user_id)) ?? 'Unknown' });
+      facultyByCourse.set(c, list);
+    }
+
+    return rows.map((c) => ({
+      ...c,
+      enrollment_count: enrolCount.get(Number(c.id)) ?? 0,
+      faculty: facultyByCourse.get(Number(c.id)) ?? [],
+    }));
   }
 
   async course(tenantId: number, id: number) {
@@ -324,6 +363,13 @@ export class AcademicsService {
       .select(ENROLLMENT_COLUMNS)
       .eq('tenant_id', tenantId).eq('user_id', userId).eq('status', 1);
     return data ?? [];
+  }
+
+  /** The reverse of `faculty()` -- every course id this person teaches. */
+  async teachingFor(tenantId: number, userId: number): Promise<number[]> {
+    const { data } = await this.#db.from('onyx_course_faculty')
+      .select('course_id').eq('tenant_id', tenantId).eq('user_id', userId);
+    return [...new Set((data ?? []).map((r) => Number(r.course_id)))];
   }
 
   async roster(tenantId: number, courseId: number) {

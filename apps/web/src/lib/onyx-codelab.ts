@@ -15,6 +15,8 @@ export interface Problem {
   memory_limit_kb: number;
   status: 'draft' | 'published';
   solution_rule: string;
+  solution_after_attempts: number | null;
+  solution_after: string | null;
 }
 
 /** A test case as a learner may see it: a hidden one carries no input at all. */

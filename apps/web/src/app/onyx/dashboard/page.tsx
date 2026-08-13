@@ -820,8 +820,8 @@ async function FacultyDashboard({ me }: { me: Me }) {
                   {taught.length
                     ? 'Every submission is marked, every question has a reply and no register '
                       + 'was left open. Today is below.'
-                    : 'Once an administrator puts you on a course, its marking queue, register '
-                      + 'and questions all arrive here.'}
+                    : 'Once you are on a course -- your own, or one an administrator puts you '
+                      + 'on -- its marking queue, register and questions all arrive here.'}
                 </span>
               </Banner>
             )}
@@ -970,8 +970,8 @@ async function FacultyDashboard({ me }: { me: Me }) {
             ) : (
               <Card>
                 <Empty icon="book">
-                  You are not on any course yet. An administrator adds teaching staff to a
-                  course from{' '}
+                  You are not on any course yet. Start one yourself, or an administrator can
+                  put you on an existing one, from{' '}
                   <Link href="/onyx/courses" className="font-semibold text-brand-600 underline">
                     the catalogue
                   </Link>.

@@ -5,9 +5,9 @@ import {
   ActionLink, Buckets, Card, Empty, ListRow, Pill, RowList, SectionHead, Segmented, StackBar,
 } from '@/components/onyx-ui';
 import { navFor } from '@/lib/onyx-nav';
-import { requireOnyxSession, onyxApi, type Me } from '@/lib/onyx-session';
-import { isStaff } from '@/lib/onyx-learn';
-import { CreatePanel } from '@/components/onyx-create';
+import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
+import { isStaff, type Course } from '@/lib/onyx-learn';
+import { CreateProblem } from '@/components/onyx-manage';
 import type { Problem } from '@/lib/onyx-codelab';
 
 export const metadata: Metadata = { title: 'Practice' };
@@ -40,6 +40,14 @@ export default async function OnyxPracticePage({ searchParams }: {
     onyxApi<Me>('/api/onyx/me'),
     onyxApi<Problem[]>('/api/onyx/problems' + (query.size ? '?' + query : '')),
   ]);
+  // A course a problem can be tied to -- an admin picks from every course at
+  // the institution, faculty from the ones they actually teach (courses?all=1
+  // is admin/faculty-only anyway, and /my/courses now includes taught
+  // courses, not only enrolled-in ones).
+  const courseOptions = isStaff(me.role)
+    ? await onyxApiSafe<Course[]>(
+      me.role === 'admin' ? '/api/onyx/courses?all=1' : '/api/onyx/my/courses')
+    : null;
 
   const topics = [...new Set(problems.map((p) => p.topic).filter(Boolean))] as string[];
 
@@ -69,20 +77,16 @@ export default async function OnyxPracticePage({ searchParams }: {
     >
       {/* LAB-04: "curated problems organised by topic and difficulty".
           Left as a draft on creation -- the API refuses to publish a problem
-          with no test cases, and at least one of them has to be visible. */}
+          with no test cases, and at least one of them has to be visible.
+          CreateProblem collects everything the API accepts a problem for
+          (this used to be three fields out of a dozen) and, on success,
+          goes straight to the new problem's own page to set those cases --
+          not back to this list, where a freshly-made draft was one more
+          row to find. */}
       {isStaff(me.role) ? (
         <div className="mb-6">
-          <CreatePanel
-            title="New problem" cta="Add a problem" icon="code"
-            endpoint="problems"
-            fields={[
-              { name: 'title', label: 'Problem', required: true, wide: true,
-                placeholder: 'Two Sum' },
-              { name: 'statement', label: 'Statement', type: 'textarea', rows: 4,
-                required: true },
-              { name: 'difficulty', label: 'Difficulty', type: 'select', fallback: 'easy',
-                options: ['easy', 'medium', 'hard'].map((d) => ({ value: d, label: d })) },
-            ]}
+          <CreateProblem
+            courses={(courseOptions ?? []).map((c) => ({ id: c.id, label: c.code + ' — ' + c.title }))}
           />
         </div>
       ) : null}

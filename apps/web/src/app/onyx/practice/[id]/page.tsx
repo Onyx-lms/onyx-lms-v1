@@ -4,9 +4,10 @@ import { OnyxShell } from '@/components/onyx-shell';
 import { OnyxCodeLab } from '@/components/onyx-codelab';
 import { Card, CodeBlock, Icon, Pill, SectionHead } from '@/components/onyx-ui';
 import { navFor } from '@/lib/onyx-nav';
-import { requireOnyxSession, onyxApi, type Me } from '@/lib/onyx-session';
+import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import { DIFFICULTY_LABELS, type ProblemDetail } from '@/lib/onyx-codelab';
-import { TestCases } from '@/components/onyx-manage';
+import type { Course } from '@/lib/onyx-learn';
+import { ProblemSettingsForm, TestCases } from '@/components/onyx-manage';
 
 export const metadata: Metadata = { title: 'Problem' };
 
@@ -34,6 +35,14 @@ export default async function OnyxProblemPage({ params }: { params: Promise<{ id
     onyxApi<Me>('/api/onyx/me'),
     onyxApi<ProblemDetail>('/api/onyx/problems/' + id),
   ]);
+  const staff = me.role === 'admin' || me.role === 'faculty';
+  // For the course picker on ProblemSettingsForm -- same split as the
+  // practice list's own CreateProblem: admin picks from every course,
+  // faculty from the ones they actually teach.
+  const courseOptions = staff
+    ? await onyxApiSafe<Course[]>(
+      me.role === 'admin' ? '/api/onyx/courses?all=1' : '/api/onyx/my/courses')
+    : null;
 
   const visible = problem.tests.filter((t) => !t.is_hidden);
   const hidden = problem.tests.length - visible.length;
@@ -64,10 +73,20 @@ export default async function OnyxProblemPage({ params }: { params: Promise<{ id
 
       {/* LAB-01: a problem without cases cannot be judged. Authoring them was
           API-only until now, which meant a problem created in the browser
-          could never be finished there. */}
-      {me.role === 'admin' || me.role === 'faculty' ? (
-        <div className="mb-4">
-          <TestCases problemId={Number(id)} />
+          could never be finished there. Settings and cases side by side --
+          both are "set this problem up properly", not two different jobs.
+          TestCases gets the staff-only unredacted list (hidden cases
+          included) so re-opening it to add one more case does not silently
+          wipe the ones already there. */}
+      {staff ? (
+        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <ProblemSettingsForm
+            problemId={Number(id)}
+            problem={problem}
+            courses={(courseOptions ?? []).map((c) => ({ id: c.id, label: c.code + ' — ' + c.title }))}
+          />
+          <TestCases problemId={Number(id)} initial={problem.tests}
+            published={problem.status === 'published'} />
         </div>
       ) : null}
 

@@ -174,8 +174,19 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
     });
   });
 
+  /**
+   * A course an administrator stands up, or a course faculty stands up for
+   * themselves. The second is real -- "run your own course, add your own
+   * students to it" is not something that should need an administrator in
+   * the loop for every new class -- but a course created by a faculty
+   * member and assigned to nobody would be invisible to them the moment
+   * they left this screen (every "your courses" list on this product is
+   * keyed off `onyx_course_faculty`, not `created_by`), so the two happen
+   * together: they are the course's faculty from the moment it exists,
+   * the same as if an administrator had assigned them right after.
+   */
   app.post('/api/onyx/courses', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     const body = validate(z.object({
       code: z.string().min(1).max(50),
       title: z.string().min(1).max(255),
@@ -188,11 +199,14 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
     }), req.body);
 
     const course = await ctx.onyxAcademics.createCourse(claims.tenant_id, claims.user_id, body);
+    if (claims.tenant_role === 'faculty') {
+      await ctx.onyxAcademics.assignFaculty(claims.tenant_id, Number(course.id), claims.user_id);
+    }
     return ok(course, 'Course created.');
   });
 
   app.patch('/api/onyx/courses/:id', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const claims = await requireCourseManager(req, idOf(req));
     const body = validate(z.object({
       code: z.string().min(1).max(50).optional(),
       title: z.string().min(1).max(255).optional(),
@@ -214,9 +228,14 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
    * problems both publish through a named endpoint, and a course is the one
    * people reach for first. Matching the shape means the authoring UI does
    * not need a special case for the one resource that works differently.
+   *
+   * Both admin and this course's own faculty, same as PATCH above -- a
+   * faculty member who can create and staff a course but not open it to the
+   * students they just added would still need an administrator for the one
+   * step that makes the course real to anyone but them.
    */
   app.post('/api/onyx/courses/:id/publish', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const claims = await requireCourseManager(req, idOf(req));
     const course = await ctx.onyxAcademics.updateCourse(claims.tenant_id, idOf(req),
       { status: 1 });
     await ctx.onyxAudit.record(claims, {
@@ -227,7 +246,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.post('/api/onyx/courses/:id/close', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const claims = await requireCourseManager(req, idOf(req));
     return ok(await ctx.onyxAcademics.updateCourse(claims.tenant_id, idOf(req),
       { status: 0 }), 'Course closed.');
   });
@@ -273,11 +292,26 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   /** What this learner is enrolled in -- the "what do I do next" list. */
+  /**
+   * "My courses" -- enrolled in, or teaching. These used to mean only the
+   * first: a faculty member teaches a course through `onyx_course_faculty`,
+   * never `onyx_enrollments`, so this returned empty for every lecturer who
+   * was not *also* personally enrolled as a student somewhere. Every screen
+   * built on this endpoint (the catalogue's "my courses", the dashboard's
+   * "your courses", a workspace's course picker) inherited the same hole.
+   */
   app.get('/api/onyx/my/courses', async (req) => {
     const claims = requireOnyx(asReq(req), ctx.jwtSecret);
-    const enrollments = await ctx.onyxAcademics.enrollmentsFor(claims.tenant_id, claims.user_id);
-    const courses = await Promise.all(enrollments.map((e) =>
-      ctx.onyxAcademics.course(claims.tenant_id, Number(e.course_id))));
+    const [enrollments, teaching] = await Promise.all([
+      ctx.onyxAcademics.enrollmentsFor(claims.tenant_id, claims.user_id),
+      ctx.onyxAcademics.teachingFor(claims.tenant_id, claims.user_id),
+    ]);
+    const courseIds = [...new Set([
+      ...enrollments.map((e) => Number(e.course_id)),
+      ...teaching,
+    ])];
+    const courses = await Promise.all(courseIds.map((id) =>
+      ctx.onyxAcademics.course(claims.tenant_id, id)));
     return ok(courses);
   });
 

@@ -590,20 +590,245 @@ export function BuildFeeStructure({ heads }: {
   );
 }
 
-/* ------------------------------------------------- LAB-03: test cases ---- */
+/* -------------------------------------------------- LAB-01: a problem ---- */
 
-export function TestCases({ problemId }: { problemId: number }) {
+const SOLUTION_RULE_LABELS: Record<string, string> = {
+  never: 'Never shown',
+  after_solve: 'Once they solve it',
+  after_attempts: 'After a number of attempts',
+  after_date: 'After a date',
+};
+
+/**
+ * "Add a problem" used to collect three fields (title, statement,
+ * difficulty) and stop -- everything the API actually accepts a problem for
+ * (topic, tags, time and memory limits, which course it belongs to, the
+ * worked solution and when it releases) had no form anywhere, and creating
+ * one landed back on the list with no way to find the draft it just made.
+ * This collects the whole thing and, on success, goes straight to the new
+ * problem's own page -- which is also where TestCases lives, so "set the
+ * question up" and "set its cases up" are now one continuous action instead
+ * of a create, then a hunt through the list for a row marked Draft.
+ */
+export function CreateProblem({ courses }: { courses: { id: number; label: string }[] }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [cases, setCases] = useState([
-    { stdin: '', expected_stdout: '', is_hidden: false },
-    { stdin: '', expected_stdout: '', is_hidden: true },
-  ]);
+  const [title, setTitle] = useState('');
+  const [statement, setStatement] = useState('');
+  const [difficulty, setDifficulty] = useState('easy');
+  const [topic, setTopic] = useState('');
+  const [tags, setTags] = useState('');
+  const [timeLimit, setTimeLimit] = useState('5');
+  const [memoryLimit, setMemoryLimit] = useState('256');
+  const [courseId, setCourseId] = useState('');
+  const [solution, setSolution] = useState('');
+  const [solutionRule, setSolutionRule] = useState('never');
+  const [afterAttempts, setAfterAttempts] = useState('3');
+  const [afterDate, setAfterDate] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
   return (
-    <Shell title="Test cases" cta="Set test cases and publish" open={open} setOpen={setOpen}
+    <Shell title="New problem" cta="Add a problem" open={open} setOpen={setOpen}
+      pending={pending} error={error}
+      onSubmit={() => start(async () => {
+        setError(null);
+        const made = await send('problems', {
+          title,
+          statement: statement || null,
+          difficulty,
+          topic: topic.trim() || null,
+          tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+          time_limit_ms: Math.round((Number(timeLimit) || 5) * 1000),
+          memory_limit_kb: Math.round((Number(memoryLimit) || 256) * 1024),
+          course_id: courseId ? Number(courseId) : null,
+          solution: solution.trim() || null,
+          solution_rule: solutionRule,
+          solution_after_attempts: solutionRule === 'after_attempts'
+            ? Number(afterAttempts) || 3 : undefined,
+          solution_after: solutionRule === 'after_date' && afterDate
+            ? new Date(afterDate).toISOString() : null,
+        });
+        if (!made.ok) { setError(made.message ?? 'That did not work.'); return; }
+        // Left as a draft on creation -- the API refuses to publish a
+        // problem with no test cases, so the next screen (this problem's
+        // own page) is where that actually gets finished, not here.
+        setOpen(false);
+        router.push('/onyx/practice/' + made.data.id);
+      })}>
+      <p className="mb-2 text-xs text-muted">
+        Created as a draft. The next screen sets its test cases, which the problem
+        cannot be published without.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <label className="block text-[13px] font-semibold text-slate-700" htmlFor="pr-title">
+            Problem
+          </label>
+          <input id="pr-title" required value={title} onChange={(e) => setTitle(e.target.value)}
+            placeholder="Two Sum" className={input + ' mt-1 w-full'} />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="block text-[13px] font-semibold text-slate-700" htmlFor="pr-stmt">
+            Statement
+          </label>
+          <textarea id="pr-stmt" required rows={4} value={statement}
+            onChange={(e) => setStatement(e.target.value)}
+            className={input + ' mt-1 w-full'} />
+        </div>
+        <div>
+          <label className="block text-[13px] font-semibold text-slate-700" htmlFor="pr-diff">
+            Difficulty
+          </label>
+          <select id="pr-diff" value={difficulty} onChange={(e) => setDifficulty(e.target.value)}
+            className={input + ' mt-1 w-full'}>
+            {['easy', 'medium', 'hard'].map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[13px] font-semibold text-slate-700" htmlFor="pr-topic">
+            Topic
+          </label>
+          <input id="pr-topic" value={topic} onChange={(e) => setTopic(e.target.value)}
+            placeholder="Loops" className={input + ' mt-1 w-full'} />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="block text-[13px] font-semibold text-slate-700" htmlFor="pr-tags">
+            Tags
+          </label>
+          <input id="pr-tags" value={tags} onChange={(e) => setTags(e.target.value)}
+            placeholder="arrays, easy" className={input + ' mt-1 w-full'} />
+          <p className="mt-1 text-xs text-muted">Comma-separated.</p>
+        </div>
+        <div>
+          <label className="block text-[13px] font-semibold text-slate-700" htmlFor="pr-time">
+            Time per case (s)
+          </label>
+          <input id="pr-time" type="number" min={0.1} max={30} step="0.1" value={timeLimit}
+            onChange={(e) => setTimeLimit(e.target.value)} className={input + ' mt-1 w-full'} />
+        </div>
+        <div>
+          <label className="block text-[13px] font-semibold text-slate-700" htmlFor="pr-mem">
+            Memory per case (MB)
+          </label>
+          <input id="pr-mem" type="number" min={16} max={1024} value={memoryLimit}
+            onChange={(e) => setMemoryLimit(e.target.value)} className={input + ' mt-1 w-full'} />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="block text-[13px] font-semibold text-slate-700" htmlFor="pr-course">
+            Course
+          </label>
+          <select id="pr-course" value={courseId} onChange={(e) => setCourseId(e.target.value)}
+            className={input + ' mt-1 w-full'}>
+            <option value="">Not tied to a course</option>
+            {courses.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+        </div>
+
+        <fieldset className="sm:col-span-2 rounded-xl border border-line p-3">
+          <legend className="px-1 text-[13px] font-semibold text-slate-700">
+            Worked solution
+          </legend>
+          <label className="block text-xs font-semibold text-slate-700" htmlFor="pr-sol">
+            Solution (optional)
+          </label>
+          <textarea id="pr-sol" rows={3} value={solution}
+            onChange={(e) => setSolution(e.target.value)}
+            className={input + ' mt-1 w-full font-mono text-xs'} />
+          <label className="mt-2 block text-xs font-semibold text-slate-700" htmlFor="pr-rule">
+            Release it to a learner
+          </label>
+          <select id="pr-rule" value={solutionRule}
+            onChange={(e) => setSolutionRule(e.target.value)} className={input + ' mt-1 w-full'}>
+            {Object.entries(SOLUTION_RULE_LABELS).map(([v, l]) => (
+              <option key={v} value={v}>{l}</option>
+            ))}
+          </select>
+          {solutionRule === 'after_attempts' ? (
+            <div className="mt-2">
+              <label className="block text-xs font-semibold text-slate-700" htmlFor="pr-attempts">
+                After this many attempts
+              </label>
+              <input id="pr-attempts" type="number" min={1} max={100} value={afterAttempts}
+                onChange={(e) => setAfterAttempts(e.target.value)}
+                className={input + ' mt-1 w-full'} />
+            </div>
+          ) : null}
+          {solutionRule === 'after_date' ? (
+            <div className="mt-2">
+              <label className="block text-xs font-semibold text-slate-700" htmlFor="pr-after">
+                From
+              </label>
+              <input id="pr-after" type="datetime-local" value={afterDate}
+                onChange={(e) => setAfterDate(e.target.value)}
+                className={input + ' mt-1 w-full'} />
+            </div>
+          ) : null}
+        </fieldset>
+      </div>
+    </Shell>
+  );
+}
+
+/* ------------------------------------------------- LAB-03: test cases ---- */
+
+export function TestCases({ problemId, initial, published }: {
+  problemId: number;
+  /** The problem's existing cases, staff-visible (hidden ones included) --
+   *  see CodeLabService#problem()'s own comment on why staff get the
+   *  unredacted list. Missing or empty means "nothing set yet". */
+  initial?: { name?: string; stdin: string | null; expected_stdout: string | null; is_hidden: number | boolean }[];
+  published?: boolean;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [unpublishing, startUnpublish] = useTransition();
+  const [unpublishError, setUnpublishError] = useState<string | null>(null);
+  const seed = (initial ?? []).length
+    ? initial!.map((t) => ({
+      name: t.name ?? '', stdin: t.stdin ?? '', expected_stdout: t.expected_stdout ?? '',
+      is_hidden: Boolean(t.is_hidden),
+    }))
+    : [
+      { name: '', stdin: '', expected_stdout: '', is_hidden: false },
+      { name: '', stdin: '', expected_stdout: '', is_hidden: true },
+    ];
+  const [cases, setCases] = useState(seed);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  // A published problem's cases are fixed -- see setTests()'s own comment:
+  // changing them under submissions already graded would regrade those
+  // silently. The only door back to editing them is here, deliberate and
+  // separate, not something opening this panel does for you.
+  if (published) {
+    return (
+      <div className="rounded-2xl border border-line bg-white p-4">
+        <p className="text-[13px] text-muted">
+          This problem is published, so its test cases are fixed — changing them under
+          submissions already marked would regrade those silently. Unpublish it to edit
+          them; it stops accepting new submissions until you publish it again.
+        </p>
+        {unpublishError ? (
+          <p role="alert" className="mt-2 text-xs text-rose-700">{unpublishError}</p>
+        ) : null}
+        <button type="button" disabled={unpublishing}
+          className={ghost + ' mt-3 disabled:opacity-60'}
+          onClick={() => startUnpublish(async () => {
+            setUnpublishError(null);
+            const res = await send(`problems/${problemId}/unpublish`);
+            if (!res.ok) { setUnpublishError(res.message ?? 'That did not work.'); return; }
+            router.refresh();
+          })}>
+          {unpublishing ? 'Unpublishing…' : 'Unpublish to edit'}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <Shell title="Test cases" cta={(initial ?? []).length ? 'Edit test cases' : 'Set test cases and publish'}
+      open={open} setOpen={setOpen}
       pending={pending} error={error}
       onSubmit={() => start(async () => {
         setError(null);
@@ -614,10 +839,16 @@ export function TestCases({ problemId }: { problemId: number }) {
             + 'only learns that they were wrong.');
           return;
         }
-        const saved = await send(`problems/${problemId}/tests`, { tests: clean }, 'PUT');
+        const saved = await send(`problems/${problemId}/tests`,
+          { tests: clean.map((c) => ({ ...c, name: c.name.trim() || undefined })) }, 'PUT');
         if (!saved.ok) { setError(saved.message ?? 'That did not work.'); return; }
-        const pub = await send(`problems/${problemId}/publish`);
-        if (!pub.ok) { setError(pub.message ?? 'Saved, but not published.'); return; }
+        // Already published once, being edited after an unpublish: leave it
+        // as the draft it now is rather than re-publishing behind their
+        // back -- publishing is its own decision, made from this same page.
+        if (!(initial ?? []).length) {
+          const pub = await send(`problems/${problemId}/publish`);
+          if (!pub.ok) { setError(pub.message ?? 'Saved, but not published.'); return; }
+        }
         setOpen(false); router.refresh();
       })}>
       <p className="mb-2 text-xs text-muted">
@@ -627,7 +858,14 @@ export function TestCases({ problemId }: { problemId: number }) {
       <div className="space-y-3">
         {cases.map((c, i) => (
           <div key={i} className="rounded-xl border border-line p-3">
-            <div className="grid gap-2 sm:grid-cols-2">
+            <label className="block text-xs font-semibold" htmlFor={'tc-name-' + i}>
+              Name (optional)
+            </label>
+            <input id={'tc-name-' + i} value={c.name} placeholder={'Case ' + (i + 1)}
+              className={input + ' mt-1 w-full text-xs'}
+              onChange={(e) => setCases((cs) =>
+                cs.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} />
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
               <div>
                 <label className="block text-xs font-semibold" htmlFor={'tc-in-' + i}>Input</label>
                 <textarea id={'tc-in-' + i} rows={2} value={c.stdin}
@@ -645,22 +883,215 @@ export function TestCases({ problemId }: { problemId: number }) {
                     cs.map((x, j) => (j === i ? { ...x, expected_stdout: e.target.value } : x)))} />
               </div>
             </div>
-            <label className="mt-2 flex items-center gap-2 text-xs font-semibold">
-              <input type="checkbox" checked={c.is_hidden}
-                className="h-4 w-4 rounded border-slate-300"
-                onChange={(e) => setCases((cs) =>
-                  cs.map((x, j) => (j === i ? { ...x, is_hidden: e.target.checked } : x)))} />
-              Hidden from the learner
-            </label>
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <label className="flex items-center gap-2 text-xs font-semibold">
+                <input type="checkbox" checked={c.is_hidden}
+                  className="h-4 w-4 rounded border-slate-300"
+                  onChange={(e) => setCases((cs) =>
+                    cs.map((x, j) => (j === i ? { ...x, is_hidden: e.target.checked } : x)))} />
+                Hidden from the learner
+              </label>
+              {cases.length > 1 ? (
+                <button type="button" aria-label={'Remove ' + (c.name || 'case ' + (i + 1))}
+                  className="text-xs font-semibold text-rose-700 hover:underline"
+                  onClick={() => setCases((cs) => cs.filter((_, j) => j !== i))}>
+                  Remove
+                </button>
+              ) : null}
+            </div>
           </div>
         ))}
         <button type="button" className={ghost}
           onClick={() => setCases((cs) =>
-            [...cs, { stdin: '', expected_stdout: '', is_hidden: true }])}>
+            [...cs, { name: '', stdin: '', expected_stdout: '', is_hidden: true }])}>
           Add a case
         </button>
       </div>
     </Shell>
+  );
+}
+
+/**
+ * Editing a problem's own settings after it exists -- title, statement,
+ * topic, tags, limits, which course it belongs to, the worked solution and
+ * when it releases. `PATCH /problems/:id` stays open regardless of publish
+ * status (see the route's own comment), unlike test cases just above, so
+ * this is reachable whether the problem is a draft or already live.
+ */
+export function ProblemSettingsForm({ problemId, problem, courses }: {
+  problemId: number;
+  problem: {
+    title: string; statement: string | null; difficulty: string;
+    topic: string | null; tags: string[]; course_id: number | null;
+    time_limit_ms: number; memory_limit_kb: number;
+    solution: string | null; solution_rule: string;
+    solution_after_attempts: number | null; solution_after: string | null;
+  };
+  courses: { id: number; label: string }[];
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState(problem.title);
+  const [statement, setStatement] = useState(problem.statement ?? '');
+  const [difficulty, setDifficulty] = useState(problem.difficulty);
+  const [topic, setTopic] = useState(problem.topic ?? '');
+  const [tags, setTags] = useState((problem.tags ?? []).join(', '));
+  const [timeLimit, setTimeLimit] = useState(String(problem.time_limit_ms / 1000));
+  const [memoryLimit, setMemoryLimit] = useState(String(Math.round(problem.memory_limit_kb / 1024)));
+  const [courseId, setCourseId] = useState(problem.course_id ? String(problem.course_id) : '');
+  const [solution, setSolution] = useState(problem.solution ?? '');
+  const [solutionRule, setSolutionRule] = useState(problem.solution_rule);
+  const [afterAttempts, setAfterAttempts] = useState(String(problem.solution_after_attempts ?? 3));
+  const [afterDate, setAfterDate] = useState(problem.solution_after
+    ? problem.solution_after.slice(0, 16) : '');
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-2 rounded-xl border border-line px-3 py-2
+                   text-[13px] font-semibold text-slate-700 hover:bg-brand-50">
+        <Icon name="edit" className="h-4 w-4" />Edit problem settings
+      </button>
+    );
+  }
+  return (
+    <form
+      className="space-y-2.5 rounded-xl border border-line bg-white p-3.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        start(async () => {
+          setError(null);
+          const res = await send('problems/' + problemId, {
+            title, statement: statement || null, difficulty,
+            topic: topic.trim() || null,
+            tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
+            time_limit_ms: Math.round((Number(timeLimit) || 5) * 1000),
+            memory_limit_kb: Math.round((Number(memoryLimit) || 256) * 1024),
+            course_id: courseId ? Number(courseId) : null,
+            solution: solution.trim() || null,
+            solution_rule: solutionRule,
+            solution_after_attempts: solutionRule === 'after_attempts'
+              ? Number(afterAttempts) || 3 : undefined,
+            solution_after: solutionRule === 'after_date' && afterDate
+              ? new Date(afterDate).toISOString() : null,
+          }, 'PATCH');
+          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+          setOpen(false);
+          router.refresh();
+        });
+      }}
+    >
+      {error ? <p role="alert" className="text-xs text-rose-700">{error}</p> : null}
+      <div>
+        <label className="block text-xs font-semibold text-slate-700" htmlFor="ps-title">Title</label>
+        <input id="ps-title" value={title} required maxLength={255}
+          onChange={(e) => setTitle(e.target.value)} className={input + ' mt-1 w-full'} />
+      </div>
+      <div>
+        <label className="block text-xs font-semibold text-slate-700" htmlFor="ps-stmt">
+          Statement
+        </label>
+        <textarea id="ps-stmt" rows={4} value={statement}
+          onChange={(e) => setStatement(e.target.value)} className={input + ' mt-1 w-full'} />
+      </div>
+      <div className="grid grid-cols-2 gap-2.5">
+        <div>
+          <label className="block text-xs font-semibold text-slate-700" htmlFor="ps-diff">
+            Difficulty
+          </label>
+          <select id="ps-diff" value={difficulty} onChange={(e) => setDifficulty(e.target.value)}
+            className={input + ' mt-1 w-full'}>
+            {['easy', 'medium', 'hard'].map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-700" htmlFor="ps-topic">
+            Topic
+          </label>
+          <input id="ps-topic" value={topic} onChange={(e) => setTopic(e.target.value)}
+            className={input + ' mt-1 w-full'} />
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs font-semibold text-slate-700" htmlFor="ps-tags">Tags</label>
+        <input id="ps-tags" value={tags} onChange={(e) => setTags(e.target.value)}
+          placeholder="arrays, easy" className={input + ' mt-1 w-full'} />
+      </div>
+      <div className="grid grid-cols-2 gap-2.5">
+        <div>
+          <label className="block text-xs font-semibold text-slate-700" htmlFor="ps-time">
+            Time per case (s)
+          </label>
+          <input id="ps-time" type="number" min={0.1} max={30} step="0.1" value={timeLimit}
+            onChange={(e) => setTimeLimit(e.target.value)} className={input + ' mt-1 w-full'} />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-slate-700" htmlFor="ps-mem">
+            Memory per case (MB)
+          </label>
+          <input id="ps-mem" type="number" min={16} max={1024} value={memoryLimit}
+            onChange={(e) => setMemoryLimit(e.target.value)} className={input + ' mt-1 w-full'} />
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs font-semibold text-slate-700" htmlFor="ps-course">
+          Course
+        </label>
+        <select id="ps-course" value={courseId} onChange={(e) => setCourseId(e.target.value)}
+          className={input + ' mt-1 w-full'}>
+          <option value="">Not tied to a course</option>
+          {courses.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+        </select>
+      </div>
+
+      <fieldset className="rounded-xl border border-line p-3">
+        <legend className="px-1 text-xs font-semibold text-slate-700">Worked solution</legend>
+        <label className="block text-xs font-semibold text-slate-700" htmlFor="ps-sol">
+          Solution (optional)
+        </label>
+        <textarea id="ps-sol" rows={3} value={solution}
+          onChange={(e) => setSolution(e.target.value)}
+          className={input + ' mt-1 w-full font-mono text-xs'} />
+        <label className="mt-2 block text-xs font-semibold text-slate-700" htmlFor="ps-rule">
+          Release it to a learner
+        </label>
+        <select id="ps-rule" value={solutionRule} onChange={(e) => setSolutionRule(e.target.value)}
+          className={input + ' mt-1 w-full'}>
+          {Object.entries(SOLUTION_RULE_LABELS).map(([v, l]) => (
+            <option key={v} value={v}>{l}</option>
+          ))}
+        </select>
+        {solutionRule === 'after_attempts' ? (
+          <div className="mt-2">
+            <label className="block text-xs font-semibold text-slate-700" htmlFor="ps-attempts">
+              After this many attempts
+            </label>
+            <input id="ps-attempts" type="number" min={1} max={100} value={afterAttempts}
+              onChange={(e) => setAfterAttempts(e.target.value)}
+              className={input + ' mt-1 w-full'} />
+          </div>
+        ) : null}
+        {solutionRule === 'after_date' ? (
+          <div className="mt-2">
+            <label className="block text-xs font-semibold text-slate-700" htmlFor="ps-after">
+              From
+            </label>
+            <input id="ps-after" type="datetime-local" value={afterDate}
+              onChange={(e) => setAfterDate(e.target.value)}
+              className={input + ' mt-1 w-full'} />
+          </div>
+        ) : null}
+      </fieldset>
+
+      <div className="flex gap-2 pt-1">
+        <button type="submit" disabled={pending} className={btn}>
+          {pending ? 'Saving…' : 'Save'}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className={ghost}>Cancel</button>
+      </div>
+    </form>
   );
 }
 

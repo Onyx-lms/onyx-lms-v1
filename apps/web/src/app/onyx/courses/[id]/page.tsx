@@ -311,7 +311,16 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
         </div>
 
         <aside className="min-w-0 space-y-6">
-          {me.role === 'admin' ? (
+          {/* Admin, or this specific course's own faculty -- the PATCH and
+              /publish and /close routes all take that same boundary now
+              (requireCourseManager), so a faculty member who created their
+              own course, or was assigned to an existing one, can finish
+              setting it up without an administrator. `roster !== null` is
+              the same "do they actually teach this one" signal the roster
+              section below already relies on: the fetch behind it 403s for
+              a faculty member who does not teach this course, so the
+              section simply is not there for them either. */}
+          {me.role === 'admin' || (me.role === 'faculty' && roster !== null) ? (
             <section className="mb-4">
               <SectionHead title="Course details" />
               <CourseSettingsForm courseId={Number(id)} course={outline.course} />

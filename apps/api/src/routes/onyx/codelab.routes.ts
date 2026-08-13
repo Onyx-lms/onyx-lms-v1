@@ -80,6 +80,48 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
   });
 
   /**
+   * Everything about a problem except its cases -- title, statement, topic,
+   * tags, languages, limits, the course it belongs to, the worked solution
+   * and when it releases. Stays editable regardless of publish status; see
+   * updateProblem()'s own comment for why that is safe where setTests()
+   * below is deliberately not.
+   */
+  app.patch('/api/onyx/problems/:id', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const body = validate(z.object({
+      title: z.string().min(1).max(255).optional(),
+      statement: z.string().max(100_000).nullish(),
+      difficulty: DifficultySchema.optional(),
+      topic: z.string().max(100).nullish(),
+      tags: z.array(z.string().max(50)).max(20).optional(),
+      languages: z.array(LanguageSchema).max(8).optional(),
+      course_id: z.number().int().positive().nullish(),
+      time_limit_ms: z.number().int().min(100).max(30_000).optional(),
+      memory_limit_kb: z.number().int().min(16_384).max(1_048_576).optional(),
+      solution: z.string().max(100_000).nullish(),
+      solution_rule: RuleSchema.optional(),
+      solution_after_attempts: z.number().int().min(1).max(100).optional(),
+      solution_after: z.string().nullish(),
+    }), req.body);
+
+    if (body.course_id) {
+      await ctx.onyxAcademics.assertCanTeach(
+        claims.tenant_id, body.course_id, claims.user_id, claims.tenant_role);
+    }
+    return ok(await ctx.onyxCodeLab.updateProblem(claims.tenant_id, idOf(req), body), 'Updated.');
+  });
+
+  /**
+   * The way back to draft, so setTests() below has somewhere to work again
+   * once a problem is published. See unpublishProblem()'s own comment for
+   * why this is a deliberate, separate action rather than automatic.
+   */
+  app.post('/api/onyx/problems/:id/unpublish', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    return ok(await ctx.onyxCodeLab.unpublishProblem(claims.tenant_id, idOf(req)), 'Unpublished.');
+  });
+
+  /**
    * The answer key. Faculty only, and only before publishing -- the service
    * refuses afterwards, because changing cases regrades old submissions
    * silently.
@@ -208,11 +250,19 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
     return ok(await ctx.onyxWorkspaces.list(claims.tenant_id, claims.user_id));
   });
 
-  /** Every project at the institution -- an administrator does not create
-   * workspaces here, they monitor everyone who does. */
+  /**
+   * Monitoring, not creating -- an administrator sees every project at the
+   * institution; faculty see the same thing narrowed to their own classes
+   * (every workspace attached to a course they teach), not the whole
+   * institution's. Neither creates a workspace here.
+   */
   app.get('/api/onyx/workspaces/all', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
-    return ok(await ctx.onyxWorkspaces.listAll(claims.tenant_id));
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    if (claims.tenant_role === 'admin') {
+      return ok(await ctx.onyxWorkspaces.listAll(claims.tenant_id));
+    }
+    const teaching = await ctx.onyxAcademics.teachingFor(claims.tenant_id, claims.user_id);
+    return ok(await ctx.onyxWorkspaces.listForCourses(claims.tenant_id, teaching));
   });
 
   app.post('/api/onyx/workspaces', async (req) => {

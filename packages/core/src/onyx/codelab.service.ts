@@ -154,6 +154,66 @@ export class CodeLabService {
     return data!;
   }
 
+  /**
+   * Everything about the problem except its cases -- title, statement,
+   * topic, tags, languages, limits, which course it belongs to, and the
+   * worked solution and when it releases. There was no way to fix any of
+   * this once a problem existed: a typo in the statement, a time limit set
+   * too tight, a course picked by mistake, all permanent. Unlike test
+   * cases (setTests(), below), none of this changes how a submission is
+   * graded, so it stays editable regardless of publish status -- the same
+   * reasoning ExaminationsService.updateExam() uses for the same shape of
+   * problem.
+   */
+  async updateProblem(tenantId: number, problemId: number, input: {
+    title?: string; statement?: string | null;
+    difficulty?: Difficulty; topic?: string | null; tags?: string[];
+    languages?: Language[]; course_id?: number | null;
+    time_limit_ms?: number; memory_limit_kb?: number;
+    solution?: string | null; solution_rule?: SolutionRule;
+    solution_after_attempts?: number; solution_after?: string | null;
+  }) {
+    await this.#problem(tenantId, problemId);
+    if (input.difficulty && !DIFFICULTIES.includes(input.difficulty)) {
+      throw new HttpError(422, 'That is not a difficulty.');
+    }
+    if (input.solution_rule) {
+      if (!SOLUTION_RULES.includes(input.solution_rule)) {
+        throw new HttpError(422, 'That is not a release rule.');
+      }
+      if (input.solution_rule === 'after_date' && input.solution_after === undefined) {
+        throw new HttpError(422, 'A date rule needs a date.');
+      }
+    }
+    for (const lang of input.languages ?? []) {
+      if (!LANGUAGES.includes(lang)) throw new HttpError(422, lang + ' is not a language here.');
+    }
+    if (input.course_id) await this.#academics.course(tenantId, input.course_id);
+
+    const patch: Record<string, unknown> = { updated_at: new Date(this.#now()).toISOString() };
+    if (input.title !== undefined) patch.title = input.title.trim();
+    if (input.statement !== undefined) patch.statement = input.statement;
+    if (input.difficulty !== undefined) patch.difficulty = input.difficulty;
+    if (input.topic !== undefined) patch.topic = input.topic;
+    if (input.tags !== undefined) patch.tags = input.tags;
+    if (input.languages !== undefined) patch.languages = input.languages;
+    if (input.course_id !== undefined) patch.course_id = input.course_id;
+    if (input.time_limit_ms !== undefined) patch.time_limit_ms = input.time_limit_ms;
+    if (input.memory_limit_kb !== undefined) patch.memory_limit_kb = input.memory_limit_kb;
+    if (input.solution !== undefined) patch.solution = input.solution;
+    if (input.solution_rule !== undefined) patch.solution_rule = input.solution_rule;
+    if (input.solution_after_attempts !== undefined) {
+      patch.solution_after_attempts = input.solution_after_attempts;
+    }
+    if (input.solution_after !== undefined) patch.solution_after = input.solution_after;
+
+    const { data, error } = await this.#db.from('onyx_problems')
+      .update(patch).eq('tenant_id', tenantId).eq('id', problemId)
+      .select(PROBLEM_COLUMNS).maybeSingle();
+    if (error) throw new HttpError(500, 'Could not update the problem: ' + error.message);
+    return data!;
+  }
+
   async setTests(tenantId: number, problemId: number, tests: {
     name?: string; stdin?: string | null; expected_stdout: string;
     is_hidden?: boolean; weight?: number;
@@ -222,6 +282,26 @@ export class CodeLabService {
       .update({ status: 'published', updated_at: new Date(this.#now()).toISOString() })
       .eq('tenant_id', tenantId).eq('id', problemId);
     return { ...problem, status: 'published' };
+  }
+
+  /**
+   * The way back to draft -- the only door setTests() has, since it refuses
+   * to touch a published problem's cases. A wrong expected output or a
+   * hidden case that never should have been hidden was, until now,
+   * permanent the moment publishProblem() ran: there was no way back to
+   * fix it, ever. Pulling a live problem for anyone mid-attempt is real
+   * (a learner's screen would start refusing to submit), which is exactly
+   * why this is a deliberate, separate action rather than something
+   * setTests() does for you -- the same reason a course or an exam is
+   * closed before it is edited, not edited in place while open.
+   */
+  async unpublishProblem(tenantId: number, problemId: number) {
+    const problem = await this.#problem(tenantId, problemId);
+    if (problem.status !== 'published') return problem;
+    await this.#db.from('onyx_problems')
+      .update({ status: 'draft', updated_at: new Date(this.#now()).toISOString() })
+      .eq('tenant_id', tenantId).eq('id', problemId);
+    return { ...problem, status: 'draft' };
   }
 
   // ---- LAB-04: reading the bank ----

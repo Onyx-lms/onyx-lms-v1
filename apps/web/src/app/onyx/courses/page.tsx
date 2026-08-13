@@ -10,32 +10,38 @@ import {
 } from '@/components/onyx-ui';
 
 /**
- * The two questions this page answers wear different shapes.
- *
- * "Where was I" is a learner resuming work: progress, and one button. "What
- * else is there" is browsing: enough of a course to judge it by. The catalogue
- * card's footer is the honest half -- a course you cannot join says who to ask
- * instead of offering a button the API would refuse.
+ * Two questions, two sections, always both present: "which of these are
+ * mine" and "what else is there". My courses is enrolled-in for a learner
+ * and taught-by for staff -- never a subset of the other section, because
+ * All courses is genuinely all of them, this person's own included. It used
+ * to quietly drop whatever was already in My courses ("not repeated here"),
+ * which reads fine for a learner's own two or three courses and reads as a
+ * missing course the moment anyone goes looking for one they know exists.
  */
 
 export const metadata: Metadata = { title: 'Courses' };
 
 /**
- * LRN-01b -- the catalog, and what this person is enrolled in.
+ * LRN-01b -- the catalog, and what this person is enrolled in or teaches.
  *
- * Rebuilt around the two different questions this page answers. "Where was I"
- * is a learner resuming work, and it wants progress and one button; "what else
- * is there" is browsing, and it wants a card you can read the shape of a course
- * from. The previous version answered both with a four-column table, which is
- * the right shape for comparing values down a column and the wrong shape for
- * picking one thing to open -- and a table cannot show a progress bar at all,
- * which is the single most useful thing a learner's own list can carry.
+ * "Where was I" is a learner resuming work, and it wants progress and one
+ * button; for staff the equivalent is "which of these do I run", and wants
+ * a headcount and a way in to manage it, not a progress bar on lessons they
+ * are not the one taking. "What else is there" is the same browsing card
+ * for everyone, staff included -- All courses is the whole catalogue, not
+ * whatever is left over once My courses has taken its share.
  */
 export default async function OnyxCoursesPage() {
   await requireOnyxSession();
+  // ?all=1 asks for drafts too -- the API only actually honours it for admin
+  // and faculty (`canSeeDrafts` in the route), so it is safe to always ask:
+  // a student passing it gets exactly the published catalogue they would
+  // have gotten anyway. Without it, "All courses" was never actually all of
+  // them for staff either, the one role the draft/published distinction is
+  // for -- a course sat unpublished and simply was not in the list.
   const [me, courses, mine, programs] = await Promise.all([
     onyxApi<Me>('/api/onyx/me'),
-    onyxApi<Course[]>('/api/onyx/courses'),
+    onyxApi<Course[]>('/api/onyx/courses?all=1'),
     onyxApi<Course[]>('/api/onyx/my/courses'),
     onyxApi<Program[]>('/api/onyx/programs'),
   ]);
@@ -51,9 +57,15 @@ export default async function OnyxCoursesPage() {
   const byProgram = new Map(programs.map((p) => [p.id, p]));
   const enrolled = new Set(mine.map((c) => c.id));
   const staff = isStaff(me.role);
-  // What a learner has not joined. Staff see the whole register either way, so
-  // for them the catalogue is the list and there is nothing to subtract.
-  const rest = staff ? courses : courses.filter((c) => !enrolled.has(c.id));
+
+  // `/courses?all=1` already carries enrolment counts and who teaches each
+  // one -- My courses comes from a different endpoint (/my/courses) that
+  // does not, so this reuses the one bulk read already on the page instead
+  // of a second request per course.
+  const enrichedById = new Map(courses.map((c) => [c.id, c]));
+  const facultyLine = (names: string[]) => names.length === 0
+    ? 'No faculty assigned'
+    : names.length === 1 ? names[0] : names.join(' & ');
 
   return (
     <OnyxShell
@@ -65,12 +77,13 @@ export default async function OnyxCoursesPage() {
         : mine.length
           ? 'You are taking ' + mine.length + (mine.length === 1 ? ' course' : ' courses')
           : 'Nothing yet — the catalogue is below.'}
-      action={me.role === 'admin' ? (
-        /* Administrators only, because POST /api/onyx/courses is. This used to
-           test `isStaff`, which is admin OR faculty -- so a lecturer was shown
-           the button, filled the form in and was refused by the API. The
-           register belongs to the administrator (CMP-01a); the screen now says
-           the same thing the API does. */
+      action={me.role === 'admin' || me.role === 'faculty' ? (
+        /* Administrators, or a lecturer standing up their own course: both
+           reach POST /api/onyx/courses now. A faculty creator is assigned
+           as its faculty in the same request (see the route's own comment)
+           and lands on it immediately -- "Courses you teach" below, and the
+           dashboard's marking queue and register the moment there is
+           anything to mark or register. */
         <CreatePanel
           title="New course" cta="Create a course" icon="book"
           endpoint="courses"
@@ -91,14 +104,29 @@ export default async function OnyxCoursesPage() {
         />
       ) : undefined}
     >
-      {mine.length ? (
-        <section className="mb-9">
-          <SectionHead title={staff ? 'Courses you teach' : 'Continue'}
-            action={{ href: '/onyx/dashboard', label: 'Your dashboard' }} />
+      <section className="mb-9">
+        <SectionHead title="My courses"
+          action={{ href: '/onyx/dashboard', label: 'Your dashboard' }} />
+        {mine.length === 0 ? (
+          <Card className="p-2">
+            <Empty icon="book">
+              {staff
+                ? 'You are not on any course yet. Create one, or an administrator can put '
+                  + 'you on an existing one, below.'
+                : 'Nothing yet — join one from All courses below.'}
+            </Empty>
+          </Card>
+        ) : (
           <CardGrid min="20rem">
             {mine.map((c) => {
               const p = progressFor.get(c.id);
               const done = p ? p.completed >= p.total && p.total > 0 : false;
+              // /my/courses does not carry these -- pulled from the enriched
+              // /courses?all=1 read already on the page wherever this course
+              // is also in it (drafts included, so a staff member's own
+              // course always is; a self-enrolled learner's course always is
+              // too, since the catalogue itself is never role-filtered).
+              const meta = enrichedById.get(c.id);
               return (
                 <Card key={c.id}
                   className="flex min-w-0 flex-col gap-3 p-4 transition
@@ -114,10 +142,40 @@ export default async function OnyxCoursesPage() {
                         {c.program_id ? ' · ' + (byProgram.get(c.program_id)?.name ?? '') : ''}
                       </div>
                     </div>
-                    {done ? <Pill tone="good">Complete</Pill> : null}
+                    {staff
+                      ? <Pill tone="neutral">{c.status === 1 ? 'Published' : 'Draft'}</Pill>
+                      : done ? <Pill tone="good">Complete</Pill> : null}
                   </div>
 
-                  {p && p.total > 0 ? (
+                  {meta ? (
+                    <div className="-mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1
+                                    text-[12.5px] text-muted">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Icon name="users" className="h-3.5 w-3.5" />
+                        {meta.enrollment_count ?? 0} enrolled
+                      </span>
+                      <span className="inline-flex min-w-0 items-center gap-1.5">
+                        <Icon name="user" className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">
+                          {facultyLine((meta.faculty ?? []).map((f) => f.name ?? 'Unknown'))}
+                        </span>
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {/* A teacher's own lesson-completion on their own course is
+                      not a fact about the course -- it is a fact about
+                      whether they have clicked through their own material,
+                      which is not what "progress" would be taken to mean
+                      here. Staff get what they actually run a course on:
+                      whether it is visible to anyone yet. */}
+                  {staff ? (
+                    <p className="text-[13px] text-muted">
+                      {c.status === 1
+                        ? 'Open to its roster.'
+                        : 'Draft — not visible to learners yet.'}
+                    </p>
+                  ) : p && p.total > 0 ? (
                     <div>
                       <Meter percent={p.percent} label={c.title + ' progress'} />
                       <div className="mt-1.5 flex items-baseline justify-between text-[12.5px]">
@@ -134,41 +192,37 @@ export default async function OnyxCoursesPage() {
                   )}
 
                   {/* "Resume" on a course nobody has opened is a small lie, and
-                      the kind a learner notices. */}
+                      the kind a learner notices. Staff go to the course page
+                      itself -- roster, settings and everything else they can
+                      do to it lives there, not a resume/start action that was
+                      never theirs to take. */}
                   <Link
                     href={'/onyx/courses/' + c.id}
                     className="mt-auto inline-flex min-h-[40px] w-full items-center justify-center
                                gap-1.5 rounded-2xl bg-brand-600 px-3.5 text-[13px] font-bold
                                text-white hover:bg-brand-700"
                   >
-                    <Icon name="play" className="h-3.5 w-3.5" />
-                    {p && p.completed > 0 ? 'Resume' : 'Start'}
+                    <Icon name={staff ? 'edit' : 'play'} className="h-3.5 w-3.5" />
+                    {staff ? 'Manage' : p && p.completed > 0 ? 'Resume' : 'Start'}
                   </Link>
                 </Card>
               );
             })}
           </CardGrid>
-        </section>
-      ) : null}
+        )}
+      </section>
 
       <section>
-        <SectionHead title={staff ? 'Every course' : 'Catalogue'} />
-        {!staff && mine.length ? (
-          <p className="-mt-1 mb-3 text-[12.5px] text-muted">
-            Courses you are already taking are not repeated here.
-          </p>
-        ) : null}
-        {rest.length === 0 ? (
+        <SectionHead title="All courses" />
+        {courses.length === 0 ? (
           <Card className="p-2">
             <Empty icon="book">
-              {courses.length === 0
-                ? 'No courses have been published yet.'
-                : 'You are enrolled in everything the catalogue currently offers.'}
+              No courses have been published yet.
             </Empty>
           </Card>
         ) : (
           <CardGrid>
-            {rest.map((c) => (
+            {courses.map((c) => (
               <Card key={c.id}
                 className="group relative flex min-w-0 flex-col gap-2.5 p-4 transition
                            hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-lift">
@@ -182,7 +236,12 @@ export default async function OnyxCoursesPage() {
 
                 <div className="relative z-10 flex items-center gap-2">
                   <span className="font-mono text-[12px] font-bold text-muted">{c.code}</span>
-                  {enrolled.has(c.id) ? <Pill tone="good">Enrolled</Pill> : null}
+                  {/* Drafts only ever reach this list for staff (?all=1 is a
+                      no-op for anyone else), so the pill has nobody but them
+                      to confuse. */}
+                  {staff && c.status !== 1 ? <Pill tone="neutral">Draft</Pill> : null}
+                  {enrolled.has(c.id)
+                    ? <Pill tone="good">{staff ? 'Teaching' : 'Enrolled'}</Pill> : null}
                   {/* "Open to join" is a student's question. Staff see the
                       whole register regardless of self_enroll, so the pill
                       told every administrator their own courses were "open
@@ -204,6 +263,23 @@ export default async function OnyxCoursesPage() {
                     {c.description}
                   </p>
                 ) : null}
+
+                {/* Who teaches it and how many are already on it -- both
+                    facts this catalogue used to make somebody click into
+                    the course to find out, or ask around for. */}
+                <div className="relative z-10 flex flex-wrap items-center gap-x-3 gap-y-1
+                                text-[12.5px] text-muted">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Icon name="users" className="h-3.5 w-3.5" />
+                    {c.enrollment_count ?? 0} enrolled
+                  </span>
+                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                    <Icon name="user" className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">
+                      {facultyLine((c.faculty ?? []).map((f) => f.name ?? 'Unknown'))}
+                    </span>
+                  </span>
+                </div>
 
                 <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-1
                                 text-[12.5px] text-muted">

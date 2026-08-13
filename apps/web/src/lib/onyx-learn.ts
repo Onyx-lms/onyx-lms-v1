@@ -22,6 +22,11 @@ export interface Course {
   id: number; program_id: number | null; semester_id: number | null;
   code: string; title: string; slug: string; description: string | null;
   credits: number; self_enroll: number; status: number;
+  /** Present on the catalogue list (GET /courses); absent on a single course. */
+  enrollment_count?: number;
+  /** `name` is only present on the catalogue list -- GET /courses/:id's own
+   *  faculty list (see CourseDetail in the dashboard) carries the id alone. */
+  faculty?: { user_id: number; name?: string }[];
 }
 
 export interface Lesson {
