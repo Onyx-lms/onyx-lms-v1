@@ -261,16 +261,24 @@ export class GuardianService {
     };
   }
 
+  /**
+   * "Results" is read broadly: exam marks, CBT assessment scores, and which
+   * courses the child is taking -- the academic-outcome picture a guardian
+   * asks the institution about, all behind the one switch a learner already
+   * controls. It is still a read: nothing here is a course's coursework or
+   * submissions (see the family page's `NEVER` list), only what a course is
+   * called and what it was scored.
+   */
   async resultsFor(tenantId: number, guardianId: number, studentId: number) {
     await this.#consented(tenantId, guardianId, studentId, 'results');
-    // Published marks only, through the examinations service -- a guardian
-    // cannot see a paper before the learner does.
-    const marks = await this.#exams.publishedMarks(tenantId, studentId);
 
-    const detailed = [];
+    // Published exam marks only, through the examinations service -- a
+    // guardian cannot see a paper before the learner does.
+    const marks = await this.#exams.publishedMarks(tenantId, studentId);
+    const exams = [];
     for (const mark of marks) {
       const exam = await this.#exams.exam(tenantId, Number(mark.exam_id));
-      detailed.push({
+      exams.push({
         exam_id: Number(mark.exam_id),
         title: exam.title,
         final_marks: Number(mark.final_marks),
@@ -278,7 +286,53 @@ export class GuardianService {
         grade: mark.grade,
       });
     }
-    return { results: detailed };
+
+    // Published CBT assessment results, same rule as `AssessService#myAttempts`:
+    // a score exists here only once the attempt AND the assessment are both
+    // published, repeated rather than assumed.
+    const { data: attemptRows } = await this.#db.from('onyx_assessment_attempts')
+      .select('id, assessment_id, status, score, max_score')
+      .eq('tenant_id', tenantId).eq('user_id', studentId);
+    const attempts = attemptRows ?? [];
+    const assessmentIds = [...new Set(attempts.map((a) => Number(a.assessment_id)))];
+    const { data: assessmentRows } = assessmentIds.length
+      ? await this.#db.from('onyx_assessments')
+        .select('id, title, pass_mark, results_published_at')
+        .eq('tenant_id', tenantId).in('id', assessmentIds)
+      : { data: [] };
+    const assessmentById = new Map((assessmentRows ?? []).map((a) => [Number(a.id), a]));
+    const assessments = attempts
+      .filter((a) => a.status === 'published'
+        && Boolean(assessmentById.get(Number(a.assessment_id))?.results_published_at))
+      .map((a) => {
+        const assessment = assessmentById.get(Number(a.assessment_id))!;
+        const passMark = assessment.pass_mark;
+        return {
+          attempt_id: Number(a.id),
+          assessment_id: Number(a.assessment_id),
+          title: String(assessment.title),
+          score: Number(a.score),
+          max_score: Number(a.max_score),
+          passed: passMark === null || passMark === undefined
+            ? null : Number(a.score) >= Number(passMark),
+        };
+      });
+
+    // Which courses the child is taking. The list only -- not their
+    // coursework, submissions or attendance within it.
+    const { data: enrolments } = await this.#db.from('onyx_enrollments')
+      .select('course_id').eq('tenant_id', tenantId).eq('user_id', studentId).eq('status', 1);
+    const courseIds = [...new Set((enrolments ?? []).map((e) => Number(e.course_id)))];
+    const { data: courseRows } = courseIds.length
+      ? await this.#db.from('onyx_courses').select('id, code, title, credits')
+        .eq('tenant_id', tenantId).in('id', courseIds)
+      : { data: [] };
+    const courses = (courseRows ?? []).map((c) => ({
+      course_id: Number(c.id), code: String(c.code), title: String(c.title),
+      credits: Number(c.credits),
+    }));
+
+    return { exams, assessments, courses };
   }
 
   async feesFor(tenantId: number, guardianId: number, studentId: number) {

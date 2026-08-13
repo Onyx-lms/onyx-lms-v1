@@ -11,15 +11,22 @@ import {
   SectionHead, StackBar, State, StatTile, Empty, relativeDue,
 } from '@/components/onyx-ui';
 import type {
-  Discussion, ProgressSummary, Room, TimetableSlot,
+  Discussion, Exam, ProgressSummary, Room, TimetableSlot,
 } from '@/lib/onyx-campus';
 import { WEEKDAYS, hhmm } from '@/lib/onyx-campus';
 import type { AttendanceAnalytics, AttendanceSession } from '@/lib/onyx-learn';
+import type { Drive, JobPost } from '@/lib/onyx-career';
 
 export const metadata: Metadata = { title: 'Dashboard' };
 
 interface AttendanceLine {
   course_id: number; held: number; attended: number; percent: number; below_threshold: boolean;
+}
+
+interface Outstanding { total_minor: number; invoices: { overdue: boolean }[] }
+interface AuditRow {
+  id: number; action: string; entity_type: string; created_at: string;
+  actor: { name: string } | null;
 }
 
 /**
@@ -40,16 +47,37 @@ interface AttendanceLine {
  * `employer` and `guardian` never render this page: they are outsiders whose
  * whole account is a view derived from links other people control, with no
  * course and no progress of their own.
+ *
+ * `exams` and `placement` do not either, for a related but different reason:
+ * this page is written for a learner or for whoever runs the whole
+ * institution (`isStaff` below is admin/faculty only), and neither role is
+ * either -- an examinations officer or a placement officer landing here fell
+ * through both branches and got "What you are taking / Nothing yet, look at
+ * the catalogue", the empty-student screen, which is nobody's job here. Each
+ * already has a real, built-for-them hub; this just sends them to it, the
+ * same as employer and guardian already were.
  */
 const REDIRECT: Partial<Record<string, string>> = {
   employer: '/onyx/jobs',
   guardian: '/onyx/family',
+  exams: '/onyx/exams',
+  placement: '/onyx/placement',
 };
 
-/** The role split, in the order an administrator reads it. */
-const ROLE_ORDER = ['student', 'faculty', 'exams', 'placement', 'employer', 'admin'] as const;
+/**
+ * The role split, in the order an administrator reads it.
+ *
+ * All seven membership roles, not six -- guardian was missing here even
+ * though `counts` (below) tallies every role on the register. That made the
+ * bar's total silently fall short of the "People" headcount tile whenever an
+ * institution had a linked guardian, and gave an administrator no line to
+ * read for them at all.
+ */
+const ROLE_ORDER = [
+  'student', 'faculty', 'exams', 'placement', 'employer', 'guardian', 'admin',
+] as const;
 
-/* Six marks that stay distinguishable in greyscale: the label is always
+/* Seven marks that stay distinguishable in greyscale: the label is always
    beside the dot, so the colour is a locator and never the signal. */
 const ROLE_MARKS: Record<(typeof ROLE_ORDER)[number], string> = {
   student:   'bg-brand-600',
@@ -57,6 +85,7 @@ const ROLE_MARKS: Record<(typeof ROLE_ORDER)[number], string> = {
   exams:     'bg-accent-500',
   placement: 'bg-brand-200',
   employer:  'bg-slate-400',
+  guardian:  'bg-purple-400',
   admin:     'bg-ink',
 };
 
@@ -117,6 +146,56 @@ export default async function OnyxDashboard() {
   const headcount = (roster ?? []).length;
   const shortfall = (attendance ?? []).filter((a) => a.below_threshold);
 
+  // What an operator actually runs the institution on: exams, placement,
+  // the timetable and revenue -- none of which is "my courses", which is
+  // why the top of this page used to say "Your courses: you teach 0" to
+  // every administrator who does not also personally teach one.
+  const [exams, jobs, drives, outstanding, allSlots, activity] = staff ? await Promise.all([
+    onyxApiSafe<Exam[]>('/api/onyx/exams'),
+    onyxApiSafe<JobPost[]>('/api/onyx/jobs'),
+    onyxApiSafe<Drive[]>('/api/onyx/drives'),
+    onyxApiSafe<Outstanding>('/api/onyx/finance/outstanding'),
+    onyxApiSafe<TimetableSlot[]>('/api/onyx/timetable'),
+    // A wider pool than the six actually shown, filtered below: routine
+    // account plumbing (a membership created or removed, a guardian link
+    // accepted or its consent flipped) drowns out the operational news --
+    // an exam scheduled, a result published, a payment recorded -- the
+    // moment anyone does a run of ordinary admin work, and reads as noise
+    // even though every row is real.
+    onyxApiSafe<AuditRow[]>('/api/onyx/audit?limit=40'),
+  ]) : [null, null, null, null, null, null];
+  const ROUTINE_ACTIVITY = new Set([
+    'membership.created', 'membership.removed', 'membership.role_changed',
+    'membership.updated', 'user.updated', 'guardian.linked', 'guardian.consent_changed',
+  ]);
+  const recentActivity = (activity ?? [])
+    .filter((a) => !ROUTINE_ACTIVITY.has(a.action)).slice(0, 6);
+
+  const now = Date.now();
+  const examList = exams ?? [];
+  const examsRunning = examList.filter((e) => {
+    const start = Date.parse(e.starts_at);
+    return e.status !== 'cancelled' && Number.isFinite(start)
+      && now >= start && now < start + e.duration_minutes * 60_000;
+  }).length;
+  const examsUpcoming = examList.filter((e) =>
+    e.status === 'scheduled' && Date.parse(e.starts_at) > now).length;
+  const examsDraft = examList.filter((e) => e.status === 'draft').length;
+
+  const jobList = jobs ?? [];
+  const jobsByStatus = {
+    open: jobList.filter((j) => j.status === 'open').length,
+    draft: jobList.filter((j) => j.status === 'draft').length,
+    closed: jobList.filter((j) => j.status === 'closed').length,
+  };
+  const drivesUpcoming = (drives ?? []).filter((d) =>
+    d.scheduled_at && Date.parse(d.scheduled_at) >= now).length;
+
+  const slotList = allSlots ?? [];
+  const timetableDrafts = slotList.filter((s) => s.status === 'draft').length;
+
+  const overdueInvoices = (outstanding?.invoices ?? []).filter((i) => i.overdue).length;
+
   const firstName = (me.email ?? '').split('@')[0]!.split(/[._]/)[0]!;
   const greeting = firstName.charAt(0).toUpperCase() + firstName.slice(1);
 
@@ -135,18 +214,114 @@ export default async function OnyxDashboard() {
 
           {staff ? (
             <>
-              {/* The institution in four numbers. A count on its own is a fact;
-                  what makes it a signal is what it is a share of, which is why
-                  each tile carries its denominator rather than floating alone. */}
-              <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {/* The institution in three numbers. A count on its own is a
+                  fact; what makes it a signal is what it is a share of,
+                  which is why each tile carries its denominator rather than
+                  floating alone. "Your courses" used to sit here -- which
+                  read as "you teach 0" to every administrator who does not
+                  also personally teach, since teaching is not the job this
+                  screen is for. Revenue is covered by the Finance card in
+                  Operations below rather than a bare total up here. */}
+              <div className="mb-5 grid grid-cols-3 gap-3">
                 <StatTile label="Students" value={counts.student ?? 0}
                   note={headcount ? 'of ' + headcount + ' people' : undefined} />
                 <StatTile label="Faculty" value={counts.faculty ?? 0}
                   note={headcount ? 'of ' + headcount + ' people' : undefined} />
-                <StatTile label="Your courses" value={mine.length}
-                  note={mine.length === 1 ? 'you teach 1' : 'you teach ' + mine.length} />
                 <StatTile label="People" value={headcount} note="on the register" />
               </div>
+
+              {/* CMP-01/02/03/CAR-04 in one glance -- exams, placement, the
+                  timetable and revenue are what an operator actually checks
+                  in daily, and each card goes straight to where it is run. */}
+              <section className="mb-5">
+                <SectionHead title="Operations" />
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <Link href="/onyx/exams" className="block">
+                    <Card className="p-4 transition hover:border-brand-200 hover:shadow-lift">
+                      <div className="text-[10.5px] font-bold uppercase tracking-[.08em] text-muted">
+                        Examinations
+                      </div>
+                      <div className="mt-1 text-[22px] font-extrabold leading-none tabular-nums">
+                        {examsRunning > 0 ? examsRunning : examsUpcoming}
+                      </div>
+                      <div className="mt-1 text-[12.5px] text-muted">
+                        {examsRunning > 0 ? 'sitting right now' : 'upcoming'}
+                        {examsDraft ? ' · ' + examsDraft + ' draft' + (examsDraft === 1 ? '' : 's') : ''}
+                      </div>
+                    </Card>
+                  </Link>
+                  <Link href="/onyx/placement" className="block">
+                    <Card className="p-4 transition hover:border-brand-200 hover:shadow-lift">
+                      <div className="text-[10.5px] font-bold uppercase tracking-[.08em] text-muted">
+                        Placement
+                      </div>
+                      <div className="mt-1 text-[22px] font-extrabold leading-none tabular-nums">
+                        {jobsByStatus.open}
+                      </div>
+                      <div className="mt-1 text-[12.5px] text-muted">
+                        open post{jobsByStatus.open === 1 ? '' : 's'}
+                        {drivesUpcoming
+                          ? ' · ' + drivesUpcoming + ' drive' + (drivesUpcoming === 1 ? '' : 's')
+                            + ' upcoming' : ''}
+                      </div>
+                    </Card>
+                  </Link>
+                  <Link href="/onyx/timetable" className="block">
+                    <Card className="p-4 transition hover:border-brand-200 hover:shadow-lift">
+                      <div className="text-[10.5px] font-bold uppercase tracking-[.08em] text-muted">
+                        Timetable
+                      </div>
+                      <div className="mt-1 text-[22px] font-extrabold leading-none tabular-nums">
+                        {slotList.length}
+                      </div>
+                      <div className="mt-1 text-[12.5px] text-muted">
+                        session{slotList.length === 1 ? '' : 's'} on the grid
+                        {timetableDrafts
+                          ? ' · ' + timetableDrafts + ' draft' + (timetableDrafts === 1 ? '' : 's') : ''}
+                      </div>
+                    </Card>
+                  </Link>
+                  <Link href="/onyx/finance" className="block">
+                    <Card className="p-4 transition hover:border-brand-200 hover:shadow-lift">
+                      <div className="text-[10.5px] font-bold uppercase tracking-[.08em] text-muted">
+                        Finance
+                      </div>
+                      <div className="mt-1 text-[22px] font-extrabold leading-none tabular-nums">
+                        {outstanding ? outstanding.invoices.length : '—'}
+                      </div>
+                      <div className="mt-1 text-[12.5px] text-muted">
+                        invoice{outstanding?.invoices.length === 1 ? '' : 's'} unsettled
+                        {overdueInvoices
+                          ? ' · ' + overdueInvoices + ' overdue' : outstanding ? ' · none overdue' : ''}
+                      </div>
+                    </Card>
+                  </Link>
+                </div>
+              </section>
+
+              {/* The job board's own shape, read off the counts the cards
+                  above already fetched -- a bar earns its place beside a
+                  breakdown, not instead of one. */}
+              {jobList.length > 0 ? (
+                <section className="mb-5">
+                  <SectionHead title="Job pipeline"
+                    action={{ href: '/onyx/jobs', label: 'All posts' }} />
+                  <Card className="p-4">
+                    <StackBar parts={[
+                      { value: jobsByStatus.open, className: 'bg-green-600' },
+                      { value: jobsByStatus.draft, className: 'bg-accent-500' },
+                      { value: jobsByStatus.closed, className: 'bg-brand-300' },
+                    ]} />
+                    <Buckets rows={[
+                      { label: 'Open to applications', dotClass: 'bg-green-600',
+                        amount: jobsByStatus.open },
+                      { label: 'Draft — invisible to learners', dotClass: 'bg-accent-500',
+                        amount: jobsByStatus.draft },
+                      { label: 'Closed', dotClass: 'bg-brand-300', amount: jobsByStatus.closed },
+                    ]} />
+                  </Card>
+                </section>
+              ) : null}
 
               <section className="mb-5">
                 <SectionHead title="People"
@@ -203,37 +378,45 @@ export default async function OnyxDashboard() {
             </section>
           ) : null}
 
-          <section className="mb-5">
-            <SectionHead title={staff ? 'Your courses' : 'What you are taking'}
-              action={{ href: '/onyx/courses', label: 'Catalogue' }} />
-            {mine.length ? (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {mine.map((c) => (
-                  <Card key={c.id}>
-                    <Link href={'/onyx/courses/' + c.id}
-                      className="flex items-center gap-3.5 p-3.5">
-                      <Ring percent={progressFor.get(c.id)?.percent ?? 0} />
-                      <span className="min-w-0">
-                        <span className="block truncate text-[14.5px] font-bold">{c.title}</span>
-                        <span className="block truncate text-[12.5px] text-muted">
-                          {c.code}{c.credits ? ` · ${c.credits} credits` : ''}
+          {/* For staff this is "the courses I also personally teach", which
+              most administrators do not -- rendering it for zero with a
+              "look at the catalogue" prompt read as though the institution
+              expected them to enrol in one. A student always sees this
+              section, empty state included: "what you are taking" being
+              genuinely empty is the true, useful answer for them. */}
+          {staff && mine.length === 0 ? null : (
+            <section className="mb-5">
+              <SectionHead title={staff ? 'Your courses' : 'What you are taking'}
+                action={{ href: '/onyx/courses', label: 'Catalogue' }} />
+              {mine.length ? (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {mine.map((c) => (
+                    <Card key={c.id}>
+                      <Link href={'/onyx/courses/' + c.id}
+                        className="flex items-center gap-3.5 p-3.5">
+                        <Ring percent={progressFor.get(c.id)?.percent ?? 0} />
+                        <span className="min-w-0">
+                          <span className="block truncate text-[14.5px] font-bold">{c.title}</span>
+                          <span className="block truncate text-[12.5px] text-muted">
+                            {c.code}{c.credits ? ` · ${c.credits} credits` : ''}
+                          </span>
                         </span>
-                      </span>
-                    </Link>
-                  </Card>
-                ))}
-              </div>
-            ) : (
-              <Card>
-                <Empty icon="book">
-                  Nothing yet.{' '}
-                  <Link href="/onyx/courses" className="font-semibold text-brand-600 underline">
-                    Look at the catalogue
-                  </Link>.
-                </Empty>
-              </Card>
-            )}
-          </section>
+                      </Link>
+                    </Card>
+                  ))}
+                </div>
+              ) : (
+                <Card>
+                  <Empty icon="book">
+                    Nothing yet.{' '}
+                    <Link href="/onyx/courses" className="font-semibold text-brand-600 underline">
+                      Look at the catalogue
+                    </Link>.
+                  </Empty>
+                </Card>
+              )}
+            </section>
+          )}
 
           {shortfall.length ? (
             <section className="mb-5">
@@ -271,6 +454,35 @@ export default async function OnyxDashboard() {
         {/* ---------------- right rail ---------------- */}
         <div className="min-w-0 space-y-5">
           {progress ? <StreakCard progress={progress} /> : null}
+
+          {/* The right rail was empty for an administrator otherwise --
+              nothing here is gated behind "my courses", so it is the one
+              section of this page that is never blank for the role it is
+              built for. */}
+          {staff && recentActivity.length ? (
+            <section>
+              <SectionHead title="Recent activity"
+                action={{ href: '/onyx/audit', label: 'Full log' }} />
+              <RowList label="Recent activity">
+                {recentActivity.map((a) => {
+                  const [noun, verb] = a.action.split('.');
+                  return (
+                    <ListRow
+                      key={a.id}
+                      icon="flag"
+                      tone="neutral"
+                      title={(a.actor?.name ?? 'The system') + ' '
+                        + (verb ?? 'acted on').replace(/_/g, ' ') + ' '
+                        + (/^[aeiou]/i.test(noun ?? a.entity_type) ? 'an ' : 'a ')
+                        + (noun ?? a.entity_type)}
+                      meta={new Date(a.created_at).toLocaleString(undefined,
+                        { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    />
+                  );
+                })}
+              </RowList>
+            </section>
+          ) : null}
 
           {progress ? (
             <section>

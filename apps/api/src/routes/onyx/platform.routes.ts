@@ -78,6 +78,14 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
     return ok(await ctx.onyxPlatform.tenantAcademics(idOf(req), q));
   });
 
+  app.get('/api/onyx/platform/tenants/:id/timetable', async (req) => {
+    requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const q = validate(z.object({
+      semester_id: z.coerce.number().int().positive().optional(),
+    }), req.query ?? {});
+    return ok(await ctx.onyxPlatform.tenantTimetable(idOf(req), q));
+  });
+
   // Audited in the service, not here: the log entry belongs next to the read it
   // describes, so no future caller can reach the data around the logging.
   app.get('/api/onyx/platform/tenants/:id/grades', async (req) => {

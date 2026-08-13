@@ -9,7 +9,7 @@ import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxPageRole, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import type { Drive, Employer, JobPost } from '@/lib/onyx-career';
 import { CreatePanel } from '@/components/onyx-create';
-import { BuildDrive } from '@/components/onyx-manage';
+import { BuildDrive, LinkEmployerAccount } from '@/components/onyx-manage';
 
 export const metadata: Metadata = { title: 'Placement' };
 
@@ -43,6 +43,13 @@ export default async function OnyxPlacementPage() {
       '/api/onyx/members'),
   ]);
   const learners = (members ?? []).filter((m) => m.role === 'student');
+  // Accounts that hold the employer role but are not yet the `user_id` on
+  // any employer record -- the only ones LinkEmployerAccount may offer,
+  // otherwise linking one would silently steal it from another company.
+  const linkedUserIds = new Set(employers.map((e) => e.user_id).filter((id) => id !== null));
+  const unlinkedEmployerAccounts = (members ?? [])
+    .filter((m) => m.role === 'employer' && !linkedUserIds.has(m.user_id))
+    .map((m) => ({ user_id: m.user_id, name: m.user?.name ?? 'User ' + m.user_id }));
 
   const open = jobs.filter((j) => j.status === 'open');
   const draft = jobs.filter((j) => j.status === 'draft');
@@ -349,9 +356,14 @@ export default async function OnyxPlacementPage() {
                     ) : null}
                   </td>
                   <td>
-                    {e.user_id
-                      ? <State tone="on">Has a login</State>
-                      : <State tone="off">No login yet</State>}
+                    {e.user_id ? (
+                      <State tone="on">Has a login</State>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <State tone="off">No login yet</State>
+                        <LinkEmployerAccount employerId={e.id} candidates={unlinkedEmployerAccounts} />
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

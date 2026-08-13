@@ -54,14 +54,23 @@ export default async function OnyxFamilyPage() {
       <div className="space-y-10">
         {family.children.map((c) => {
           const name = c.name ?? 'Learner #' + c.student_user_id;
-          const results = c.shares.results ? (c.results?.results ?? []) : [];
+          const exams = c.shares.results ? (c.results?.exams ?? []) : [];
+          const assessments = c.shares.results ? (c.results?.assessments ?? []) : [];
+          const courses = c.shares.results ? (c.results?.courses ?? []) : [];
           const attendance = c.shares.attendance ? c.attendance : null;
           const fees = c.shares.fees ? c.fees : null;
           const owed = fees?.outstanding_minor ?? 0;
-          const average = results.length
-            ? Math.round(results.reduce((n, r) => n + (r.final_marks / r.max_marks) * 100, 0)
-              / results.length)
+          // One average across both kinds of published result -- a parent
+          // asking "how are they doing" is not asking separately about exams
+          // and coursework assessments.
+          const percentages = [
+            ...exams.map((r) => (r.final_marks / r.max_marks) * 100),
+            ...assessments.map((r) => (r.score / r.max_score) * 100),
+          ];
+          const average = percentages.length
+            ? Math.round(percentages.reduce((n, p) => n + p, 0) / percentages.length)
             : null;
+          const resultCount = exams.length + assessments.length;
 
           return (
             <section key={c.link_id} aria-label={name}>
@@ -90,7 +99,7 @@ export default async function OnyxFamilyPage() {
                     ? attendance.attended + ' of ' + attendance.total + ' sessions'
                     : 'This learner has not shared it'} />
                 <StatTile label="Published results"
-                  value={c.shares.results ? results.length : 'Not shared'}
+                  value={c.shares.results ? resultCount : 'Not shared'}
                   note={c.shares.results
                     ? (average !== null ? 'Average ' + average + '%' : 'Nothing published yet')
                     : 'This learner has not shared it'} />
@@ -167,32 +176,49 @@ export default async function OnyxFamilyPage() {
 
                   {/* Grades as a table: a parent reads down the Mark column
                       looking for the outlier, which is what a table is for.
-                      The band on the score chip always carries its number. */}
+                      The band on the score chip always carries its number.
+                      Exams and CBT assessments are two systems underneath but
+                      one list here -- a parent asking "how did they do" does
+                      not care which office ran the paper. */}
                   {c.shares.results ? (
                     <section>
                       <SectionHead title="Results so far" />
                       <DataTable
-                        caption={name + '’s published results'}
+                        caption={name + '’s published results, examinations and assessments alike'}
                         head={
                           <>
-                            <th scope="col">Assessment</th>
+                            <th scope="col">Paper</th>
+                            <th scope="col">Kind</th>
                             <th scope="col">Mark</th>
                             <th scope="col">Band</th>
-                            <th scope="col">Grade</th>
                           </>
                         }
                       >
-                        {results.map((r) => (
-                          <tr key={r.exam_id}>
+                        {exams.map((r) => (
+                          <tr key={'exam-' + r.exam_id}>
                             <td>{r.title}</td>
+                            <td className="text-[13px] text-muted">Examination</td>
                             <td className="tabular-nums text-muted">
                               {r.final_marks} / {r.max_marks}
+                              {r.grade ? ' · ' + r.grade : ''}
                             </td>
                             <td><Score value={r.final_marks} outOf={r.max_marks} /></td>
-                            <td>{r.grade ?? <span className="text-muted">&mdash;</span>}</td>
                           </tr>
                         ))}
-                        {results.length === 0 ? (
+                        {assessments.map((r) => (
+                          <tr key={'assess-' + r.attempt_id}>
+                            <td>{r.title}</td>
+                            <td className="text-[13px] text-muted">Assessment</td>
+                            <td className="tabular-nums text-muted">
+                              {r.score} / {r.max_score}
+                            </td>
+                            <td>
+                              <Score value={r.score} outOf={r.max_score}
+                                band={r.passed === false ? 'lo' : undefined} />
+                            </td>
+                          </tr>
+                        ))}
+                        {exams.length === 0 && assessments.length === 0 ? (
                           <tr className="hover:!bg-transparent">
                             <td colSpan={4} className="!p-0">
                               <Empty icon="award">
@@ -203,6 +229,29 @@ export default async function OnyxFamilyPage() {
                           </tr>
                         ) : null}
                       </DataTable>
+                    </section>
+                  ) : null}
+
+                  {/* The list only -- which courses, not the coursework or
+                      submissions inside them. See the NEVER list in the rail:
+                      that boundary has not moved, this is just the register a
+                      parent needs to make sense of the results table above. */}
+                  {c.shares.results && courses.length > 0 ? (
+                    <section>
+                      <SectionHead title="Courses" />
+                      <ul className="grid gap-2 sm:grid-cols-2">
+                        {courses.map((course) => (
+                          <li key={course.course_id}>
+                            <Card className="p-3">
+                              <div className="text-[13.5px] font-bold">{course.title}</div>
+                              <div className="mt-0.5 text-[12px] text-muted">
+                                {course.code} · {course.credits} credit
+                                {course.credits === 1 ? '' : 's'}
+                              </div>
+                            </Card>
+                          </li>
+                        ))}
+                      </ul>
                     </section>
                   ) : null}
                 </div>
@@ -235,7 +284,7 @@ export default async function OnyxFamilyPage() {
                       <ul className="space-y-2.5">
                         {([
                           ['Attendance', c.shares.attendance],
-                          ['Published results', c.shares.results],
+                          ['Courses, marks & assessments', c.shares.results],
                           ['Fees and invoices', c.shares.fees],
                         ] as const).map(([label, on]) => (
                           <li key={label} className="flex items-center gap-2 text-[13.5px]">

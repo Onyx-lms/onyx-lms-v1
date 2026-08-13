@@ -138,19 +138,44 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
   /**
    * The grid. A learner only ever sees the published one -- a draft timetable
    * on a learner's phone is a room they turn up to and nobody else does.
+   *
+   * Unscoped by default, this returned the whole institution's grid to every
+   * role alike -- a student reading their own timetable had to pick their
+   * classes out of every batch's. Registry (admin/exams) still gets
+   * everything, because building and auditing the grid is their job. Faculty
+   * default to their own sessions, students to their own enrolled courses;
+   * either can still ask for the full grid with `?scope=all`, or narrow with
+   * an explicit filter, same as before.
    */
   app.get('/api/onyx/timetable', async (req) => {
     const { claims, viewer } = viewerOf(req);
     const query = req.query as {
       semester_id?: string; batch_id?: string; faculty_id?: string; room_id?: string;
+      scope?: string;
     };
     const staff = viewer.role === 'admin' || viewer.role === 'faculty'
       || viewer.role === 'exams';
+    const registry = viewer.role === 'admin' || viewer.role === 'exams';
+    const explicitFilter = Boolean(query.batch_id || query.faculty_id || query.room_id);
+    const wantsAll = registry || query.scope === 'all' || explicitFilter;
+
+    let facultyFilter = query.faculty_id ? Number(query.faculty_id) : undefined;
+    let courseIds: number[] | undefined;
+    if (!wantsAll) {
+      if (viewer.role === 'faculty') {
+        facultyFilter = claims.user_id;
+      } else {
+        const mine = await ctx.onyxAcademics.enrollmentsFor(claims.tenant_id, claims.user_id);
+        courseIds = mine.map((e) => Number(e.course_id));
+      }
+    }
+
     return ok(await ctx.onyxCampus.timetable(claims.tenant_id, {
       semester_id: query.semester_id ? Number(query.semester_id) : undefined,
       batch_id: query.batch_id ? Number(query.batch_id) : undefined,
-      faculty_id: query.faculty_id ? Number(query.faculty_id) : undefined,
+      faculty_id: facultyFilter,
       room_id: query.room_id ? Number(query.room_id) : undefined,
+      course_ids: courseIds,
       publishedOnly: !staff,
     }));
   });

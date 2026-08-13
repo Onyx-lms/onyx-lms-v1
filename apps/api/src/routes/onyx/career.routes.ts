@@ -197,6 +197,36 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
     return ok(await ctx.onyxPlacement.employers(claims.tenant_id));
   });
 
+  app.patch('/api/onyx/employers/:id', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...PLACEMENT);
+    const body = validate(z.object({
+      name: z.string().min(1).max(255).optional(),
+      website: z.string().max(255).nullish(),
+      about: z.string().max(10_000).nullish(),
+      contact_name: z.string().max(255).nullish(),
+      contact_email: z.string().email().nullish(),
+      user_id: z.number().int().positive().nullish(),
+    }), req.body);
+    return ok(await ctx.onyxPlacement.updateEmployer(claims.tenant_id, idOf(req), body), 'Updated.');
+  });
+
+  /**
+   * The one employer record an employer contact is actually allowed to
+   * know exists -- their own. `GET /employers` is placement-office-only (it
+   * lists every company at the institution); an employer posting a job
+   * still needs *an* employer_id to post it under, and this is where they
+   * get it without being handed the roster of every other company too.
+   */
+  app.get('/api/onyx/employers/mine', async (req) => {
+    const { claims, viewer } = viewerOf(req);
+    if (viewer.role !== 'employer') {
+      throw new HttpError(403, 'Only an employer contact has one of these.');
+    }
+    const mine = await ctx.onyxPlacement.employerFor(claims.tenant_id, viewer.userId);
+    if (!mine) throw new HttpError(404, 'No employer record is linked to this account.');
+    return ok(mine);
+  });
+
   app.post('/api/onyx/employers', async (req) => {
     const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...PLACEMENT);
     const body = validate(z.object({

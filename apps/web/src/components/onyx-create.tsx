@@ -141,9 +141,16 @@ export function CreatePanel({
 
   if (!open) {
     return (
+      // self-start/justify-self-start: several callers put this button next
+      // to another panel inside a CSS grid row (e.g. the exams page's
+      // "Schedule an exam" beside "New hall"). Grid stretches an item to
+      // fill its cell on both axes by default, and a plain button has
+      // nothing of its own to resist that -- without this it inflates to
+      // the height AND width of whichever sibling cell is tallest, which
+      // reads as a giant empty coloured box rather than a button.
       <button type="button" onClick={() => setOpen(true)}
-        className={'inline-flex items-center gap-2 rounded-xl bg-brand-600 font-semibold '
-          + 'text-white hover:bg-brand-700 '
+        className={'inline-flex w-fit shrink-0 items-center gap-2 self-start justify-self-start '
+          + 'rounded-xl bg-brand-600 font-semibold text-white hover:bg-brand-700 '
           + (compact ? 'px-3 py-2 text-[13px]' : 'px-4 py-2.5 text-sm')}>
         <Icon name={icon} className="h-4 w-4" />
         {cta}

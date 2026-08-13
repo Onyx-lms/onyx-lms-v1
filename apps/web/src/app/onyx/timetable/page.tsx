@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
 import { navFor } from '@/lib/onyx-nav';
@@ -47,13 +48,19 @@ function slotTone(kind: string | undefined, draft: boolean): string {
  * reason: this page used to tell a registrar to "publish from the registry
  * console" and there was no such console anywhere in the product.
  */
-export default async function OnyxTimetablePage() {
+export default async function OnyxTimetablePage(
+  { searchParams }: { searchParams: Promise<{ scope?: string }> },
+) {
   await requireOnyxSession();
   const me = await onyxApi<Me>('/api/onyx/me');
   const registry = REGISTRY.includes(me.role);
+  // Registry already gets the whole institution's grid regardless -- the
+  // toggle exists for everyone else, whose default is now their own classes.
+  const { scope } = await searchParams;
+  const showingAll = registry || scope === 'all';
 
   const [slots, rooms, courses, semesters, batches, members] = await Promise.all([
-    onyxApi<TimetableSlot[]>('/api/onyx/timetable'),
+    onyxApi<TimetableSlot[]>('/api/onyx/timetable' + (scope === 'all' ? '?scope=all' : '')),
     onyxApiSafe<Room[]>('/api/onyx/rooms'),
     onyxApiSafe<Course[]>('/api/onyx/courses'),
     registry ? onyxApiSafe<{ id: number; name: string }[]>('/api/onyx/semesters') : null,
@@ -117,8 +124,29 @@ export default async function OnyxTimetablePage() {
       title="Timetable"
       subtitle={registry
         ? 'Drafts are marked. Publish once every clash is clear.'
-        : 'Published sessions only.'}
+        : showingAll ? 'Every published session at this institution.'
+          : (me.role === 'faculty' ? 'The classes you teach.' : 'The courses you are enrolled in.')}
     >
+      {/* Scoped to your own classes by default -- everyone used to get the
+          whole institution's grid and had to pick their own sessions out of
+          it. Registry already sees everything, so the toggle is only worth
+          showing to everyone else. */}
+      {!registry ? (
+        <div className="mb-4 flex items-center gap-1.5 text-[13px] font-semibold">
+          <Link href="/onyx/timetable"
+            className={showingAll ? 'text-muted hover:text-brand-700 hover:underline'
+              : 'text-brand-700 underline'}>
+            My timetable
+          </Link>
+          <span aria-hidden className="text-faint">·</span>
+          <Link href="/onyx/timetable?scope=all"
+            className={showingAll ? 'text-brand-700 underline'
+              : 'text-muted hover:text-brand-700 hover:underline'}>
+            Everyone&rsquo;s timetable
+          </Link>
+        </div>
+      ) : null}
+
       {/* Published rows are already on every learner's phone. The only thing
           worth a banner is the ones that are not. */}
       {registry && drafts.length > 0 ? (

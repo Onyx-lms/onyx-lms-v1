@@ -100,6 +100,50 @@ export class PlacementService {
     return data;
   }
 
+  /**
+   * Editing an employer record -- most usefully, linking it to the login
+   * account of the contact it is for. A company added before its contact
+   * had a login (or before anyone thought to link the two) sat with
+   * `user_id: null` forever: nothing let placement come back and connect
+   * them, so the contact could see the jobs board but never post to it or
+   * see who applied, and placement's own "needs the office" queue could
+   * only name the problem, never fix it.
+   */
+  async updateEmployer(tenantId: number, id: number, input: {
+    name?: string; website?: string | null; about?: string | null;
+    contact_name?: string | null; contact_email?: string | null;
+    user_id?: number | null;
+  }) {
+    await this.employer(tenantId, id);
+    if (input.user_id) {
+      const { data: membership } = await this.#db.from('onyx_memberships')
+        .select('role').eq('tenant_id', tenantId).eq('user_id', input.user_id)
+        .eq('status', 1).maybeSingle();
+      if (!membership) throw new HttpError(422, 'That account is not a member of this institution.');
+      if (membership.role !== 'employer') {
+        throw new HttpError(422, 'That account does not hold the employer role.');
+      }
+      const { data: already } = await this.#db.from('onyx_employers')
+        .select('id, name').eq('tenant_id', tenantId).eq('user_id', input.user_id)
+        .neq('id', id).maybeSingle();
+      if (already) {
+        throw new HttpError(422, 'That account is already linked to ' + already.name + '.');
+      }
+    }
+    const patch: Record<string, unknown> = {};
+    for (const key of
+      ['name', 'website', 'about', 'contact_name', 'contact_email', 'user_id'] as const) {
+      if (input[key] !== undefined) patch[key] = input[key];
+    }
+    if (patch.contact_email) {
+      patch.contact_email = String(patch.contact_email).trim().toLowerCase();
+    }
+    const { data, error } = await this.#db.from('onyx_employers')
+      .update(patch).eq('tenant_id', tenantId).eq('id', id).select(EMPLOYER_COLUMNS).maybeSingle();
+    if (error) throw new HttpError(500, 'Could not update the employer: ' + error.message);
+    return data!;
+  }
+
   /** The employer account a signed-in contact belongs to, if any. */
   async employerFor(tenantId: number, userId: number) {
     const { data } = await this.#db.from('onyx_employers')

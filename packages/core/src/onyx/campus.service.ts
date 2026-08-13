@@ -281,6 +281,17 @@ export class CampusService {
     await this.#assertBelongs('onyx_courses', tenantId, input.course_id, 'course');
     await this.#assertBelongs('onyx_batches', tenantId, input.batch_id, 'batch');
     await this.#assertBelongs('onyx_rooms', tenantId, input.room_id, 'room');
+    // A batch with nobody in it is a session for nobody, and the id being
+    // real (checked above) is not the same thing -- an empty batch passes
+    // that check every time. Refused here rather than left to be noticed
+    // once the room is booked and the paper is printed.
+    const { count: batchSize } = await this.#db.from('onyx_batch_members')
+      .select('id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId).eq('batch_id', input.batch_id);
+    if (!batchSize) {
+      throw new HttpError(422, 'That batch has nobody in it yet -- add its members before '
+        + 'scheduling a class for them.');
+    }
 
     const clashes = await this.clashes(tenantId, input);
     if (clashes.length) {
@@ -312,6 +323,13 @@ export class CampusService {
 
   async timetable(tenantId: number, filters: {
     semester_id?: number; batch_id?: number; faculty_id?: number; room_id?: number;
+    /**
+     * A learner's own grid, by the courses they are actually enrolled in --
+     * not by batch, because plenty of enrolments here carry no batch at all
+     * (an individually-enrolled learner is not in any formal cohort, and
+     * still needs to see their own classes).
+     */
+    course_ids?: number[];
     /** A learner may only ever see the published grid. */
     publishedOnly?: boolean;
   } = {}) {
@@ -320,6 +338,7 @@ export class CampusService {
     if (filters.batch_id) q = q.eq('batch_id', filters.batch_id);
     if (filters.faculty_id) q = q.eq('faculty_id', filters.faculty_id);
     if (filters.room_id) q = q.eq('room_id', filters.room_id);
+    if (filters.course_ids) q = q.in('course_id', filters.course_ids);
     if (filters.publishedOnly) q = q.eq('status', 'published');
 
     const { data } = await q

@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { Modal } from '@/components/onyx-modal';
+import { ROLE_LABELS } from '@/lib/onyx-nav';
 
 /**
  * The platform console's forms -- signing in, provisioning an institution,
@@ -197,7 +198,8 @@ export function CreateTenantForm() {
 }
 
 interface TenantOption { id: number; name: string }
-type ProfileType = 'student' | 'faculty' | 'admin' | 'platform';
+type ProfileType = 'student' | 'faculty' | 'exams' | 'placement' | 'employer' | 'guardian'
+  | 'admin' | 'platform';
 
 /**
  * The one place to create any kind of person on the platform -- a student or
@@ -285,8 +287,12 @@ export function CreateProfileForm({ lockedTenant, defaultType }: {
               <label className={label} htmlFor="cp-type">Profile type</label>
               <select id="cp-type" name="type" value={type}
                 onChange={(e) => setType(e.target.value as ProfileType)} className={field}>
-                <option value="student">Student</option>
-                <option value="faculty">Faculty</option>
+                <option value="student">{ROLE_LABELS.student}</option>
+                <option value="faculty">{ROLE_LABELS.faculty}</option>
+                <option value="exams">{ROLE_LABELS.exams}</option>
+                <option value="placement">{ROLE_LABELS.placement}</option>
+                <option value="employer">{ROLE_LABELS.employer}</option>
+                <option value="guardian">{ROLE_LABELS.guardian}</option>
                 <option value="admin">Institution admin</option>
                 {lockedTenant ? null : (
                   <option value="platform">Platform admin (superadmin)</option>

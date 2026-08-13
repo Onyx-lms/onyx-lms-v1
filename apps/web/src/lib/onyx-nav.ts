@@ -82,14 +82,22 @@ const NAV: Record<Role, OnyxNavGroup[]> = {
     { label: 'Teaching', items: [I.programs, I.timetable, I.allocate, I.people] },
     { label: 'Support', items: [I.mentor, I.inbox] },
   ],
+  // Dashboard dropped from both: `/onyx/dashboard` redirects exams and
+  // placement straight back to the pages already below (see the dashboard's
+  // own REDIRECT map), so a nav link to it was a click that bounced you to
+  // a link one row down. Courses dropped too: Practice and Workspaces were
+  // the worse version of the same mistake -- an examinations officer opening
+  // either got the LEARNER's own screen, "work through problems and get
+  // graded" and "your projects", both genuinely empty and genuinely not
+  // this role's job. Neither exams nor placement teaches or takes a course,
+  // and the one place either actually needs a course (naming it when
+  // scheduling a paper, or setting a job's eligibility) already has its own
+  // picker on that screen -- browsing the catalogue was never the step.
   exams: [
-    { items: [I.dashboard, I.courses] },
     { label: 'Examinations', items: [I.assess, I.invigilate, I.exams, I.timetable, I.certs] },
-    { label: 'Practice', items: [I.practice, I.spaces] },
     { items: [I.inbox] },
   ],
   placement: [
-    { items: [I.dashboard, I.courses] },
     { label: 'Placement', items: [I.placement, I.jobs, I.interviews, I.contests, I.certs] },
     { items: [I.inbox] },
   ],
@@ -130,8 +138,11 @@ export function navFor(role: Role): OnyxNavGroup[] {
 const TABS: Record<Role, OnyxNavItem[]> = {
   student:   [I.dashboard, I.courses, I.practice, I.results, I.timetable],
   faculty:   [I.dashboard, I.courses, I.assess, I.people, I.timetable],
-  exams:     [I.dashboard, I.exams, I.assess, I.invigilate, I.timetable],
-  placement: [I.dashboard, I.placement, I.jobs, I.interviews, I.contests],
+  // No Dashboard tab for either: it would bounce straight to the tab beside
+  // it (their own hub is where `/onyx/dashboard` redirects them), which is a
+  // thumb's worth of five spent on a redirect rather than a destination.
+  exams:     [I.exams, I.assess, I.invigilate, I.timetable, I.inbox],
+  placement: [I.placement, I.jobs, I.interviews, I.contests, I.inbox],
   employer:  [I.posts, I.interviews],
   guardian:  [I.family],
   admin:     [I.dashboard, I.courses, I.people, I.finance, I.timetable],

@@ -52,10 +52,13 @@ export default async function OnyxJobPage({ params }: { params: Promise<{ id: st
       : null,
   ]);
 
-  // The names come with the applicants, not from the roster: an employer must
-  // not be able to list the institution's people, only the ones who applied.
+  // The names and emails come with the applicants, not from the roster: an
+  // employer must not be able to list the institution's people, only the
+  // ones who applied.
   const names = Object.fromEntries((applicants ?? [])
     .map((a) => [a.user_id, a.candidate?.name ?? ('User ' + a.user_id)]));
+  const emails = Object.fromEntries((applicants ?? [])
+    .filter((a) => a.candidate?.email).map((a) => [a.user_id, a.candidate!.email]));
   const myApplication = (mine ?? []).find((a) => a.job_id === Number(id));
   const alreadyApplied = Boolean(myApplication);
 
@@ -170,6 +173,7 @@ export default async function OnyxJobPage({ params }: { params: Promise<{ id: st
                   created_at: a.created_at, readiness_at_apply: a.readiness_at_apply,
                 }))}
                 names={names}
+                emails={emails}
               />
             </section>
           ) : null}

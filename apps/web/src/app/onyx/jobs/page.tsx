@@ -62,12 +62,24 @@ export default async function OnyxJobsPage() {
     onyxApi<JobPost[]>('/api/onyx/jobs'),
   ]);
   // CAR-04: a post belongs to an employer, and there was no way to record one.
-  // Only the placement office may read employer contacts, so this is fetched
-  // for them and quietly skipped for everybody else.
+  // `GET /employers` lists every company at the institution, so it is the
+  // placement office's read, not an employer contact's -- an employer calling
+  // it got a 403 and, with it, an empty "Employer" dropdown that made this
+  // form unusable for the one role it names in its own title. `/employers/mine`
+  // is the one record they are actually allowed to know about: their own.
   const canPost = me.role === 'placement' || me.role === 'admin' || me.role === 'employer';
-  const employers = canPost
-    ? await onyxApiSafe<{ id: number; name: string }[]>('/api/onyx/employers')
-    : null;
+  // Adding an employer record is the placement office's job, not an
+  // employer contact's: `POST /employers` is placement/admin-only, and an
+  // employer clicking "Add an employer" got as far as the form and then a
+  // 403 -- a button that could never once have worked for the role it was
+  // shown to.
+  const canManageEmployers = me.role === 'placement' || me.role === 'admin';
+  const employers = me.role === 'employer'
+    ? await onyxApiSafe<{ id: number; name: string }>('/api/onyx/employers/mine')
+      .then((e) => (e ? [e] : null))
+    : canPost
+      ? await onyxApiSafe<{ id: number; name: string }[]>('/api/onyx/employers')
+      : null;
   const mine = claims.tenant_role === 'student'
     ? await onyxApiSafe<Application[]>('/api/onyx/my/applications')
     : null;
@@ -92,20 +104,23 @@ export default async function OnyxJobsPage() {
         : 'Openings shared with this institution.'}
     >
       {/* CAR-04: "employers must post jobs". The placement office keeps the
-          employer records, so both can open a post. */}
+          employer records, so both can open a post -- but only the office
+          adds a company in the first place. */}
       {canPost ? (
-        <div className="mb-6 grid gap-3 lg:grid-cols-2">
-          <CreatePanel
-            title="New employer" cta="Add an employer" icon="building" compact
-            endpoint="employers"
-            fields={[
-              { name: 'name', label: 'Company', required: true, wide: true,
-                placeholder: 'Acme Corp' },
-              { name: 'contact_name', label: 'Contact' },
-              { name: 'contact_email', label: 'Contact email' },
-              { name: 'website', label: 'Website', placeholder: 'https://acme.example' },
-            ]}
-          />
+        <div className={'mb-6 grid gap-3' + (canManageEmployers ? ' lg:grid-cols-2' : '')}>
+          {canManageEmployers ? (
+            <CreatePanel
+              title="New employer" cta="Add an employer" icon="building" compact
+              endpoint="employers"
+              fields={[
+                { name: 'name', label: 'Company', required: true, wide: true,
+                  placeholder: 'Acme Corp' },
+                { name: 'contact_name', label: 'Contact' },
+                { name: 'contact_email', label: 'Contact email' },
+                { name: 'website', label: 'Website', placeholder: 'https://acme.example' },
+              ]}
+            />
+          ) : null}
           {/* A post is created as a draft, and a draft is invisible to the
               learners it is for. Opening it is the point of posting it, so it
               happens in the same action rather than as a second step nobody
@@ -116,7 +131,10 @@ export default async function OnyxJobsPage() {
             fields={[
               { name: 'employer_id', label: 'Employer', type: 'select', required: true,
                 numeric: true, wide: true,
-                options: (employers ?? []).map((e) => ({ value: String(e.id), label: e.name })) },
+                options: (employers ?? []).map((e) => ({ value: String(e.id), label: e.name })),
+                help: me.role === 'employer' && !(employers ?? []).length
+                  ? 'No employer record is linked to your account yet -- ask the placement '
+                    + 'office to add one.' : undefined },
               { name: 'title', label: 'Role', required: true, wide: true,
                 placeholder: 'Junior Developer' },
               { name: 'description', label: 'Description', type: 'textarea', rows: 3 },

@@ -243,7 +243,11 @@ export interface FamilyChild {
   relationship: string;
   shares: { attendance: boolean; results: boolean; fees: boolean };
   attendance: { attended: number; total: number; percent: number } | null;
-  results: { results: { exam_id: number; title: string; final_marks: number; max_marks: number; grade: string | null }[] } | null;
+  results: {
+    exams: { exam_id: number; title: string; final_marks: number; max_marks: number; grade: string | null }[];
+    assessments: { attempt_id: number; assessment_id: number; title: string; score: number; max_score: number; passed: boolean | null }[];
+    courses: { course_id: number; code: string; title: string; credits: number }[];
+  } | null;
   fees: { invoices: Invoice[]; outstanding_minor: number } | null;
 }
 

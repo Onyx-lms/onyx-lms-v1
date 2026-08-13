@@ -159,11 +159,14 @@ export function OnyxApply({ job, eligibility, applied }: {
 }
 
 /** CAR-04b -- the employer's pipeline for one post. */
-export function OnyxApplicants({ jobId, applicants, names }: {
+export function OnyxApplicants({ jobId, applicants, names, emails }: {
   jobId: number;
   applicants: { id: number; user_id: number; status: string; created_at: string;
     readiness_at_apply: number | null }[];
   names: Record<number, string>;
+  /** Applying shares a candidate's email with the employer/placement office
+   *  reviewing this post -- the same consent that shares their name. */
+  emails: Record<number, string>;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -189,6 +192,7 @@ export function OnyxApplicants({ jobId, applicants, names }: {
           <thead className="border-b border-line bg-slate-50 text-left text-[11px] font-bold uppercase tracking-[.06em] text-muted">
             <tr>
               <th className="px-4 py-3">Candidate</th>
+              <th className="px-4 py-3">Email</th>
               <th className="px-4 py-3">Applied</th>
               <th className="px-4 py-3">Readiness then</th>
               <th className="px-4 py-3">Status</th>
@@ -199,6 +203,7 @@ export function OnyxApplicants({ jobId, applicants, names }: {
             {applicants.map((a) => (
               <tr key={a.id} className="border-t border-line">
                 <td className="px-4 py-3">{names[a.user_id] ?? ('User ' + a.user_id)}</td>
+                <td className="px-4 py-3 text-muted">{emails[a.user_id] ?? '—'}</td>
                 <td className="px-4 py-3 text-muted">
                   {new Date(a.created_at).toLocaleDateString()}
                 </td>
@@ -224,7 +229,7 @@ export function OnyxApplicants({ jobId, applicants, names }: {
             ))}
             {applicants.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-4 py-8 text-center text-muted">
+                <td colSpan={6} className="px-4 py-8 text-center text-muted">
                   Nobody has applied yet.
                 </td>
               </tr>

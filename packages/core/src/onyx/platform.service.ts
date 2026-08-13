@@ -585,6 +585,74 @@ export class PlatformService {
   }
 
   /**
+   * The institution's timetable, read from outside it.
+   *
+   * Everything -- drafts included -- the same as an institution's own admin
+   * sees, because a platform operator watching a build-out in progress needs
+   * to see it exists, not just that it is finished. Read-only: the console
+   * that builds and publishes a timetable is the institution's own, this is
+   * oversight, not a second door to write through.
+   */
+  async tenantTimetable(id: number, opts: { semester_id?: number } = {}) {
+    await this.#requireTenant(id);
+
+    // One literal, not a concatenation: supabase-js infers the row type from
+    // the select string as a literal type, and `a + b` is just string.
+    let q = this.#db.from('onyx_timetable_slots')
+      .select('id, semester_id, course_id, batch_id, room_id, faculty_id, day_of_week, starts_at, ends_at, status')
+      .eq('tenant_id', id);
+    if (opts.semester_id) q = q.eq('semester_id', opts.semester_id);
+    const { data } = await q
+      .order('day_of_week', { ascending: true }).order('starts_at', { ascending: true })
+      .limit(SCAN_CAP);
+    const slots = data ?? [];
+
+    const courseIds = [...new Set(slots.map((s) => num(s.course_id)))];
+    const roomIds = [...new Set(slots.map((s) => num(s.room_id)))];
+    const facultyIds = [...new Set(slots.map((s) => num(s.faculty_id)))];
+    const batchIds = [...new Set(slots.map((s) => num(s.batch_id)))];
+
+    const [courseQ, roomQ, facultyQ, batchQ, semQ] = await Promise.all([
+      courseIds.length
+        ? this.#db.from('onyx_courses').select('id, code, title').eq('tenant_id', id)
+          .in('id', courseIds)
+        : Promise.resolve({ data: [] }),
+      roomIds.length
+        ? this.#db.from('onyx_rooms').select('id, code, name, kind').eq('tenant_id', id)
+          .in('id', roomIds)
+        : Promise.resolve({ data: [] }),
+      facultyIds.length
+        ? this.#db.from('onyx_users').select('id, name').in('id', facultyIds)
+        : Promise.resolve({ data: [] }),
+      batchIds.length
+        ? this.#db.from('onyx_batches').select('id, name').eq('tenant_id', id).in('id', batchIds)
+        : Promise.resolve({ data: [] }),
+      this.#db.from('onyx_semesters').select('id, name').eq('tenant_id', id).limit(ROW_CAP),
+    ]);
+    const courseById = new Map((courseQ.data ?? []).map((c) => [num(c.id), c]));
+    const roomById = new Map((roomQ.data ?? []).map((r) => [num(r.id), r]));
+    const facultyById = new Map((facultyQ.data ?? []).map((u) => [num(u.id), u]));
+    const batchById = new Map((batchQ.data ?? []).map((b) => [num(b.id), b]));
+    const semesterById = new Map((semQ.data ?? []).map((s) => [num(s.id), s]));
+
+    return {
+      semesters: (semQ.data ?? []).map((s) => ({ id: num(s.id), name: String(s.name) })),
+      slots: slots.map((s) => ({
+        id: num(s.id),
+        semester: semesterById.get(num(s.semester_id))?.name ?? null,
+        course: courseById.get(num(s.course_id)) ?? null,
+        room: roomById.get(num(s.room_id)) ?? null,
+        faculty: facultyById.get(num(s.faculty_id)) ?? null,
+        batch: batchById.get(num(s.batch_id))?.name ?? null,
+        day_of_week: num(s.day_of_week),
+        starts_at: String(s.starts_at),
+        ends_at: String(s.ends_at),
+        status: String(s.status),
+      })),
+    };
+  }
+
+  /**
    * The institution's results, read from outside it.
    *
    * This is the most privileged read in the file. A platform admin has a real

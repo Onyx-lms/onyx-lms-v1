@@ -58,6 +58,14 @@ function world(c = clock()) {
       { id: 1, tenant_id: T, program_id: 1, name: 'A' },
       { id: 2, tenant_id: T, program_id: 1, name: 'B' },
     ],
+    // schedule() refuses a batch with nobody in it -- these two mirror the
+    // students actually enrolled below, so scheduling against them behaves
+    // like scheduling against a real cohort.
+    onyx_batch_members: [
+      { id: 1, tenant_id: T, batch_id: 1, user_id: 10 },
+      { id: 2, tenant_id: T, batch_id: 1, user_id: 11 },
+      { id: 3, tenant_id: T, batch_id: 2, user_id: 12 },
+    ],
     onyx_courses: [
       { id: 1, tenant_id: T, code: 'CS101', title: 'Programming', slug: 'p', status: 1 },
       { id: 2, tenant_id: T, code: 'CS102', title: 'Databases', slug: 'd', status: 1 },

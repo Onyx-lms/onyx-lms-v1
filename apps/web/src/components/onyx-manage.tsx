@@ -1157,11 +1157,70 @@ export function BuildDrive({ employers, jobs }: {
   );
 }
 
+/**
+ * CAR-04a -- linking an employer record to its contact's own login.
+ *
+ * A company added before its contact had a login (or before anyone thought
+ * to connect the two) sits with no `user_id` forever otherwise: the contact
+ * can see the jobs board like any employer, but cannot post to it or see who
+ * applied, because every employer-facing route checks that link, not the
+ * name on the company. The placement page's own "needs the office" queue
+ * already named this as a problem with nothing anyone could click to fix --
+ * this is that fix, offered only the accounts that actually hold the
+ * employer role and are not already linked to a different company.
+ */
+export function LinkEmployerAccount({ employerId, candidates }: {
+  employerId: number; candidates: { user_id: number; name: string }[];
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [userId, setUserId] = useState(candidates[0]?.user_id ?? 0);
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  if (!candidates.length) {
+    return <span className="text-[12px] text-muted">No unlinked employer accounts</span>;
+  }
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        className="text-[12.5px] font-semibold text-brand-600 hover:underline">
+        Link an account
+      </button>
+    );
+  }
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5">
+      <select value={userId} aria-label="Account to link"
+        onChange={(e) => setUserId(Number(e.target.value))}
+        className={input + ' py-1 text-[12.5px]'}>
+        {candidates.map((c) => <option key={c.user_id} value={c.user_id}>{c.name}</option>)}
+      </select>
+      <button type="button" disabled={pending}
+        className="rounded-md bg-brand-600 px-2 py-1 text-[11px] font-bold text-white
+                   disabled:opacity-60"
+        onClick={() => start(async () => {
+          setError(null);
+          const res = await send('employers/' + employerId, { user_id: userId }, 'PATCH');
+          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+          setOpen(false); router.refresh();
+        })}>
+        {pending ? '…' : 'Link'}
+      </button>
+      <button type="button" onClick={() => setOpen(false)}
+        className="text-[11px] font-semibold text-faint hover:text-slate-600">
+        Cancel
+      </button>
+      {error ? <span role="alert" className="text-[11px] text-rose-700">{error}</span> : null}
+    </span>
+  );
+}
+
 /* ------------------------------------------- CMP-04: guardian consent ---- */
 
 const SCOPES = [
   { key: 'can_view_attendance', scope: 'attendance', label: 'Attendance' },
-  { key: 'can_view_results', scope: 'results', label: 'Results' },
+  { key: 'can_view_results', scope: 'results', label: 'Courses, marks & assessments' },
   { key: 'can_view_fees', scope: 'fees', label: 'Fees' },
 ] as const;
 
