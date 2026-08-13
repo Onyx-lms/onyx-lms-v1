@@ -7,46 +7,42 @@ import { EVENT_LABELS, type MarkerPaper, type ProctorTimeline } from '@/lib/onyx
 /**
  * ASS-03 -- marking one paper.
  *
- * Objective questions arrive already scored and are shown, not editable: they
- * were marked against the answer key as it stood when the paper was sat, and
- * letting a marker nudge them would make "reproducible marks" untrue.
+ * Every question is editable, objective or not. Objective questions arrive
+ * pre-filled with what the answer key scored automatically, so a marker who
+ * agrees never has to touch them -- but a marker who disagrees (a bad key, a
+ * partial-credit case the key can't express) can override the same as any
+ * subjective question. #recompute() on the server drops a question's
+ * auto_points out of the auto total the moment it carries an override, so
+ * nothing is ever double-counted.
  *
  * The candidate's name is absent when the assessment is anonymous. It is absent
  * from the payload, not hidden by CSS -- there is nothing here to reveal.
  */
 export function OnyxMarker({ paper }: { paper: MarkerPaper }) {
   const router = useRouter();
-  const subjective = paper.questions.filter((q) => !q.objective);
   const [marks, setMarks] = useState<Record<number, string>>(
-    () => Object.fromEntries(subjective.map((q) =>
-      [q.question_id, q.manual_points !== null ? String(q.manual_points) : ''])));
+    () => Object.fromEntries(paper.questions.map((q) => [
+      q.question_id,
+      q.manual_points !== null ? String(q.manual_points)
+        : q.objective ? String(Number(q.auto_points ?? 0))
+        : '',
+    ])));
   const [comments, setComments] = useState<Record<number, string>>(
-    () => Object.fromEntries(subjective.map((q) => [q.question_id, q.marker_comment ?? ''])));
+    () => Object.fromEntries(paper.questions.map((q) => [q.question_id, q.marker_comment ?? ''])));
   const [role, setRole] = useState<'first' | 'second' | 'moderation'>('first');
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
-  const auto = paper.questions
-    .filter((q) => q.objective)
-    .reduce((t, q) => t + Number(q.auto_points ?? 0), 0);
-  const manual = subjective.reduce((t, q) => t + (Number(marks[q.question_id]) || 0), 0);
+  const total = paper.questions.reduce((t, q) => t + (Number(marks[q.question_id]) || 0), 0);
   const done = new Set(paper.grades.map((g) => g.role));
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-line p-3 text-sm">
-        <span>
-          <span className="text-xs uppercase tracking-wide text-muted">Auto</span>
-          <span className="ml-2 tabular-nums">{auto}</span>
-        </span>
-        <span>
-          <span className="text-xs uppercase tracking-wide text-muted">By hand</span>
-          <span className="ml-2 tabular-nums">{manual}</span>
-        </span>
         <span className="font-medium">
           <span className="text-xs uppercase tracking-wide text-muted">Total</span>
-          <span className="ml-2 tabular-nums">{auto + manual} / {paper.max_score}</span>
+          <span className="ml-2 tabular-nums">{total} / {paper.max_score}</span>
         </span>
         {paper.integrity_flags > 0 ? (
           <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
@@ -77,39 +73,35 @@ export function OnyxMarker({ paper }: { paper: MarkerPaper }) {
             </div>
 
             {q.objective ? (
-              <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted">
                 <span className={Number(q.auto_points) >= q.points ? 'text-emerald-700' : 'text-rose-700'}>
-                  {Number(q.auto_points ?? 0)} / {q.points}
+                  Auto-scored {Number(q.auto_points ?? 0)} / {q.points}
                 </span>
-                <span className="text-xs text-muted">
-                  Expected: {formatResponse(q.expected, q.options)}
-                </span>
-                {/* Scored against the key as it stood when the paper was sat.
-                    Editing it here would make marks irreproducible. */}
-                <span className="text-xs text-muted">scored automatically</span>
+                <span>Expected: {formatResponse(q.expected, q.options)}</span>
+                {q.manual_points !== null ? <span>overridden by hand</span> : null}
               </div>
-            ) : (
-              <div className="mt-3 grid gap-2 sm:grid-cols-[120px_1fr]">
-                <label className="text-sm">
-                  <span className="sr-only">Marks for question {i + 1}</span>
-                  <input
-                    type="number" min={0} max={q.points} step="0.5"
-                    aria-label={'Marks out of ' + q.points}
-                    value={marks[q.question_id] ?? ''}
-                    onChange={(e) => setMarks((m) => ({ ...m, [q.question_id]: e.target.value }))}
-                    className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm"
-                  />
-                  <span className="ml-1 text-xs text-muted">/ {q.points}</span>
-                </label>
+            ) : null}
+
+            <div className="mt-3 grid gap-2 sm:grid-cols-[120px_1fr]">
+              <label className="text-sm">
+                <span className="sr-only">Marks for question {i + 1}</span>
                 <input
-                  aria-label={'Comment on question ' + (i + 1)}
-                  placeholder="Comment for the candidate"
-                  value={comments[q.question_id] ?? ''}
-                  onChange={(e) => setComments((c) => ({ ...c, [q.question_id]: e.target.value }))}
-                  className="rounded-lg border border-slate-300 px-2 py-1 text-sm"
+                  type="number" min={0} max={q.points} step="0.5"
+                  aria-label={'Marks out of ' + q.points}
+                  value={marks[q.question_id] ?? ''}
+                  onChange={(e) => setMarks((m) => ({ ...m, [q.question_id]: e.target.value }))}
+                  className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm"
                 />
-              </div>
-            )}
+                <span className="ml-1 text-xs text-muted">/ {q.points}</span>
+              </label>
+              <input
+                aria-label={'Comment on question ' + (i + 1)}
+                placeholder="Comment for the candidate"
+                value={comments[q.question_id] ?? ''}
+                onChange={(e) => setComments((c) => ({ ...c, [q.question_id]: e.target.value }))}
+                className="rounded-lg border border-slate-300 px-2 py-1 text-sm"
+              />
+            </div>
           </li>
         ))}
       </ol>
@@ -132,7 +124,7 @@ export function OnyxMarker({ paper }: { paper: MarkerPaper }) {
         </label>
         <button
           type="button"
-          disabled={pending || subjective.length === 0}
+          disabled={pending}
           onClick={() => start(async () => {
             setError(null); setNotice(null);
             const res = await fetch('/api/proxy/onyx/attempts/' + paper.id + '/mark', {
@@ -140,7 +132,7 @@ export function OnyxMarker({ paper }: { paper: MarkerPaper }) {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 role,
-                marks: subjective.map((q) => ({
+                marks: paper.questions.map((q) => ({
                   question_id: q.question_id,
                   points: Number(marks[q.question_id]) || 0,
                   comment: comments[q.question_id] || null,
@@ -158,9 +150,7 @@ export function OnyxMarker({ paper }: { paper: MarkerPaper }) {
           Save marks
         </button>
         <span className="text-xs text-muted">
-          {subjective.length === 0
-            ? 'Everything on this paper was scored automatically.'
-            : 'Marked so far: ' + ([...done].join(', ') || 'nobody')}
+          Marked so far: {[...done].join(', ') || 'nobody'}
         </span>
       </div>
     </div>

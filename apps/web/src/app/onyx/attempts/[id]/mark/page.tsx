@@ -29,10 +29,16 @@ export default async function OnyxMarkPaperPage({ params }: { params: Promise<{ 
   // Where you are in this script, counted off the questions themselves. A
   // marker who loses track re-reads an answer they already marked, and that is
   // the difference between the mark being fair and being roughly fair.
+  //
+  // Every question is markable now, objective included (see OnyxMarker), so
+  // "done" counts objective questions as already scored -- a marker who never
+  // opens one hasn't left it undone, the key already scored it -- plus any
+  // question, objective or not, that carries a human override.
   const objective = paper.questions.filter((q) => q.objective);
   const written = paper.questions.filter((q) => !q.objective);
-  const done = written.filter((q) => q.manual_points !== null).length;
-  const percent = written.length ? (done / written.length) * 100 : 100;
+  const overridden = paper.questions.filter((q) => q.manual_points !== null).length;
+  const done = objective.length + written.filter((q) => q.manual_points !== null).length;
+  const percent = paper.questions.length ? (done / paper.questions.length) * 100 : 100;
   const autoMax = objective.reduce((n, q) => n + Number(q.points || 0), 0);
   const auto = objective.reduce((n, q) => n + Number(q.auto_points ?? 0), 0);
   const marked = new Set(paper.grades.map((g) => g.role));
@@ -56,18 +62,23 @@ export default async function OnyxMarkPaperPage({ params }: { params: Promise<{ 
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
           <div className="min-w-0">
             <div className="text-[10.5px] font-bold uppercase tracking-[.08em] text-muted">
-              Written questions marked
+              Questions marked
             </div>
             <div className="mt-1 text-[26px] font-extrabold leading-none tabular-nums">
               {done}
-              <span className="text-[17px] font-bold text-muted"> / {written.length}</span>
+              <span className="text-[17px] font-bold text-muted"> / {paper.questions.length}</span>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <span className="flex items-center gap-2 text-[13px] text-muted">
-              Section scored automatically
+              Auto-graded baseline
               <Score value={auto} outOf={autoMax || undefined} />
             </span>
+            {overridden > 0 ? (
+              <span className="text-[13px] text-muted">
+                {overridden} {overridden === 1 ? 'question' : 'questions'} overridden by hand
+              </span>
+            ) : null}
             <span className="flex items-center gap-2 text-[13px] text-muted">
               Running total
               <Score value={paper.score ?? auto + Number(paper.manual_score ?? 0)}
@@ -107,9 +118,10 @@ export default async function OnyxMarkPaperPage({ params }: { params: Promise<{ 
         </div>
       </Card>
 
-      {/* Objective marks are shown, not offered for editing: they were scored
-          against the key as it stood when this paper was sat, and a marker
-          nudging one here would make the cohort's marks irreproducible. */}
+      {/* Every question is editable here, objective included -- a marker who
+          agrees with the auto-grade never has to touch it, but the option to
+          override (a bad key, partial credit the key can't express) is
+          always there. See OnyxMarker. */}
       <section className="mt-6">
         <SectionHead title="The script" />
         <OnyxMarker paper={paper} />

@@ -37,9 +37,23 @@ const GRADE_COLUMNS = 'id, tenant_id, attempt_id, role, marker_id, manual_score,
 export const QUESTION_TYPES = ['single', 'multiple', 'truefalse', 'short', 'essay'] as const;
 export type OnyxQuestionType = (typeof QUESTION_TYPES)[number];
 
-/** Types a machine can mark. The rest need a person. */
+/** Types a machine CAN mark, given a key. Whether one was actually set is separate. */
 const OBJECTIVE: OnyxQuestionType[] = ['single', 'multiple', 'truefalse', 'short'];
 export const isObjective = (type: string) => OBJECTIVE.includes(type as OnyxQuestionType);
+
+/**
+ * True if a stored answer key actually specifies something gradable.
+ *
+ * An MCQ-shaped question with no key set is not "wrong by default" -- it is
+ * unmarkable by a machine, same as an essay, until a person marks it. Without
+ * this check a question authored without a deliberate correct-option pick
+ * would silently auto-grade every response as wrong against a blank key.
+ */
+export const hasKey = (answer: unknown): boolean => !(
+  answer === undefined || answer === null
+  || (Array.isArray(answer) && answer.length === 0)
+  || (typeof answer === 'string' && answer.trim() === '')
+);
 
 export type MarkRole = 'first' | 'second' | 'moderation';
 
@@ -751,7 +765,12 @@ export class AssessService {
           options: q.options,
           points: q.points,
           response: answer?.response ?? null,
-          objective: isObjective(q.type),
+          // "Objective" here means "actually auto-graded", not just
+          // MCQ-shaped: a single/multiple/truefalse/short question authored
+          // without a correct answer was never scored by a machine (see
+          // #finalise), so it is marked exactly like an essay, not shown as
+          // if a key had settled it.
+          objective: isObjective(q.type) && hasKey(key?.answer),
           // A marker needs the key; a candidate never sees this method.
           expected: key?.answer ?? null,
           explanation: key?.explanation ?? null,
@@ -783,9 +802,6 @@ export class AssessService {
     for (const m of input.marks) {
       const entry = byId.get(m.question_id);
       if (!entry) throw new HttpError(422, 'That question is not on this paper.');
-      if (isObjective(entry.type)) {
-        throw new HttpError(422, 'Objective questions are scored automatically.');
-      }
       if (m.points < 0 || m.points > entry.points) {
         throw new HttpError(422, 'That question is out of ' + entry.points + '.');
       }
@@ -930,10 +946,16 @@ export class AssessService {
       if (options.length < 2) throw new HttpError(422, 'A choice question needs at least two options.');
       const ids = new Set(options.map((o) => o.id));
       if (ids.size !== options.length) throw new HttpError(422, 'Two options share an id.');
-      const key = type === 'multiple'
-        ? (Array.isArray(answer) ? answer : [])
-        : [answer];
-      if (!key.length) throw new HttpError(422, 'A choice question needs an answer.');
+    }
+    // No key at all is allowed, on any objective-shaped type: the question is
+    // then marked by hand instead of auto-graded against an answer nobody
+    // actually chose. A key that IS given still has to be real, so a typo
+    // can't make a question silently unanswerable.
+    if (!hasKey(answer)) return;
+
+    if (type === 'single' || type === 'multiple') {
+      const ids = new Set(options.map((o) => o.id));
+      const key = type === 'multiple' ? (Array.isArray(answer) ? answer : []) : [answer];
       // An answer that is not one of the options can never be selected, so the
       // question would be unanswerable and nobody would find out until it was
       // sat.
@@ -1025,11 +1047,15 @@ export class AssessService {
 
     for (const q of paper) {
       const answer = byQuestion.get(q.question_id);
-      if (!isObjective(q.type)) {
+      const key = keys.get(q.question_id + ':' + q.version);
+      // Essays always need a person. So does an MCQ-shaped question nobody
+      // set a correct option on when it was authored -- scoring that against
+      // a blank key would mark every response wrong by default, which is not
+      // "objective", it's just silent.
+      if (!isObjective(q.type) || !hasKey(key?.answer)) {
         if (answer?.response) needsMarking = true;
         continue;
       }
-      const key = keys.get(q.question_id + ':' + q.version);
       const points = scoreObjective(q.type, key?.answer, answer?.response ?? null, q.points);
       auto += points;
       if (answer) {
@@ -1065,7 +1091,17 @@ export class AssessService {
    */
   async #recompute(tenantId: number, attemptId: number) {
     const answers = await this.#answers(tenantId, attemptId);
-    const auto = answers.reduce((t, a) => t + Number(a.auto_points ?? 0), 0);
+    // Objective questions are auto-scored, but a marker can now override any
+    // question's points (see mark()). Once an answer carries a manual_points
+    // override, its auto_points must drop out of the auto total -- otherwise
+    // a marked objective question would count twice: once here and once in
+    // the authoritative grade's manual_score below.
+    const auto = answers.reduce(
+      // == null (not ===) so an unset column reads the same whether the
+      // driver hands it back as SQL NULL or simply omits the key.
+      (t, a) => t + (a.manual_points == null ? Number(a.auto_points ?? 0) : 0),
+      0,
+    );
     const grades = await this.grades(tenantId, attemptId);
     const authoritative = grades.find((g) => g.role === 'moderation')
       ?? grades.find((g) => g.role === 'second')

@@ -5,6 +5,7 @@ import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, type Me } from '@/lib/onyx-session';
 import type { Exam } from '@/lib/onyx-campus';
 import { CreatePanel } from '@/components/onyx-create';
+import { CreatePaper } from '@/components/onyx-manage';
 import { onyxApiSafe } from '@/lib/onyx-session';
 import type { Course, Semester } from '@/lib/onyx-learn';
 import {
@@ -116,6 +117,22 @@ export default async function OnyxExamsPage() {
   // code can sit under each paper's title without a second request.
   const codeOf = new Map((courses ?? []).map((c) => [Number(c.id), c.code]));
 
+  // Whether an exam's online paper has anything a marker needs to look at --
+  // the calendar used to say nothing about this at all, so a candidate's
+  // handed-in script sat there silently until somebody happened to open that
+  // one exam. `canSchedule` is the same staff/course-faculty audience the
+  // marking link itself is gated to.
+  const markingByExam = new Map<number, { total: number; todo: number }>();
+  if (canSchedule) {
+    const withPapers = exams.filter((e) => e.assessment_id != null);
+    const summaries = await Promise.all(withPapers.map((e) =>
+      onyxApiSafe<{ score: number | null }[]>('/api/onyx/assessments/' + e.assessment_id + '/marking')));
+    withPapers.forEach((e, i) => {
+      const rows = summaries[i] ?? [];
+      markingByExam.set(e.id, { total: rows.length, todo: rows.filter((r) => r.score === null).length });
+    });
+  }
+
   const now = Date.now();
   const rows = exams
     .map((e) => ({ exam: e, when: schedule(e, now), start: Date.parse(e.starts_at) }))
@@ -187,6 +204,13 @@ export default async function OnyxExamsPage() {
               ]}
             />
           ) : null}
+          {/* Building a paper used to mean leaving this page for Assessments
+              first -- a question bank, then a paper drawn from it, then back
+              here to pick it from the dropdown above. This does all three in
+              one form and the result is published, so it is already sitting
+              in that dropdown by the time this panel closes. */}
+          {canSchedule ? <CreatePaper courses={schedulableCourses.map((c) =>
+            ({ id: c.id, label: c.code + ' — ' + c.title }))} /> : null}
           {/* Physical halls are an institution-wide resource shared across every
               course, not something one course's faculty allocate on their own --
               stays with the examinations office even now that scheduling itself
@@ -283,7 +307,9 @@ export default async function OnyxExamsPage() {
                   </>
                 }
               >
-                {g.rows.map(({ exam, when }) => (
+                {g.rows.map(({ exam, when }) => {
+                  const marking = markingByExam.get(exam.id);
+                  return (
                   <tr key={exam.id} className="align-top">
                     <td>
                       <Link href={'/onyx/exams/' + exam.id}
@@ -296,6 +322,23 @@ export default async function OnyxExamsPage() {
                           : ''}
                         pass mark {exam.pass_marks}
                       </div>
+                      {/* The one thing this list used to say nothing about:
+                          a submitted script sitting there unmarked. Only
+                          shown once there is something to say -- an exam
+                          with no online paper, or nobody has sat it yet,
+                          gets nothing here. */}
+                      {marking && marking.total > 0 ? (
+                        <Link href={'/onyx/exams/' + exam.id + '/marking'}
+                          className={'mt-1 inline-flex items-center gap-1 rounded-full px-2 '
+                            + 'py-0.5 text-[11.5px] font-bold hover:underline '
+                            + (marking.todo > 0
+                              ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-700')}>
+                          <Icon name={marking.todo > 0 ? 'edit' : 'check'} className="h-3 w-3" />
+                          {marking.todo > 0
+                            ? marking.todo + (marking.todo === 1 ? ' script to mark' : ' scripts to mark')
+                            : 'All ' + marking.total + (marking.total === 1 ? ' script' : ' scripts') + ' marked'}
+                        </Link>
+                      ) : null}
                     </td>
                     <td className="whitespace-nowrap">
                       <div className="font-semibold">{when.lead}</div>
@@ -323,7 +366,8 @@ export default async function OnyxExamsPage() {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </DataTable>
             </div>
           </section>

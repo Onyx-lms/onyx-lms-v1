@@ -36,9 +36,17 @@ function Shell({ title, open, setOpen, cta, children, onSubmit, pending, error }
   children: React.ReactNode; onSubmit: () => void; pending: boolean; error: string | null;
 }) {
   if (!open) {
+    // w-fit/shrink-0/self-start/justify-self-start: without these, a closed
+    // trigger sitting in a CSS Grid cell next to a taller sibling (a panel
+    // like "Schedule an exam" that stretches the row) stretches to fill the
+    // whole cell -- the button was still a button, just the size of a
+    // postcard, with its label pinned in a corner. Same fix as CreatePanel's
+    // own closed button, which had the identical bug in a different
+    // component.
     return (
       <button type="button" onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-3 py-2
+        className="inline-flex w-fit shrink-0 items-center gap-2 self-start
+                   justify-self-start rounded-xl bg-brand-600 px-3 py-2
                    text-[13px] font-semibold text-white hover:bg-brand-700">
         <Icon name="edit" className="h-4 w-4" />{cta}
       </button>
@@ -2110,5 +2118,267 @@ export function CourseSettingsForm({ courseId, course }: {
         <button type="button" onClick={() => setOpen(false)} className={ghost}>Cancel</button>
       </div>
     </form>
+  );
+}
+
+/* -------------------------------------------------- CMP-02: exam papers ---- */
+
+const OPTION_IDS = ['a', 'b', 'c', 'd'] as const;
+
+interface PaperQuestion {
+  type: 'single' | 'essay';
+  prompt: string;
+  points: string;
+  options: string[]; // four slots, blank ones dropped on submit
+  correct: string; // one of OPTION_IDS, meaningful only for 'single'; '' = none picked yet
+  manualOnly: boolean; // 'single' with no key -- marked by hand, not auto-graded
+}
+
+// correct starts blank, not 'a' -- option A used to come pre-checked on the
+// wire before anyone had looked at the question, so typing four options and
+// never touching the radios still silently locked in "A is correct". Now
+// nothing is correct until someone says so.
+const blankQuestion = (): PaperQuestion => ({
+  type: 'single', prompt: '', points: '10', options: ['', '', '', ''],
+  correct: '', manualOnly: false,
+});
+
+/**
+ * Authors a whole online paper -- bank, questions and the assessment that
+ * draws every one of them -- in one form, then publishes it.
+ *
+ * Building a paper used to mean leaving Examinations for Assessments,
+ * building a question bank there, coming back, and picking it from a
+ * dropdown. This is that whole path collapsed into the one screen someone
+ * scheduling an exam is already on: pick multiple choice or descriptive per
+ * question, right here, and the paper that comes out the other end is
+ * published and ready to link the moment this closes.
+ */
+export function CreatePaper({ courses }: { courses: { id: number; label: string }[] }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState('');
+  const [courseId, setCourseId] = useState(courses[0] ? String(courses[0].id) : '');
+  const [duration, setDuration] = useState('60');
+  const [passMark, setPassMark] = useState('');
+  const [proctoring, setProctoring] = useState(true);
+  const [requireCamera, setRequireCamera] = useState(true);
+  // Every other formal exam already in this institution requires both --
+  // camera-only was this component's own default, not a real paper's, and it
+  // is exactly why a candidate starting a paper made here was only ever
+  // asked for a camera. A proctored EXAM (as opposed to a lower-stakes
+  // assessment, which keeps its own separate, everything-off-by-default
+  // form) is monitored on both by default; still one click to turn off.
+  const [requireScreen, setRequireScreen] = useState(true);
+  const [questions, setQuestions] = useState<PaperQuestion[]>([blankQuestion()]);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  const setQuestion = (i: number, patch: Partial<PaperQuestion>) =>
+    setQuestions((qs) => qs.map((q, j) => (j === i ? { ...q, ...patch } : q)));
+  const setOption = (i: number, oi: number, text: string) =>
+    setQuestions((qs) => qs.map((q, j) => (j === i
+      ? { ...q, options: q.options.map((o, k) => (k === oi ? text : o)) } : q)));
+
+  return (
+    <Shell title="Create a paper" cta="Create a paper" open={open} setOpen={setOpen}
+      pending={pending} error={error}
+      onSubmit={() => start(async () => {
+        setError(null);
+        if (!courseId) { setError('Pick a course.'); return; }
+        const clean = questions
+          .map((q) => ({ ...q, prompt: q.prompt.trim() }))
+          .filter((q) => q.prompt !== '');
+        if (!clean.length) { setError('Add at least one question.'); return; }
+        for (const q of clean) {
+          if (q.type === 'single') {
+            const opts = q.options.map((o, i) => ({ id: OPTION_IDS[i]!, text: o.trim() }))
+              .filter((o) => o.text !== '');
+            if (opts.length < 2) {
+              setError('"' + q.prompt.slice(0, 40) + '…" needs at least two options.');
+              return;
+            }
+            if (!q.manualOnly && !opts.some((o) => o.id === q.correct)) {
+              setError('"' + q.prompt.slice(0, 40)
+                + '…" — mark which option is correct, or mark it for manual grading.');
+              return;
+            }
+          }
+        }
+
+        // 1. A bank to hold this paper's questions -- one per paper, so
+        // editing one exam's questions never touches another's.
+        const bank = await send('banks', { name: title.trim() + ' — question bank', course_id: Number(courseId) });
+        if (!bank.ok) { setError(bank.message ?? 'Could not create the question bank.'); return; }
+        const bankId = bank.data.id as number;
+
+        // 2. Every question, in order.
+        for (const q of clean) {
+          const body = q.type === 'single'
+            ? {
+              type: 'single', prompt: q.prompt, points: Number(q.points) || 10,
+              options: q.options.map((o, i) => ({ id: OPTION_IDS[i]!, text: o.trim() }))
+                .filter((o) => o.text !== ''),
+              // No key at all when marked manual-only -- the API leaves such a
+              // question unmarked by a machine rather than grading every
+              // answer wrong against a blank one.
+              answer: q.manualOnly ? undefined : q.correct,
+            }
+            : { type: 'essay', prompt: q.prompt, points: Number(q.points) || 10 };
+          const made = await send(`banks/${bankId}/questions`, body);
+          if (!made.ok) { setError(made.message ?? 'Could not add a question.'); return; }
+        }
+
+        // 3. The paper itself, drawing every question just added, then
+        // published -- left as a draft would mean nobody scheduling an exam
+        // sees it in the "online paper" picker a moment later.
+        const assessment = await send('assessments', {
+          title: title.trim(), course_id: Number(courseId),
+          duration_minutes: Number(duration) || 60,
+          pass_mark: passMark.trim() ? Number(passMark) : undefined,
+          proctoring, require_camera: proctoring && requireCamera,
+          require_screen: proctoring && requireScreen,
+          sections: [{ id: 's1', title: 'All questions', bank_id: bankId, take: clean.length }],
+        });
+        if (!assessment.ok) { setError(assessment.message ?? 'Could not create the paper.'); return; }
+        const published = await send(`assessments/${assessment.data.id}/publish`);
+        if (!published.ok) {
+          setError('Paper created but not published: ' + (published.message ?? 'try publishing it from Assessments.'));
+          return;
+        }
+        setOpen(false); router.refresh();
+      })}>
+      <p className="mb-3 text-xs text-muted">
+        Builds a question bank and a published paper in one go, ready to pick as this
+        exam's online paper below.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <label className="block text-[13px] font-semibold text-slate-700" htmlFor="pp-title">
+            Paper title
+          </label>
+          <input id="pp-title" required value={title} onChange={(e) => setTitle(e.target.value)}
+            placeholder="CS101 Midterm" className={input + ' mt-1 w-full'} />
+        </div>
+        <div>
+          <label className="block text-[13px] font-semibold text-slate-700" htmlFor="pp-course">
+            Course
+          </label>
+          <select id="pp-course" required value={courseId}
+            onChange={(e) => setCourseId(e.target.value)} className={input + ' mt-1 w-full'}>
+            {courses.length === 0 ? <option value="">No courses</option> : null}
+            {courses.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[13px] font-semibold text-slate-700" htmlFor="pp-duration">
+            Minutes
+          </label>
+          <input id="pp-duration" type="number" min={5} max={600} value={duration}
+            onChange={(e) => setDuration(e.target.value)} className={input + ' mt-1 w-full'} />
+        </div>
+        <div>
+          <label className="block text-[13px] font-semibold text-slate-700" htmlFor="pp-pass">
+            Pass mark (optional)
+          </label>
+          <input id="pp-pass" type="number" min={0} value={passMark}
+            onChange={(e) => setPassMark(e.target.value)} className={input + ' mt-1 w-full'} />
+        </div>
+        <div className="flex items-end">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={proctoring}
+              onChange={(e) => setProctoring(e.target.checked)} />
+            Proctored (camera/screen, tab-switch detection)
+          </label>
+        </div>
+        {proctoring ? (
+          <div className="sm:col-span-2 flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={requireCamera}
+                onChange={(e) => setRequireCamera(e.target.checked)} />
+              Require the camera
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={requireScreen}
+                onChange={(e) => setRequireScreen(e.target.checked)} />
+              Require screen sharing
+            </label>
+          </div>
+        ) : null}
+      </div>
+
+      <div className="mt-4 space-y-3">
+        <h4 className="text-[13px] font-bold text-slate-700">Questions</h4>
+        {questions.map((q, i) => (
+          <div key={i} className="rounded-xl border border-line p-3">
+            <div className="flex items-center justify-between gap-2">
+              <select value={q.type} className={input + ' text-xs'}
+                aria-label={'Type for question ' + (i + 1)}
+                onChange={(e) => setQuestion(i, { type: e.target.value as PaperQuestion['type'] })}>
+                <option value="single">Multiple choice</option>
+                <option value="essay">Descriptive (marked manually)</option>
+              </select>
+              {questions.length > 1 ? (
+                <button type="button" aria-label={'Remove question ' + (i + 1)}
+                  className="text-xs font-semibold text-rose-700 hover:underline"
+                  onClick={() => setQuestions((qs) => qs.filter((_, j) => j !== i))}>
+                  Remove
+                </button>
+              ) : null}
+            </div>
+            <label className="mt-2 block text-xs font-semibold" htmlFor={'pp-q-' + i}>
+              Question {i + 1}
+            </label>
+            <textarea id={'pp-q-' + i} rows={2} value={q.prompt}
+              className={input + ' mt-1 w-full text-sm'}
+              onChange={(e) => setQuestion(i, { prompt: e.target.value })} />
+            <div className="mt-2 flex items-center gap-2">
+              <label className="text-xs font-semibold" htmlFor={'pp-pts-' + i}>Points</label>
+              <input id={'pp-pts-' + i} type="number" min={1} value={q.points}
+                className={input + ' w-20 text-xs'}
+                onChange={(e) => setQuestion(i, { points: e.target.value })} />
+            </div>
+            {q.type === 'single' ? (
+              <div className="mt-2 space-y-1.5">
+                {OPTION_IDS.map((id, oi) => (
+                  <label key={id} className="flex items-center gap-2 text-xs">
+                    <input type="radio" name={'pp-correct-' + i} checked={q.correct === id}
+                      disabled={q.manualOnly}
+                      onChange={() => setQuestion(i, { correct: id })} />
+                    <input value={q.options[oi] ?? ''} placeholder={'Option ' + id.toUpperCase()}
+                      className={input + ' flex-1 text-xs'}
+                      onChange={(e) => setOption(i, oi, e.target.value)} />
+                  </label>
+                ))}
+                <label className="flex items-center gap-2 text-xs text-slate-700">
+                  <input type="checkbox" checked={q.manualOnly}
+                    onChange={(e) => setQuestion(i, {
+                      manualOnly: e.target.checked,
+                      // Unchecking the radios along with the box: leaving a
+                      // stale 'correct' behind would silently re-enable
+                      // auto-grading against a choice nobody just re-affirmed.
+                      correct: e.target.checked ? '' : q.correct,
+                    })} />
+                  I don't have the correct answer yet -- mark this one by hand
+                </label>
+                <p className="text-[11px] text-muted">
+                  {q.manualOnly
+                    ? 'No key is set. This is marked by hand in the marking queue, same as an essay.'
+                    : 'The selected radio button is the correct option, auto-graded on submission.'}
+                </p>
+              </div>
+            ) : (
+              <p className="mt-2 text-[11px] text-muted">
+                Marked by hand in the assessment's marking queue once submitted.
+              </p>
+            )}
+          </div>
+        ))}
+        <button type="button" className={ghost}
+          onClick={() => setQuestions((qs) => [...qs, blankQuestion()])}>
+          Add a question
+        </button>
+      </div>
+    </Shell>
   );
 }

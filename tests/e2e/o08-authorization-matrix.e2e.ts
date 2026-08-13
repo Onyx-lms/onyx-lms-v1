@@ -66,7 +66,11 @@ interface Row {
 
 const MATRIX: Row[] = [
   // ---- CMP-05: tenancy, people and the audit trail ----------------------
-  { what: 'the roster', path: '/api/onyx/members', allow: ['admin', 'faculty'] },
+  // Widened deliberately: the examinations office runs invigilation and
+  // marking institution-wide and needs the same "who is this" name lookup
+  // admin/faculty already had (Invigilate used to show a bare candidate id
+  // to this role for exactly this reason).
+  { what: 'the roster', path: '/api/onyx/members', allow: ['admin', 'faculty', 'exams'] },
   { what: 'adding a member', method: 'POST', path: '/api/onyx/members', body: {},
     allow: ['admin'] },
   { what: 'the audit log', path: '/api/onyx/audit', allow: ['admin'] },

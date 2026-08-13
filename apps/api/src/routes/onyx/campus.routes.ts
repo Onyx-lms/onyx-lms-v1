@@ -441,18 +441,37 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   /**
-   * Pull marks from this exam's online paper.
+   * Reads every fully-marked score off this exam's online paper into its own
+   * marks register through enterMarks(), the exact path a person typing
+   * marks in by hand goes through, so roster checks, moderation, publishing
+   * and the audit trail all work precisely as if the office had entered them
+   * by hand. Only attempts with nothing left for a marker are pulled; the
+   * rest wait for the marking queue rather than syncing in as a wrong,
+   * partial score. Scores are scaled onto the exam's own mark scheme, since
+   * the paper and the exam are not required to share one.
    *
-   * An exam sat through the CBT engine already has a graded score sitting on
-   * every finished attempt -- this reads it across into the exam's own marks
-   * register through enterMarks(), the exact path a person typing marks in
-   * by hand goes through, so roster checks, moderation, publishing and the
-   * audit trail all work precisely as if the office had entered them by
-   * hand. Only attempts with nothing left for a marker are pulled; the rest
-   * wait for the marking queue rather than syncing in as a wrong, partial
-   * score. Scores are scaled onto the exam's own mark scheme, since the
-   * paper and the exam are not required to share one.
+   * Called automatically by publish, below -- there used to be a manual
+   * "pull marks" step between finishing the marking queue and publishing,
+   * which was one click that only ever needed to happen right before this
+   * one anyway.
    */
+  async function syncExamMarksFromPaper(
+    tenantId: number, examId: number,
+    exam: { assessment_id: number | null; max_marks: number },
+    viewer: { userId: number; role: Role },
+  ) {
+    if (!exam.assessment_id) return { entered: 0 };
+    const scored = await ctx.onyxAssess.scoredAttempts(tenantId, exam.assessment_id);
+    if (!scored.length) return { entered: 0 };
+    const examMax = Number(exam.max_marks);
+    const entries = scored.map((a) => ({
+      user_id: a.user_id,
+      raw_marks: a.max_score > 0
+        ? Math.round((a.score / a.max_score) * examMax * 100) / 100 : 0,
+    }));
+    return ctx.onyxExams.enterMarks(tenantId, examId, viewer, entries);
+  }
+
   app.post('/api/onyx/exams/:id/marks/sync-from-paper', async (req) => {
     const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...MARKERS);
     const viewer = { role: claims.tenant_role, userId: claims.user_id };
@@ -462,19 +481,10 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
     if (!exam.assessment_id) {
       throw new HttpError(422, 'This exam has no online paper to pull marks from.');
     }
-    const scored = await ctx.onyxAssess.scoredAttempts(claims.tenant_id, Number(exam.assessment_id));
-    if (!scored.length) {
-      return ok({ entered: 0 }, 'Nothing on the online paper is fully marked yet.');
-    }
-    const examMax = Number(exam.max_marks);
-    const entries = scored.map((a) => ({
-      user_id: a.user_id,
-      raw_marks: a.max_score > 0
-        ? Math.round((a.score / a.max_score) * examMax * 100) / 100 : 0,
-    }));
-    const result = await ctx.onyxExams.enterMarks(claims.tenant_id, idOf(req), viewer, entries);
-    return ok(result, 'Pulled ' + result.entered
-      + (result.entered === 1 ? ' mark' : ' marks') + ' from the online paper.');
+    const result = await syncExamMarksFromPaper(claims.tenant_id, idOf(req), exam, viewer);
+    return ok(result, result.entered
+      ? 'Pulled ' + result.entered + (result.entered === 1 ? ' mark' : ' marks') + ' from the online paper.'
+      : 'Nothing on the online paper is fully marked yet.');
   });
 
   app.post('/api/onyx/exams/:id/moderate', async (req) => {
@@ -495,6 +505,11 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
     const exam = await ctx.onyxExams.exam(claims.tenant_id, idOf(req));
     await assertCanRunExam(
       claims.tenant_id, Number(exam.course_id), claims.user_id, claims.tenant_role);
+    // Whatever the online paper's marking queue has finished grading since
+    // the last sync goes in first -- publishing used to require a separate
+    // "pull marks" click immediately beforehand, which was never really a
+    // decision on its own, just a step nobody could skip.
+    await syncExamMarksFromPaper(claims.tenant_id, idOf(req), exam, viewer);
     return ok(await ctx.onyxExams.publishMarks(claims.tenant_id, idOf(req), viewer));
   });
 

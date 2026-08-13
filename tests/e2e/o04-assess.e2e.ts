@@ -322,30 +322,58 @@ test('ASS-03a the grader cannot see the candidate when marking is anonymous', as
 });
 
 test('ASS-03 marking is checked, and moderation overrides', async () => {
-  const objective = await api('/api/onyx/attempts/' + w.attempt1 + '/mark', {
-    token: w.alpha.exams, body: { marks: [{ question_id: w.q.single, points: 1 }] },
-  });
-  assert.equal(objective.status, 422, 'an objective question was hand-marked');
-
   const over = await api('/api/onyx/attempts/' + w.attempt1 + '/mark', {
     token: w.alpha.exams, body: { marks: [{ question_id: w.q.essay, points: 99 }] },
   });
   assert.equal(over.status, 422, over.message);
 
-  const first = await api<{ auto_score: number; score: number }>(
+  // A marker can now override an objective question too -- the real UI always
+  // submits the whole paper per role, so re-affirming single at its own
+  // auto-graded value alongside the essay must leave the total untouched:
+  // that is the "no double-counting" guarantee, proven live, not just in
+  // isolation.
+  const first = await api<{ auto_score: number; score: number;
+    questions: { question_id: number; manual_points: number | null }[] }>(
     '/api/onyx/attempts/' + w.attempt1 + '/mark', {
       token: w.alpha.exams,
-      body: { role: 'first', marks: [{ question_id: w.q.essay, points: 2 }] },
+      body: {
+        role: 'first',
+        marks: [
+          { question_id: w.q.single, points: 2 },
+          { question_id: w.q.essay, points: 2 },
+        ],
+      },
     });
   assert.equal(first.ok, true, first.message);
-  assert.equal(Number(first.data.auto_score), 5, 'single 2 + multiple 2 + short 1');
-  assert.equal(Number(first.data.score), 7);
+  const single = first.data.questions.find((q) => q.question_id === w.q.single)!;
+  assert.equal(single.manual_points, 2, 'the objective override was recorded');
+  assert.equal(Number(first.data.auto_score), 3, 'multiple 2 + short 1, single now overridden');
+  assert.equal(Number(first.data.score), 7, 'same total as before the override -- no double-count');
 
   const moderated = await api<{ score: number }>('/api/onyx/attempts/' + w.attempt1 + '/mark', {
     token: w.alpha.exams,
-    body: { role: 'moderation', marks: [{ question_id: w.q.essay, points: 5 }] },
+    body: {
+      role: 'moderation',
+      marks: [
+        { question_id: w.q.single, points: 2 },
+        { question_id: w.q.essay, points: 5 },
+      ],
+    },
   });
   assert.equal(Number(moderated.data.score), 10, 'moderation did not override the first mark');
+
+  // And a genuine override -- not just re-affirming the auto value -- really
+  // does change the total. The second candidate got "single" wrong (auto 0);
+  // a marker gives partial credit for working shown, on a paper untouched by
+  // the above.
+  const upgraded = await api<{ auto_score: number; score: number }>(
+    '/api/onyx/attempts/' + w.attempt2 + '/mark', {
+      token: w.alpha.exams,
+      body: { role: 'first', marks: [{ question_id: w.q.single, points: 1 }] },
+    });
+  assert.equal(upgraded.ok, true, upgraded.message);
+  assert.equal(Number(upgraded.data.auto_score), 3, 'multiple 2 + short 1, single excluded');
+  assert.equal(Number(upgraded.data.score), 4, 'single was given partial credit, 0 to 1');
 });
 
 test('ASS-03b results are invisible until published, and publication is audited', async () => {

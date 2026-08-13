@@ -6,7 +6,7 @@ import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-se
 import type { Exam, SeatingPlan, Hall, ExamMark } from '@/lib/onyx-campus';
 import { AllocateSeating, EnterMarks, ExamEditForm, MarkOverride } from '@/components/onyx-manage';
 import type { Assessment } from '@/lib/onyx-assess';
-import { CreatePanel, ActionButton } from '@/components/onyx-create';
+import { ActionButton } from '@/components/onyx-create';
 import {
   Card, DataTable, Empty, EmptyRow, Icon, Meter, Pill, Score, SectionHead, State,
   Stepper, StatTile,
@@ -192,27 +192,31 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
           <div className="flex flex-wrap items-start gap-2">
             <ExamEditForm examId={Number(id)} exam={exam} />
             {staff ? <AllocateSeating examId={Number(id)} halls={halls ?? []} /> : null}
-            <EnterMarks examId={Number(id)} maxMarks={exam.max_marks}
-              candidates={candidates} />
-            {/* Only while there is somewhere to pull from, and something left
-                to pull: once every mark is published, sync-from-paper would
-                only ever hit enterMarks()'s "not undone by re-entry" guard. */}
-            {exam.assessment_id && !published ? (
-              <ActionButton endpoint={'exams/' + id + '/marks/sync-from-paper'}
-                label="Pull marks from online paper"
-                confirm="Pull every fully-marked score from the online paper into this exam's marks register?" />
-            ) : null}
-            <CreatePanel
-              title="Moderate this paper" cta="Moderate" icon="chart" compact
-              endpoint={'exams/' + id + '/moderate'}
-              fields={[
-                { name: 'delta', label: 'Add to every mark', type: 'number',
-                  min: -100, max: 100, required: true,
-                  help: 'The raw mark is kept; this is recorded beside it.' },
-                { name: 'reason', label: 'Reason', required: true, wide: true,
-                  placeholder: 'Paper harder than intended' },
-              ]}
-            />
+            {/* A blind number box only makes sense when there is nothing else
+                to look at -- a paper exam has no submission behind it, so raw
+                entry IS the source of truth. An exam with an online paper has
+                a real submission sitting one click away in its own marking
+                queue -- this exam's own page at /marking, not a detour
+                through Assessments -- and typing a mark without ever opening
+                it was exactly the "how would I know what to give them" gap
+                this replaces. */}
+            {exam.assessment_id ? (
+              <Link href={'/onyx/exams/' + id + '/marking'}
+                className="inline-flex min-h-[38px] items-center gap-1.5 rounded-2xl
+                           bg-brand-600 px-3.5 text-[13px] font-bold text-white
+                           hover:bg-brand-700">
+                <Icon name="edit" className="h-4 w-4" />
+                Mark the online paper
+              </Link>
+            ) : (
+              <EnterMarks examId={Number(id)} maxMarks={exam.max_marks}
+                candidates={candidates} />
+            )}
+            {/* No separate "pull marks" step any more: publishing an exam
+                with an online paper pulls every fully-marked score in first,
+                automatically, then publishes -- one action instead of two,
+                and there is nothing left to do here between finishing the
+                marking queue and releasing results. */}
             {published ? (
               <span className="inline-flex min-h-[38px] items-center gap-1.5 rounded-2xl
                                bg-green-50 px-3.5 text-[13px] font-bold text-green-700">
@@ -530,7 +534,7 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
                     </div>
                   </dl>
                   <div className="mt-3.5 flex flex-wrap gap-2 border-t border-line pt-3.5">
-                    <Link href={'/onyx/invigilate'}
+                    <Link href={'/onyx/invigilate?assessment_id=' + exam.assessment_id}
                       className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl
                                  border border-line px-3 text-[12.5px] font-bold text-slate-700
                                  hover:bg-brand-50">

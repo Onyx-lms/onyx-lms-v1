@@ -141,7 +141,11 @@ export function registerOnyxTenancyRoutes(app: FastifyInstance, ctx: AppContext)
   // ---- F-04: members ----
 
   app.get('/api/onyx/members', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    // 'exams' added alongside admin/faculty: the examinations office runs
+    // invigilation and marking institution-wide and needs the same "who is
+    // this" name lookup admin/faculty already had -- without it, Invigilate
+    // could only ever show a candidate's raw id to that role.
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty', 'exams');
     const q = req.query as { role?: Role; search?: string };
     return ok(await ctx.onyxTenancy.members(claims.tenant_id, {
       role: q.role, search: q.search,

@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
 import { navFor } from '@/lib/onyx-nav';
@@ -82,21 +83,49 @@ function caseState(status: string): { tone: 'on' | 'off' | 'idle'; label: string
  * meant to be watching.
  */
 function paperLabel(assessmentId: number, examByAssessment: Map<number, Exam>): {
-  isExam: boolean; title: string; href: string;
+  isExam: boolean; title: string; href: string; examId: number | null;
 } {
   const exam = examByAssessment.get(assessmentId);
-  if (exam) return { isExam: true, title: exam.title, href: '/onyx/exams/' + exam.id };
-  return { isExam: false, title: 'Assessment #' + assessmentId, href: '/onyx/assessments/' + assessmentId };
+  if (exam) {
+    // The drill-down below, not the exam's own management page -- "open
+    // examination" on this console means "show me its flags", not "let me
+    // reschedule it". The management page is still one click further, from
+    // the drill-down's own header.
+    return { isExam: true, title: exam.title, href: '/onyx/invigilate?assessment_id=' + assessmentId,
+      examId: exam.id };
+  }
+  return { isExam: false, title: 'Assessment #' + assessmentId,
+    href: '/onyx/assessments/' + assessmentId, examId: null };
+}
+
+/** A candidate's name if it is known, or the id it used to be stuck showing. */
+function candidateOf(userId: number, nameOf: Map<number, string | null>): string {
+  return nameOf.get(userId) || 'Candidate #' + userId;
 }
 
 /** ASS-02b -- everything an invigilator has to look at, worst first. */
-export default async function OnyxInvigilatePage() {
+export default async function OnyxInvigilatePage(
+  { searchParams }: { searchParams: Promise<{ assessment_id?: string }> },
+) {
   await requireOnyxPageRole('admin', 'faculty', 'exams');
-  const [me, queue, exams] = await Promise.all([
+  // Drilled into one paper's own console from a card on the full one below --
+  // "open examination" used to mean "leave invigilation and go manage the
+  // exam instead", which is not what anyone watching flags was asking for.
+  const { assessment_id } = await searchParams;
+  const scopedId = assessment_id ? Number(assessment_id) : null;
+
+  const [me, queue, exams, members] = await Promise.all([
     onyxApi<Me>('/api/onyx/me'),
-    onyxApi<QueueRow[]>('/api/onyx/proctor/queue'),
+    onyxApi<QueueRow[]>('/api/onyx/proctor/queue'
+      + (scopedId ? '?assessment_id=' + scopedId : '')),
     onyxApiSafe<Exam[]>('/api/onyx/exams'),
+    // Every flag on this console used to be a bare "Candidate #867" -- the
+    // one thing an invigilator or examinations officer actually needs to
+    // know when a flag is real enough to walk into a hall over.
+    onyxApiSafe<{ user_id: number; user: { name: string } | null }[]>('/api/onyx/members'),
   ]);
+  const nameOf = new Map((members ?? []).map((m) => [Number(m.user_id), m.user?.name ?? null]));
+
   // Only exams sat online carry an assessment_id at all -- a paper exam never
   // enters this map and every lookup against it correctly falls through to
   // "assessment".
@@ -104,6 +133,7 @@ export default async function OnyxInvigilatePage() {
   for (const exam of exams ?? []) {
     if (exam.assessment_id != null) examByAssessment.set(exam.assessment_id, exam);
   }
+  const scopedExam = scopedId ? examByAssessment.get(scopedId) : undefined;
 
   // Everything below is read off the queue the API already returned. The queue
   // now carries every running attempt as well as every flagged one, so the two
@@ -141,6 +171,133 @@ export default async function OnyxInvigilatePage() {
   // impossible to miss.
   const examSittings = sittings.filter((s) => examByAssessment.has(s.assessment_id));
   const assessmentSittings = sittings.filter((s) => !examByAssessment.has(s.assessment_id));
+
+  // Split every list on this page the same way, not only the summary cards:
+  // an invigilator watching examinations should never have to pick a
+  // scheduled exam's row out of a table also full of ordinary quizzes.
+  const runningExams = running.filter((r) => examByAssessment.has(r.assessment_id));
+  const runningAssessments = running.filter((r) => !examByAssessment.has(r.assessment_id));
+  const flaggedExams = flagged.filter((r) => examByAssessment.has(r.assessment_id));
+  const flaggedAssessments = flagged.filter((r) => !examByAssessment.has(r.assessment_id));
+
+  function sittingNowTable(rows: QueueRow[], emptyMessage: string) {
+    return (
+      <div tabIndex={0} role="region" aria-label="Attempts in progress">
+        <DataTable
+          caption="Papers in progress, with the state of each required device"
+          head={
+            <>
+              <th scope="col">Attempt</th>
+              <th scope="col">Camera</th>
+              <th scope="col">Screen</th>
+              <th scope="col">Left the paper</th>
+              <th scope="col">Flag score</th>
+              <th scope="col"><span className="sr-only">Actions</span></th>
+            </>
+          }
+        >
+          {rows.map((r) => {
+            const cam = device(r.camera_on, r.requires_camera, 'Camera');
+            const scr = device(r.screen_on, r.requires_screen, 'Screen');
+            const sev = severity(r.integrity_flags);
+            const paper = paperLabel(r.assessment_id, examByAssessment);
+            return (
+              <tr key={r.attempt_id} className="align-middle">
+                <td>
+                  <div className="font-semibold">{candidateOf(r.user_id, nameOf)}</div>
+                  <div className="text-[12.5px] text-muted">
+                    Attempt {r.attempt_id} ·{' '}
+                    {paper.isExam
+                      ? <span className="font-semibold text-brand-700">Exam: {paper.title}</span>
+                      : paper.title}
+                  </div>
+                </td>
+                <td><State tone={cam.tone}>{cam.text}</State></td>
+                <td><State tone={scr.tone}>{scr.text}</State></td>
+                <td className="tabular-nums">
+                  {r.tab_switches === 0 ? (
+                    <span className="text-muted">Never</span>
+                  ) : (
+                    <span className={r.tab_switches >= 3 ? 'font-semibold text-red-700' : ''}>
+                      {r.tab_switches} {r.tab_switches === 1 ? 'time' : 'times'}
+                    </span>
+                  )}
+                </td>
+                <td><Score value={r.integrity_flags} band={sev.band} /></td>
+                <td className="text-right">
+                  <ActionLink href={'/onyx/attempts/' + r.attempt_id + '/integrity'}
+                    label="Watch" />
+                </td>
+              </tr>
+            );
+          })}
+          {rows.length === 0 ? (
+            <EmptyRow colSpan={6} icon="shield">{emptyMessage}</EmptyRow>
+          ) : null}
+        </DataTable>
+      </div>
+    );
+  }
+
+  function reviewQueueTable(rows: QueueRow[], emptyMessage: string) {
+    return (
+      // tabIndex makes the horizontal scroll reachable by keyboard: a region
+      // that only scrolls with a wheel strands anyone on a keyboard at
+      // whatever columns happen to fit.
+      <div tabIndex={0} role="region" aria-label="Attempts awaiting review">
+        <DataTable
+          caption="Attempts with integrity flags, worst first"
+          head={
+            <>
+              <th scope="col">Attempt</th>
+              <th scope="col">Severity</th>
+              <th scope="col">Flag score</th>
+              <th scope="col">Still open</th>
+              <th scope="col">Case</th>
+              <th scope="col"><span className="sr-only">Actions</span></th>
+            </>
+          }
+        >
+          {rows.map((r) => {
+            const sev = severity(r.integrity_flags);
+            const state = caseState(r.integrity_status);
+            const paper = paperLabel(r.assessment_id, examByAssessment);
+            return (
+              <tr key={r.attempt_id} className="align-middle">
+                <td>
+                  <div className="font-semibold">{candidateOf(r.user_id, nameOf)}</div>
+                  <div className="text-[12.5px] text-muted">
+                    Attempt {r.attempt_id} ·{' '}
+                    {paper.isExam
+                      ? <span className="font-semibold text-brand-700">Exam: {paper.title}</span>
+                      : paper.title}
+                  </div>
+                </td>
+                <td>
+                  <Pill tone={sev.tone}>
+                    <span className="inline-flex items-center gap-1.5">
+                      <Icon name="flag" className="h-3.5 w-3.5" />
+                      {sev.label}
+                    </span>
+                  </Pill>
+                </td>
+                <td><Score value={r.integrity_flags} band={sev.band} /></td>
+                <td className="tabular-nums">{r.open_events}</td>
+                <td><State tone={state.tone}>{state.label}</State></td>
+                <td className="text-right">
+                  <ActionLink href={'/onyx/attempts/' + r.attempt_id + '/integrity'}
+                    label="Review" />
+                </td>
+              </tr>
+            );
+          })}
+          {rows.length === 0 ? (
+            <EmptyRow colSpan={6} icon="shield">{emptyMessage}</EmptyRow>
+          ) : null}
+        </DataTable>
+      </div>
+    );
+  }
 
   function sittingCard(s: (typeof sittings)[number]) {
     const worst = severity(s.worst);
@@ -182,8 +339,19 @@ export default async function OnyxInvigilatePage() {
             label={'Attempts decided on ' + paper.title} />
         </div>
 
-        <div className="mt-3.5">
+        <div className="mt-3.5 flex flex-wrap items-center gap-x-4 gap-y-1.5">
           <ActionLink href={paper.href} label={paper.isExam ? 'Open examination' : 'Open'} />
+          {/* The exam's own console -- scheduling, seating, marks -- is one
+              click further than this, not the same click: invigilation and
+              exam management are different jobs, done by the same person on
+              different days. */}
+          {paper.isExam && paper.examId ? (
+            <Link href={'/onyx/exams/' + paper.examId}
+              className="text-[12.5px] font-semibold text-muted hover:text-brand-700
+                         hover:underline">
+              Manage exam
+            </Link>
+          ) : null}
         </div>
       </Card>
     );
@@ -193,11 +361,24 @@ export default async function OnyxInvigilatePage() {
     <OnyxShell
       me={me}
       nav={navFor(me.role)}
-      title="Invigilation"
+      title={scopedExam ? scopedExam.title : 'Invigilation'}
       // A flag is what a browser noticed, not proof of anything, and a console
       // that implies otherwise is how proctoring earns its bad name.
-      subtitle="A flag is evidence, not a verdict. Nothing here fails anybody on its own."
+      subtitle={scopedExam
+        ? 'This examination only. A flag is evidence, not a verdict.'
+        : 'A flag is evidence, not a verdict. Nothing here fails anybody on its own.'}
     >
+      {scopedExam ? (
+        <nav aria-label="Breadcrumb"
+          className="mb-4 flex items-center gap-1.5 text-[13px] text-muted">
+          <Link href="/onyx/invigilate" className="font-semibold text-brand-600 hover:underline">
+            Invigilation
+          </Link>
+          <Icon name="chevron" className="h-3 w-3 text-faint" />
+          <span className="truncate">{scopedExam.title}</span>
+        </nav>
+      ) : null}
+
       {/* The live bar is the whole reason this screen exists, so it is the first
           thing under the title: everything below is historical the moment an
           attempt is handed in. */}
@@ -241,156 +422,78 @@ export default async function OnyxInvigilatePage() {
         <StatTile label="Decided" value={decided} note="cleared or upheld by a person" />
       </div>
 
-      {/* Who is sitting right now, and what their devices are doing.
-          This section could not exist before: the queue only returned attempts
-          that had already tripped a rule, so a candidate sitting cleanly was
-          invisible and there was nothing to watch until something went wrong. */}
-      <section className="mb-7">
-        <SectionHead title="Sitting now" />
-        <div tabIndex={0} role="region" aria-label="Attempts in progress">
-          <DataTable
-            caption="Papers in progress, with the state of each required device"
-            head={
-              <>
-                <th scope="col">Attempt</th>
-                <th scope="col">Camera</th>
-                <th scope="col">Screen</th>
-                <th scope="col">Left the paper</th>
-                <th scope="col">Flag score</th>
-                <th scope="col"><span className="sr-only">Actions</span></th>
-              </>
-            }
-          >
-            {running.map((r) => {
-              const cam = device(r.camera_on, r.requires_camera, 'Camera');
-              const scr = device(r.screen_on, r.requires_screen, 'Screen');
-              const sev = severity(r.integrity_flags);
-              const paper = paperLabel(r.assessment_id, examByAssessment);
-              return (
-                <tr key={r.attempt_id} className="align-middle">
-                  <td>
-                    <div className="font-semibold">Attempt {r.attempt_id}</div>
-                    <div className="text-[12.5px] text-muted">
-                      Candidate #{r.user_id} ·{' '}
-                      {paper.isExam
-                        ? <span className="font-semibold text-brand-700">Exam: {paper.title}</span>
-                        : paper.title}
-                    </div>
-                  </td>
-                  <td><State tone={cam.tone}>{cam.text}</State></td>
-                  <td><State tone={scr.tone}>{scr.text}</State></td>
-                  <td className="tabular-nums">
-                    {r.tab_switches === 0 ? (
-                      <span className="text-muted">Never</span>
-                    ) : (
-                      <span className={r.tab_switches >= 3 ? 'font-semibold text-red-700' : ''}>
-                        {r.tab_switches} {r.tab_switches === 1 ? 'time' : 'times'}
-                      </span>
-                    )}
-                  </td>
-                  <td><Score value={r.integrity_flags} band={sev.band} /></td>
-                  <td className="text-right">
-                    <ActionLink href={'/onyx/attempts/' + r.attempt_id + '/integrity'}
-                      label="Watch" />
-                  </td>
-                </tr>
-              );
-            })}
-            {running.length === 0 ? (
-              <EmptyRow colSpan={6} icon="shield">
-                Nobody is sitting a monitored paper at the moment. Candidates appear here as
-                soon as they start, whether or not anything has been flagged.
-              </EmptyRow>
-            ) : null}
-          </DataTable>
-        </div>
-      </section>
+      {scopedId ? (
+        <>
+          {/* Already looking at one paper -- its own type is not in question,
+              so there is nothing here for an Examinations/Assessments split
+              to clarify. */}
+          <section className="mb-7">
+            <SectionHead title="Sitting now" />
+            {sittingNowTable(running,
+              'Nobody is sitting this paper at the moment. Candidates appear here as soon '
+              + 'as they start, whether or not anything has been flagged.')}
+          </section>
+          <section>
+            <SectionHead title="Review queue" />
+            {reviewQueueTable(flagged,
+              'Nothing to review. Attempts appear here the moment a monitored event is '
+              + 'recorded against one — a tab switch, a paste, a camera that stops.')}
+          </section>
+        </>
+      ) : (
+        <>
+          {/* Two sections, not one list with a label column -- an
+              examinations officer watching a scheduled exam and a faculty
+              member watching their own quiz are doing two different jobs,
+              and neither should have to pick their rows out of the other's
+              table. */}
+          <section className="mb-8">
+            <SectionHead title="Examinations"
+              action={{ href: '/onyx/exams', label: 'All examinations' }} />
+            <div className="space-y-5">
+              <div>
+                <h3 className="mb-2 text-[13px] font-bold text-slate-700">Sitting now</h3>
+                {sittingNowTable(runningExams,
+                  'Nobody is sitting a monitored examination at the moment.')}
+              </div>
+              {examSittings.length > 0 ? (
+                <CardGrid min="15rem">
+                  {examSittings.map((s) => sittingCard(s))}
+                </CardGrid>
+              ) : null}
+              <div>
+                <h3 className="mb-2 text-[13px] font-bold text-slate-700">Review queue</h3>
+                {reviewQueueTable(flaggedExams,
+                  'Nothing to review. An examination appears here the moment a monitored '
+                  + 'event is recorded against one of its attempts.')}
+              </div>
+            </div>
+          </section>
 
-      {/* Every flagged examination, named and grouped on its own -- not left to
-          surface as just another row among ordinary assessments. This is the
-          one place on the console built specifically so a scheduled exam's
-          flags can't be missed. */}
-      {examSittings.length > 0 ? (
-        <section className="mb-7">
-          <SectionHead title="Examinations with flags"
-            action={{ href: '/onyx/exams', label: 'All examinations' }} />
-          <CardGrid min="15rem">
-            {examSittings.map((s) => sittingCard(s))}
-          </CardGrid>
-        </section>
-      ) : null}
-
-      {assessmentSittings.length > 1 ? (
-        <section className="mb-7">
-          <SectionHead title="Assessments with flags"
-            action={{ href: '/onyx/assessments', label: 'All assessments' }} />
-          <CardGrid min="15rem">
-            {assessmentSittings.map((s) => sittingCard(s))}
-          </CardGrid>
-        </section>
-      ) : null}
-
-      <section>
-        <SectionHead title="Review queue" />
-        {/* tabIndex makes the horizontal scroll reachable by keyboard: a region
-            that only scrolls with a wheel strands anyone on a keyboard at
-            whatever columns happen to fit. */}
-        <div tabIndex={0} role="region" aria-label="Attempts awaiting review">
-          <DataTable
-            caption="Attempts with integrity flags, worst first"
-            head={
-              <>
-                <th scope="col">Attempt</th>
-                <th scope="col">Severity</th>
-                <th scope="col">Flag score</th>
-                <th scope="col">Still open</th>
-                <th scope="col">Case</th>
-                <th scope="col"><span className="sr-only">Actions</span></th>
-              </>
-            }
-          >
-            {flagged.map((r) => {
-              const sev = severity(r.integrity_flags);
-              const state = caseState(r.integrity_status);
-              const paper = paperLabel(r.assessment_id, examByAssessment);
-              return (
-                <tr key={r.attempt_id} className="align-middle">
-                  <td>
-                    <div className="font-semibold">Attempt {r.attempt_id}</div>
-                    <div className="text-[12.5px] text-muted">
-                      Candidate #{r.user_id} ·{' '}
-                      {paper.isExam
-                        ? <span className="font-semibold text-brand-700">Exam: {paper.title}</span>
-                        : paper.title}
-                    </div>
-                  </td>
-                  <td>
-                    <Pill tone={sev.tone}>
-                      <span className="inline-flex items-center gap-1.5">
-                        <Icon name="flag" className="h-3.5 w-3.5" />
-                        {sev.label}
-                      </span>
-                    </Pill>
-                  </td>
-                  <td><Score value={r.integrity_flags} band={sev.band} /></td>
-                  <td className="tabular-nums">{r.open_events}</td>
-                  <td><State tone={state.tone}>{state.label}</State></td>
-                  <td className="text-right">
-                    <ActionLink href={'/onyx/attempts/' + r.attempt_id + '/integrity'}
-                      label="Review" />
-                  </td>
-                </tr>
-              );
-            })}
-            {flagged.length === 0 ? (
-              <EmptyRow colSpan={6} icon="shield">
-                Nothing to review. Attempts appear here the moment a monitored event is
-                recorded against one — a tab switch, a paste, a camera that stops.
-              </EmptyRow>
-            ) : null}
-          </DataTable>
-        </div>
-      </section>
+          <section>
+            <SectionHead title="Assessments"
+              action={{ href: '/onyx/assessments', label: 'All assessments' }} />
+            <div className="space-y-5">
+              <div>
+                <h3 className="mb-2 text-[13px] font-bold text-slate-700">Sitting now</h3>
+                {sittingNowTable(runningAssessments,
+                  'Nobody is sitting a monitored assessment at the moment.')}
+              </div>
+              {assessmentSittings.length > 0 ? (
+                <CardGrid min="15rem">
+                  {assessmentSittings.map((s) => sittingCard(s))}
+                </CardGrid>
+              ) : null}
+              <div>
+                <h3 className="mb-2 text-[13px] font-bold text-slate-700">Review queue</h3>
+                {reviewQueueTable(flaggedAssessments,
+                  'Nothing to review. An assessment appears here the moment a monitored '
+                  + 'event is recorded against one of its attempts.')}
+              </div>
+            </div>
+          </section>
+        </>
+      )}
     </OnyxShell>
   );
 }

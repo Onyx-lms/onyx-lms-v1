@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import { FakeDb } from './fake-db.ts';
 import { AcademicsService } from '../src/onyx/academics.service.ts';
 import {
-  AssessService, isObjective, scoreObjective, seededShuffle,
+  AssessService, hasKey, isObjective, scoreObjective, seededShuffle,
 } from '../src/onyx/assess.service.ts';
 import { ProctorService, EVENT_WEIGHTS, REVIEW_THRESHOLD } from '../src/onyx/proctor.service.ts';
 import {
@@ -118,6 +118,59 @@ test('objective marking is exact, and multi-select gives no partial credit', () 
   assert.equal(scoreObjective('essay', null, 'a long answer', 4), 0);
   assert.equal(isObjective('essay'), false);
   assert.equal(isObjective('short'), true);
+});
+
+test('hasKey tells a real answer apart from nothing having been chosen', () => {
+  assert.equal(hasKey('b'), true);
+  assert.equal(hasKey(['a', 'c']), true);
+  assert.equal(hasKey(undefined), false);
+  assert.equal(hasKey(null), false);
+  assert.equal(hasKey(''), false);
+  assert.equal(hasKey('   '), false);
+  assert.equal(hasKey([]), false);
+});
+
+test('an MCQ authored with no correct option is allowed, and marked by hand, not auto-graded wrong', async () => {
+  const w = world();
+  const bank = await w.assess.createBank(T, 20, { name: 'B' });
+  const bid = Number(bank.id);
+  // No `answer` at all -- nobody picked a correct option yet.
+  const noKey = await w.assess.addQuestion(T, bid, 20, {
+    type: 'single', prompt: 'Pending review', points: 5,
+    options: [{ id: 'a', text: 'One' }, { id: 'b', text: 'Two' }],
+  });
+  const essay = await w.assess.addQuestion(T, bid, 20, {
+    type: 'essay', prompt: 'Explain.', points: 3,
+  });
+  const assessment = await w.assess.createAssessment(T, 20, {
+    title: 'Pending', course_id: 1, duration_minutes: 30,
+    sections: [{ id: 's1', title: 'All', bank_id: bid, take: 2 }],
+  });
+  await w.assess.publishAssessment(T, Number(assessment.id));
+
+  const attempt = await w.assess.start(T, Number(assessment.id), 10);
+  await w.assess.saveAnswer(T, attempt.id, 10,
+    { question_id: Number(noKey.id), response: 'a' });
+  const submitted = await w.assess.submit(T, attempt.id, 10);
+  // A response was given to the keyless question, so, same as an essay with
+  // an answer in it, the paper is not "finished" -- it is waiting on a person.
+  assert.equal(submitted.score, null, 'a keyless MCQ auto-scored instead of waiting for a marker');
+
+  const paper = await w.assess.attemptForMarker(T, attempt.id);
+  const seen = paper.questions.find((q) => q.question_id === Number(noKey.id))!;
+  assert.equal(seen.objective, false, 'a question with no key was shown as auto-graded');
+  assert.equal(seen.auto_points, null, 'a keyless question was scored anyway');
+
+  // A marker can now give it real points, same as the essay.
+  const marked = await w.assess.mark(T, attempt.id, 20, {
+    role: 'first',
+    marks: [
+      { question_id: Number(noKey.id), points: 2 },
+      { question_id: Number(essay.id), points: 1 },
+    ],
+  });
+  assert.equal(Number(marked.auto_score), 0, 'nothing was auto-gradable on this paper');
+  assert.equal(Number(marked.score), 3, 'both hand marks counted');
 });
 
 test('the shuffle is deterministic, so a resumed attempt deals the same hand', () => {
@@ -389,15 +442,21 @@ test('ASS-03a: anonymous marking hides who the paper belongs to', async () => {
   assert.equal(paper.anonymous, true);
 });
 
-test('marking is refused on objective questions and above the maximum', async () => {
+test('marking can override an objective question, but not above the maximum', async () => {
   const w = world();
   const { q, assessment } = await withPaper(w);
   const attempt = await w.assess.start(T, assessment, 10);
   await w.assess.submit(T, attempt.id, 10);
 
-  await assert.rejects(w.assess.mark(T, attempt.id, 20, {
+  // A marker can now override an auto-graded question -- a bad key, or
+  // partial credit the key can't express -- the same as any other question.
+  await w.assess.mark(T, attempt.id, 20, {
     marks: [{ question_id: Number(q.single.id), points: 1 }],
-  }), (e: HttpError) => e.status === 422);
+  });
+  const answers = await w.assess.attemptForMarker(T, attempt.id);
+  const single = answers.questions.find((a) => a.question_id === Number(q.single.id));
+  assert.equal(single?.manual_points, 1, 'the override was recorded');
+
   await assert.rejects(w.assess.mark(T, attempt.id, 20, {
     marks: [{ question_id: Number(q.essay.id), points: 99 }],
   }), (e: HttpError) => e.status === 422);
