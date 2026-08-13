@@ -8,6 +8,14 @@ DOC-01. Four audiences, four documents — plus the decisions behind the code.
 closing it. No terminal, no database. If a step in it cannot be done from a
 browser, that is a bug.
 
+## If you want to see what each role sees
+
+**[Role-by-role screen guide](roles/)** — one file per role (student,
+faculty, examinations, placement, employer, parent/guardian, administrator,
+platform super admin), walking every screen that role's own navigation
+offers, with a real screenshot and a description of what it does and what
+you can do there. Not a test script — see UAT below for that.
+
 ## If you are accepting the system
 
 **[UAT scripts](UAT.md)** — role-by-role acceptance tests, written so an
