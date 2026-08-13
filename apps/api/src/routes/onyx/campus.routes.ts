@@ -253,6 +253,14 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
   // =========================================================================
 
   app.post('/api/onyx/exams', async (req) => {
+    // Guard first, validate second, same rule as everywhere else in this file:
+    // a role that can NEVER schedule an exam -- a student, an employer, a
+    // guardian -- is refused before it can learn anything about the shape the
+    // API expects, rather than being let through to a validation error. Only
+    // faculty need the finer, course-scoped question ("do you teach THIS
+    // course"), and that one genuinely cannot be answered before the body is
+    // parsed -- so it stays a second check, after validate(), for faculty only.
+    requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'exams', 'faculty');
     const { claims, viewer } = viewerOf(req);
     const body = validate(z.object({
       semester_id: z.number().int().positive(),
@@ -264,10 +272,6 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
       pass_marks: z.number().int().min(0).max(1000).optional(),
       assessment_id: z.number().int().positive().nullish(),
     }), req.body);
-    // Course_id only exists once the body is parsed, so the scoped guard has
-    // to come after validation here -- unlike a plain role check, "does this
-    // person teach this course" cannot be answered before knowing which
-    // course somebody means.
     await assertCanRunExam(claims.tenant_id, body.course_id, claims.user_id, claims.tenant_role);
     const exam = await ctx.onyxExams.schedule(claims.tenant_id, viewer, body);
     if (body.assessment_id && exam) {

@@ -74,11 +74,11 @@ const MATRIX: Row[] = [
   // ---- LRN: learning ----------------------------------------------------
   { what: 'the catalogue', path: '/api/onyx/courses',
     allow: ['student', 'faculty', 'exams', 'placement', 'admin', 'employer', 'guardian'] },
-  // Administrators only. The register is the institution's, not a lecturer's
-  // (CMP-01a) -- and the courses screen offered this to faculty until the
-  // matrix showed the API had never agreed.
+  // Widened deliberately: a faculty member can create a course of their own,
+  // auto-assigned as its teacher, not only the register administrator
+  // (LRN-01 -- "faculty can create a course and add students to it").
   { what: 'creating a course', method: 'POST', path: '/api/onyx/courses', body: {},
-    allow: ['admin'] },
+    allow: ['admin', 'faculty'] },
   { what: 'programmes', path: '/api/onyx/programs',
     allow: ['student', 'faculty', 'exams', 'placement', 'admin', 'employer', 'guardian'] },
   { what: 'creating a programme', method: 'POST', path: '/api/onyx/programs', body: {},
@@ -108,8 +108,12 @@ const MATRIX: Row[] = [
     allow: ['admin'] },
   { what: 'the clash pre-check', method: 'POST', path: '/api/onyx/timetable/check', body: {},
     allow: ['admin'] },
+  // Widened deliberately: this course's own faculty may also schedule its
+  // exam, not only the examinations office (assertCanRunExam in
+  // campus.routes.ts) -- the same course-scoped trust extended to editing,
+  // moderating and publishing it, and to entering its marks below.
   { what: 'scheduling an exam', method: 'POST', path: '/api/onyx/exams', body: {},
-    allow: ['admin', 'exams'] },
+    allow: ['admin', 'exams', 'faculty'] },
   // Readable by any member on purpose: halls and rooms are institutional
   // furniture, and 0008_campus.sql gives them a tenant read policy for the
   // same reason a published timetable is public within the institution.

@@ -332,14 +332,28 @@ export class AttendanceService {
     };
   }
 
-  /** One learner's own figure, across every course they are enrolled in. */
+  /**
+   * One learner's own figure, across every course they are enrolled in --
+   * alongside where their cohort stands, per LRN-03's "per-learner and
+   * per-cohort attendance analytics." `courseAnalytics()` always computed
+   * the cohort average; this just stopped throwing it away before it reached
+   * the one person asking "is this normal for my class, or just me." Only
+   * the average and a headcount travel across, never another learner's own
+   * figure -- nothing here is more exposed than a class average already is.
+   */
   async learnerSummary(tenantId: number, userId: number, threshold = 75) {
     const enrollments = await this.#academics.enrollmentsFor(tenantId, userId);
     const out = [];
     for (const e of enrollments) {
       const analytics = await this.courseAnalytics(tenantId, Number(e.course_id), threshold);
       const mine = analytics.learners.find((l) => l.user_id === userId);
-      if (mine) out.push({ course_id: Number(e.course_id), ...mine });
+      if (mine) {
+        out.push({
+          course_id: Number(e.course_id), ...mine,
+          cohort_percent: analytics.cohort.percent,
+          cohort_size: analytics.learners.length,
+        });
+      }
     }
     return out;
   }

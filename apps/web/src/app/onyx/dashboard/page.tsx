@@ -21,6 +21,10 @@ export const metadata: Metadata = { title: 'Dashboard' };
 
 interface AttendanceLine {
   course_id: number; held: number; attended: number; percent: number; below_threshold: boolean;
+  // The class average, alongside the learner's own figure -- LRN-03 asks for
+  // "per-learner and per-cohort" analytics, and this banner used to answer
+  // only the first half of that question.
+  cohort_percent: number; cohort_size: number;
 }
 
 interface Outstanding { total_minor: number; invoices: { overdue: boolean }[] }
@@ -103,11 +107,15 @@ export default async function OnyxDashboard() {
   const staff = isStaff(me.role);
   const isLearner = me.role === 'student';
 
-  const [courses, attendance, roster, progress] = await Promise.all([
+  const [courses, attendance, roster, progress, profile] = await Promise.all([
     onyxApiSafe<Course[]>('/api/onyx/my/courses'),
     staff ? null : onyxApiSafe<AttendanceLine[]>('/api/onyx/my/attendance'),
     staff ? onyxApiSafe<{ role: string }[]>('/api/onyx/members') : null,
     isLearner ? onyxApiSafe<ProgressSummary>('/api/onyx/progress') : null,
+    // The proposal's own dashboard mockup pairs a readiness score with the
+    // streak widget -- this page had the streak but never the score, which
+    // otherwise only ever surfaced a click away on /onyx/profile.
+    isLearner ? onyxApiSafe<{ readiness: { score: number } }>('/api/onyx/my/profile') : null,
   ]);
   const mine = courses ?? [];
 
@@ -442,6 +450,8 @@ export default async function OnyxDashboard() {
                         {short === 1
                           ? 'One session missed is what put this below the requirement.'
                           : `${short} sessions missed. This is below the requirement for this course.`}
+                        {' '}The class is averaging {a.cohort_percent}% across{' '}
+                        {a.cohort_size} {a.cohort_size === 1 ? 'learner' : 'learners'}.
                       </span>
                     </Banner>
                   );
@@ -453,6 +463,7 @@ export default async function OnyxDashboard() {
 
         {/* ---------------- right rail ---------------- */}
         <div className="min-w-0 space-y-5">
+          {profile ? <ReadinessCard score={profile.readiness.score} /> : null}
           {progress ? <StreakCard progress={progress} /> : null}
 
           {/* The right rail was empty for an administrator otherwise --
@@ -1226,6 +1237,46 @@ function ResumeCard({ courses, outlines }: {
  * copying draws the week this way, and it reads at a glance in a way
  * "longest 0 · nothing today" never did.
  */
+/**
+ * CAR-05 -- the readiness score, glanceable rather than broken down.
+ *
+ * The full formula and component-by-component working already have a home
+ * on /onyx/profile (`OnyxReadiness`) -- repeating that here would just be a
+ * second, smaller copy of the same five bars. What the dashboard is missing
+ * is the number itself, at a glance, the way the proposal's own mockup pairs
+ * it with the streak widget.
+ */
+function ReadinessCard({ score }: { score: number }) {
+  const band = score >= 70 ? 'text-green-700' : score >= 40 ? 'text-accent-700' : 'text-muted';
+  return (
+    <section aria-labelledby="readiness-h">
+      <Card className="p-4">
+        <div className="flex items-center gap-3">
+          <span className={'text-[40px] font-extrabold leading-none tabular-nums ' + band}>
+            {score}
+          </span>
+          <span>
+            <span id="readiness-h" className="block text-[13.5px] font-bold">
+              readiness score
+            </span>
+            <span className="block text-[12.5px] text-muted">Out of 100</span>
+          </span>
+        </div>
+        <p className="mt-3 text-[12.5px] text-muted">
+          From attendance, assessments, practice, projects and interviews &mdash; weighted
+          the same way for everyone.
+        </p>
+        <div className="mt-3">
+          <Link href="/onyx/profile"
+            className="text-[12.5px] font-bold text-brand-600 hover:underline">
+            See the breakdown
+          </Link>
+        </div>
+      </Card>
+    </section>
+  );
+}
+
 function StreakCard({ progress }: { progress: ProgressSummary }) {
   const today = new Date().getDay();          // 0 = Sunday
   const monday = (today + 6) % 7;             // 0 = Monday, matching the labels

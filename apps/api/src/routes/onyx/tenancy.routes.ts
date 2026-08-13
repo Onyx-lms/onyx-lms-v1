@@ -203,8 +203,15 @@ export function registerOnyxTenancyRoutes(app: FastifyInstance, ctx: AppContext)
       });
     }
     if (result.membershipChange) {
+      // A role change is the security-sensitive half of "membership updated" --
+      // 'membership.role_changed' has existed in the AuditAction union since
+      // it was first written, but nothing ever actually emitted it, so every
+      // promotion and demotion was indistinguishable in the log from a status
+      // toggle. Status-only changes still record as the generic action.
+      const roleChanged = 'role' in result.membershipChange.before;
       await ctx.onyxAudit.record(claims, {
-        action: 'membership.updated', entityType: 'membership', entityId: idOf(req),
+        action: roleChanged ? 'membership.role_changed' : 'membership.updated',
+        entityType: 'membership', entityId: idOf(req),
         before: result.membershipChange.before, after: result.membershipChange.after,
         ip: ipOf(req),
       });
