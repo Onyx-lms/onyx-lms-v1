@@ -273,6 +273,23 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
       assessment_id: z.number().int().positive().nullish(),
     }), req.body);
     await assertCanRunExam(claims.tenant_id, body.course_id, claims.user_id, claims.tenant_role);
+    // Checked here, before the exam is written, not only inside
+    // syncExamAssessmentWindow() below -- that check used to run AFTER
+    // schedule() had already inserted the row, so a mismatched course threw
+    // its 422 too late to stop anything: the exam was left sitting in the
+    // database half-linked to an assessment on somebody else's course, and
+    // that assessment's own window was never touched. A candidate later
+    // following "Sit this exam" landed on the wrong paper, outside the
+    // window it was never synced to -- which is exactly what looked like a
+    // broken proctoring flow from the student's side, when the real fault
+    // was an exam that should never have been created in this shape.
+    if (body.assessment_id) {
+      const assessment = await ctx.onyxAssess.assessment(claims.tenant_id, body.assessment_id);
+      if (Number(assessment.course_id) !== Number(body.course_id)) {
+        throw new HttpError(422,
+          'That assessment is not on this exam’s course — pick one that is, or leave it unlinked.');
+      }
+    }
     const exam = await ctx.onyxExams.schedule(claims.tenant_id, viewer, body);
     if (body.assessment_id && exam) {
       await syncExamAssessmentWindow(claims.tenant_id, body.assessment_id, exam);
