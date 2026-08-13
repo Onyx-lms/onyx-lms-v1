@@ -95,7 +95,22 @@ export default async function OnyxExamsPage() {
     onyxApiSafe<Course[]>('/api/onyx/courses'),
     onyxApiSafe<Semester[]>('/api/onyx/semesters'),
   ]);
-  const canSchedule = me.role === 'admin' || me.role === 'exams';
+  // Scheduling an exam is the examinations office institution-wide, or this
+  // specific course's own faculty -- assertCanRunExam on the API side draws
+  // exactly this line; the picker below just avoids offering a faculty
+  // member a course the submit would refuse anyway.
+  const canSchedule = me.role === 'admin' || me.role === 'exams' || me.role === 'faculty';
+  const canManageHalls = me.role === 'admin' || me.role === 'exams';
+  // For the "Online paper" picker below -- staff see every assessment
+  // regardless of status, same as the assessments page itself.
+  const [assessments, myCourses] = await Promise.all([
+    canSchedule
+      ? onyxApiSafe<{ id: number; title: string; course_id: number | null }[]>(
+        '/api/onyx/assessments')
+      : null,
+    me.role === 'faculty' ? onyxApiSafe<Course[]>('/api/onyx/my/courses') : null,
+  ]);
+  const schedulableCourses = me.role === 'faculty' ? (myCourses ?? []) : (courses ?? []);
 
   // The course list is already on the page for the scheduling panel, so the
   // code can sit under each paper's title without a second request.
@@ -136,44 +151,62 @@ export default async function OnyxExamsPage() {
       {/* CMP-02: "schedule exams, assign halls and seats, enter marks and
           generate transcripts end-to-end" -- none of which could be started
           from the product. */}
-      {canSchedule ? (
+      {canSchedule || canManageHalls ? (
         <div className="mb-6 grid gap-3 lg:grid-cols-2">
-          <CreatePanel
-            title="Schedule an exam" cta="Schedule an exam" icon="award" compact
-            endpoint="exams"
-            fields={[
-              { name: 'title', label: 'Exam', required: true, wide: true,
-                placeholder: 'CS101 Final' },
-              { name: 'course_id', label: 'Course', type: 'select', required: true, numeric: true,
-                options: (courses ?? []).map((c) => ({ value: String(c.id),
-                  label: c.code + ' — ' + c.title })) },
-              { name: 'semester_id', label: 'Semester', type: 'select', required: true, numeric: true,
-                options: (semesters ?? []).map((sm) => ({ value: String(sm.id),
-                  label: sm.name })) },
-              { name: 'starts_at', label: 'Starts', type: 'datetime', required: true },
-              { name: 'duration_minutes', label: 'Minutes', type: 'number', min: 5,
-                max: 600, fallback: 180 },
-              { name: 'max_marks', label: 'Out of', type: 'number', min: 1, max: 1000,
-                fallback: 100 },
-              { name: 'pass_marks', label: 'Pass mark', type: 'number', min: 0, max: 1000,
-                fallback: 40,
-                help: 'Nobody is scheduled for two exams at once — a clash is refused, naming who it caught.' },
-            ]}
-          />
-          <CreatePanel
-            title="New hall" cta="Add a hall" icon="building" compact
-            endpoint="halls"
-            fields={[
-              { name: 'code', label: 'Code', required: true, placeholder: 'H1' },
-              { name: 'name', label: 'Name', required: true, placeholder: 'Main Hall' },
-              { name: 'row_count', label: 'Rows', type: 'number', min: 1, max: 100,
-                required: true },
-              { name: 'col_count', label: 'Columns', type: 'number', min: 1, max: 100,
-                required: true },
-              { name: 'capacity', label: 'Usable seats', type: 'number', min: 1, max: 5000,
-                help: 'May be fewer than rows × columns once gangways are left clear.' },
-            ]}
-          />
+          {canSchedule ? (
+            <CreatePanel
+              title="Schedule an exam" cta="Schedule an exam" icon="award" compact
+              endpoint="exams"
+              fields={[
+                { name: 'title', label: 'Exam', required: true, wide: true,
+                  placeholder: 'CS101 Final' },
+                { name: 'course_id', label: 'Course', type: 'select', required: true, numeric: true,
+                  options: schedulableCourses.map((c) => ({ value: String(c.id),
+                    label: c.code + ' — ' + c.title })) },
+                { name: 'semester_id', label: 'Semester', type: 'select', required: true, numeric: true,
+                  options: (semesters ?? []).map((sm) => ({ value: String(sm.id),
+                    label: sm.name })) },
+                { name: 'starts_at', label: 'Starts', type: 'datetime', required: true },
+                { name: 'duration_minutes', label: 'Minutes', type: 'number', min: 5,
+                  max: 600, fallback: 180 },
+                { name: 'max_marks', label: 'Out of', type: 'number', min: 1, max: 1000,
+                  fallback: 100 },
+                { name: 'pass_marks', label: 'Pass mark', type: 'number', min: 0, max: 1000,
+                  fallback: 40,
+                  help: 'Nobody is scheduled for two exams at once — a clash is refused, naming who it caught.' },
+                { name: 'assessment_id', label: 'Online paper', type: 'select', numeric: true,
+                  wide: true,
+                  options: [{ value: '', label: 'Offline — marks entered by hand' },
+                    ...(assessments ?? []).map((a) => ({ value: String(a.id),
+                      label: ((courses ?? []).find((c) => c.id === a.course_id)?.code ?? 'No course')
+                        + ' — ' + a.title }))],
+                  help: 'Ties this exam to a CBT paper on the same course, sat through the '
+                    + 'browser. Its own open/close window is overridden to exactly this exam’s '
+                    + 'scheduled time — unlike an ordinary assessment, a candidate cannot start '
+                    + 'it early or late.' },
+              ]}
+            />
+          ) : null}
+          {/* Physical halls are an institution-wide resource shared across every
+              course, not something one course's faculty allocate on their own --
+              stays with the examinations office even now that scheduling itself
+              does not. */}
+          {canManageHalls ? (
+            <CreatePanel
+              title="New hall" cta="Add a hall" icon="building" compact
+              endpoint="halls"
+              fields={[
+                { name: 'code', label: 'Code', required: true, placeholder: 'H1' },
+                { name: 'name', label: 'Name', required: true, placeholder: 'Main Hall' },
+                { name: 'row_count', label: 'Rows', type: 'number', min: 1, max: 100,
+                  required: true },
+                { name: 'col_count', label: 'Columns', type: 'number', min: 1, max: 100,
+                  required: true },
+                { name: 'capacity', label: 'Usable seats', type: 'number', min: 1, max: 5000,
+                  help: 'May be fewer than rows × columns once gangways are left clear.' },
+              ]}
+            />
+          ) : null}
         </div>
       ) : null}
 

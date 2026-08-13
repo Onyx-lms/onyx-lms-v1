@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
 import { navFor } from '@/lib/onyx-nav';
-import { requireOnyxPageRole, onyxApi, type Me } from '@/lib/onyx-session';
+import { requireOnyxPageRole, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import { LiveRefresh } from '@/components/onyx-live';
+import type { Exam } from '@/lib/onyx-campus';
 import {
   ActionLink, Card, CardGrid, DataTable, EmptyRow, Icon, Meter, Pill, Score,
   SectionHead, State, StatTile,
@@ -69,13 +70,40 @@ function caseState(status: string): { tone: 'on' | 'off' | 'idle'; label: string
   return { tone: 'idle', label: 'Clean' };
 }
 
+/**
+ * What a candidate is actually sitting: a scheduled examination sat online, or
+ * an ordinary assessment.
+ *
+ * The proctor queue only ever knew about assessments -- an exam sat through
+ * the CBT engine is, underneath, an assessment with its window locked to the
+ * exam's slot (see campus.routes.ts' syncExamAssessmentWindow()). Without
+ * this, an invigilator watching a scheduled examination saw "assessment #37"
+ * like any other paper, with nothing to say it was the examination they were
+ * meant to be watching.
+ */
+function paperLabel(assessmentId: number, examByAssessment: Map<number, Exam>): {
+  isExam: boolean; title: string; href: string;
+} {
+  const exam = examByAssessment.get(assessmentId);
+  if (exam) return { isExam: true, title: exam.title, href: '/onyx/exams/' + exam.id };
+  return { isExam: false, title: 'Assessment #' + assessmentId, href: '/onyx/assessments/' + assessmentId };
+}
+
 /** ASS-02b -- everything an invigilator has to look at, worst first. */
 export default async function OnyxInvigilatePage() {
   await requireOnyxPageRole('admin', 'faculty', 'exams');
-  const [me, queue] = await Promise.all([
+  const [me, queue, exams] = await Promise.all([
     onyxApi<Me>('/api/onyx/me'),
     onyxApi<QueueRow[]>('/api/onyx/proctor/queue'),
+    onyxApiSafe<Exam[]>('/api/onyx/exams'),
   ]);
+  // Only exams sat online carry an assessment_id at all -- a paper exam never
+  // enters this map and every lookup against it correctly falls through to
+  // "assessment".
+  const examByAssessment = new Map<number, Exam>();
+  for (const exam of exams ?? []) {
+    if (exam.assessment_id != null) examByAssessment.set(exam.assessment_id, exam);
+  }
 
   // Everything below is read off the queue the API already returned. The queue
   // now carries every running attempt as well as every flagged one, so the two
@@ -107,6 +135,59 @@ export default async function OnyxInvigilatePage() {
     assessment_id: number; attempts: number; live: number;
     open: number; worst: number; settled: number;
   }>()).values()].sort((a, b) => b.open - a.open || b.worst - a.worst);
+
+  // Split so a scheduled examination's flags are never buried in a list of
+  // ordinary assessments -- the one thing this console was asked to make
+  // impossible to miss.
+  const examSittings = sittings.filter((s) => examByAssessment.has(s.assessment_id));
+  const assessmentSittings = sittings.filter((s) => !examByAssessment.has(s.assessment_id));
+
+  function sittingCard(s: (typeof sittings)[number]) {
+    const worst = severity(s.worst);
+    const paper = paperLabel(s.assessment_id, examByAssessment);
+    return (
+      <Card key={s.assessment_id} className="p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Pill tone={worst.tone}>
+            <span className="inline-flex items-center gap-1.5">
+              <Icon name="flag" className="h-3.5 w-3.5" />
+              {worst.label}
+            </span>
+          </Pill>
+          <span className={'text-[13px] ' + CALM}>
+            {s.live > 0
+              ? <State tone="live">{s.live} running</State>
+              : <State tone="idle">Finished</State>}
+          </span>
+        </div>
+
+        <div className="mt-2 flex items-center gap-1.5 text-[15px] font-semibold">
+          {paper.title}
+          {paper.isExam ? <Pill tone="brand">Exam</Pill> : null}
+        </div>
+        <div className="mt-0.5 text-[13px] text-muted">
+          {s.attempts === 1 ? '1 flagged attempt' : s.attempts + ' flagged attempts'}
+          {' · '}
+          <span className="tabular-nums">{s.open}</span> still open
+        </div>
+
+        <div className="mt-3">
+          <div className="mb-1.5 flex items-baseline justify-between text-[12.5px]">
+            <span className="font-semibold">Decided</span>
+            <span className="tabular-nums text-muted">
+              {s.settled} of {s.attempts}
+            </span>
+          </div>
+          <Meter percent={(s.settled / s.attempts) * 100}
+            label={'Attempts decided on ' + paper.title} />
+        </div>
+
+        <div className="mt-3.5">
+          <ActionLink href={paper.href} label={paper.isExam ? 'Open examination' : 'Open'} />
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <OnyxShell
@@ -184,12 +265,16 @@ export default async function OnyxInvigilatePage() {
               const cam = device(r.camera_on, r.requires_camera, 'Camera');
               const scr = device(r.screen_on, r.requires_screen, 'Screen');
               const sev = severity(r.integrity_flags);
+              const paper = paperLabel(r.assessment_id, examByAssessment);
               return (
                 <tr key={r.attempt_id} className="align-middle">
                   <td>
                     <div className="font-semibold">Attempt {r.attempt_id}</div>
                     <div className="text-[12.5px] text-muted">
-                      Candidate #{r.user_id} · assessment #{r.assessment_id}
+                      Candidate #{r.user_id} ·{' '}
+                      {paper.isExam
+                        ? <span className="font-semibold text-brand-700">Exam: {paper.title}</span>
+                        : paper.title}
                     </div>
                   </td>
                   <td><State tone={cam.tone}>{cam.text}</State></td>
@@ -221,55 +306,26 @@ export default async function OnyxInvigilatePage() {
         </div>
       </section>
 
-      {sittings.length > 1 ? (
+      {/* Every flagged examination, named and grouped on its own -- not left to
+          surface as just another row among ordinary assessments. This is the
+          one place on the console built specifically so a scheduled exam's
+          flags can't be missed. */}
+      {examSittings.length > 0 ? (
         <section className="mb-7">
-          <SectionHead title="Sittings with flags"
+          <SectionHead title="Examinations with flags"
+            action={{ href: '/onyx/exams', label: 'All examinations' }} />
+          <CardGrid min="15rem">
+            {examSittings.map((s) => sittingCard(s))}
+          </CardGrid>
+        </section>
+      ) : null}
+
+      {assessmentSittings.length > 1 ? (
+        <section className="mb-7">
+          <SectionHead title="Assessments with flags"
             action={{ href: '/onyx/assessments', label: 'All assessments' }} />
           <CardGrid min="15rem">
-            {sittings.map((s) => {
-              const worst = severity(s.worst);
-              return (
-                <Card key={s.assessment_id} className="p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <Pill tone={worst.tone}>
-                      <span className="inline-flex items-center gap-1.5">
-                        <Icon name="flag" className="h-3.5 w-3.5" />
-                        {worst.label}
-                      </span>
-                    </Pill>
-                    <span className={'text-[13px] ' + CALM}>
-                      {s.live > 0
-                        ? <State tone="live">{s.live} running</State>
-                        : <State tone="idle">Finished</State>}
-                    </span>
-                  </div>
-
-                  <div className="mt-2 text-[15px] font-semibold">
-                    Assessment #{s.assessment_id}
-                  </div>
-                  <div className="mt-0.5 text-[13px] text-muted">
-                    {s.attempts === 1 ? '1 flagged attempt' : s.attempts + ' flagged attempts'}
-                    {' · '}
-                    <span className="tabular-nums">{s.open}</span> still open
-                  </div>
-
-                  <div className="mt-3">
-                    <div className="mb-1.5 flex items-baseline justify-between text-[12.5px]">
-                      <span className="font-semibold">Decided</span>
-                      <span className="tabular-nums text-muted">
-                        {s.settled} of {s.attempts}
-                      </span>
-                    </div>
-                    <Meter percent={(s.settled / s.attempts) * 100}
-                      label={'Attempts decided on assessment ' + s.assessment_id} />
-                  </div>
-
-                  <div className="mt-3.5">
-                    <ActionLink href={'/onyx/assessments/' + s.assessment_id} label="Open" />
-                  </div>
-                </Card>
-              );
-            })}
+            {assessmentSittings.map((s) => sittingCard(s))}
           </CardGrid>
         </section>
       ) : null}
@@ -296,12 +352,16 @@ export default async function OnyxInvigilatePage() {
             {flagged.map((r) => {
               const sev = severity(r.integrity_flags);
               const state = caseState(r.integrity_status);
+              const paper = paperLabel(r.assessment_id, examByAssessment);
               return (
                 <tr key={r.attempt_id} className="align-middle">
                   <td>
                     <div className="font-semibold">Attempt {r.attempt_id}</div>
                     <div className="text-[12.5px] text-muted">
-                      Candidate #{r.user_id} · assessment #{r.assessment_id}
+                      Candidate #{r.user_id} ·{' '}
+                      {paper.isExam
+                        ? <span className="font-semibold text-brand-700">Exam: {paper.title}</span>
+                        : paper.title}
                     </div>
                   </td>
                   <td>

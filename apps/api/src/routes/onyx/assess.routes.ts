@@ -290,11 +290,26 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
     return ok(await ctx.onyxProctor.timeline(claims.tenant_id, idOf(req)));
   });
 
+  /**
+   * Admin and exams see the institution's whole queue -- that is the
+   * office's job. Faculty see it narrowed to their own courses: this used
+   * to hand every faculty account the unfiltered queue, flags on courses
+   * they had never taught included, because nothing ever passed a filter.
+   * An explicit `?assessment_id=` still narrows further, for whoever is
+   * already looking at one paper.
+   */
   app.get('/api/onyx/proctor/queue', async (req) => {
     const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     const q = req.query as { assessment_id?: string };
-    return ok(await ctx.onyxProctor.reviewQueue(
-      claims.tenant_id, q.assessment_id ? Number(q.assessment_id) : undefined));
+    if (q.assessment_id) {
+      return ok(await ctx.onyxProctor.reviewQueue(claims.tenant_id, [Number(q.assessment_id)]));
+    }
+    if (claims.tenant_role === 'faculty') {
+      const teaching = await ctx.onyxAcademics.teachingFor(claims.tenant_id, claims.user_id);
+      const ids = await ctx.onyxAssess.assessmentIdsForCourses(claims.tenant_id, teaching);
+      return ok(await ctx.onyxProctor.reviewQueue(claims.tenant_id, ids));
+    }
+    return ok(await ctx.onyxProctor.reviewQueue(claims.tenant_id));
   });
 
   app.post('/api/onyx/proctor/events/:id/review', async (req) => {
@@ -353,9 +368,28 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
     return ok(marked, 'Marked.');
   });
 
-  /** ASS-03b -- release. Audited, and refused if moderation is outstanding. */
+  /**
+   * ASS-03b -- release. Audited, and refused if moderation is outstanding.
+   *
+   * The examinations office institution-wide, or this specific assessment's
+   * own course faculty -- the same split just extended to exams (see
+   * assertCanRunExam in campus.routes.ts): a faculty member who marks their
+   * own course's quiz can release it themselves, not only enter the marks
+   * and then wait on the office. An assessment with no course at all (not
+   * tied to any one class) stays office-only -- there is no "this course's
+   * faculty" to extend it to.
+   */
   app.post('/api/onyx/assessments/:id/results/publish', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'exams');
+    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    if (claims.tenant_role !== 'admin' && claims.tenant_role !== 'exams') {
+      const assessment = await ctx.onyxAssess.assessment(claims.tenant_id, idOf(req));
+      if (!assessment.course_id) {
+        throw new HttpError(403, 'Only the examinations office can publish results for an '
+          + 'assessment with no course.');
+      }
+      await ctx.onyxAcademics.assertCanTeach(
+        claims.tenant_id, Number(assessment.course_id), claims.user_id, claims.tenant_role);
+    }
     const result = await ctx.onyxAssess.publishResults(claims.tenant_id, idOf(req));
     await ctx.onyxAudit.record(claims, {
       action: 'result.published', entityType: 'assessment', entityId: idOf(req),

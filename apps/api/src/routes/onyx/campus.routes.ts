@@ -16,7 +16,8 @@
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { validate, ok, requireOnyx, requireOnyxRole } from '@onyx/core';
+import { validate, ok, requireOnyx, requireOnyxRole, HttpError } from '@onyx/core';
+import type { Role } from '@onyx/types';
 import type { AppContext } from '../../context.ts';
 
 const asReq = (req: FastifyRequest) => ({
@@ -44,6 +45,60 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
     const claims = requireOnyx(asReq(req), ctx.jwtSecret);
     return { claims, viewer: { role: claims.tenant_role, userId: claims.user_id } };
   };
+
+  /**
+   * The one thing that makes an exam's `assessment_id` mean something: the
+   * linked CBT paper's window is forced to exactly the exam's scheduled
+   * slot, not the flexible open/close range a standalone assessment picks
+   * for itself. That is the entire difference the proposal draws between
+   * the two -- "assessments any time before the deadline, examinations at
+   * their scheduled time only" -- and it is enforced here rather than
+   * invented twice, because AssessService.start() already refuses an
+   * attempt outside opens_at/closes_at. Locking the window to the exam's
+   * slot is the whole mechanism; nothing new has to check the clock.
+   *
+   * The field existed on the exams table and accepted this input long
+   * before anything read it back -- an exam could be told an
+   * `assessment_id` and it went nowhere. This is where it starts meaning
+   * something.
+   */
+  /**
+   * Scheduling, editing, moderating or publishing an exam: the examinations
+   * office runs the calendar institution-wide, or this specific course's own
+   * faculty may -- not faculty tenant-wide, the same course-scoped trust
+   * already extended to course management, workspace visibility and
+   * practice problems this session. A lecturer running their own course's
+   * midterm no longer needs the examinations office to schedule it, mark it
+   * or release it for them.
+   */
+  async function assertCanRunExam(
+    tenantId: number, courseId: number, userId: number, role: Role,
+  ) {
+    if (role === 'admin' || role === 'exams') return;
+    await ctx.onyxAcademics.assertCanTeach(tenantId, courseId, userId, role);
+  }
+
+  async function syncExamAssessmentWindow(
+    tenantId: number, assessmentId: number,
+    exam: { course_id: number; starts_at: string; duration_minutes: number; status: string },
+  ) {
+    const assessment = await ctx.onyxAssess.assessment(tenantId, assessmentId);
+    if (Number(assessment.course_id) !== Number(exam.course_id)) {
+      throw new HttpError(422,
+        'That assessment is not on this exam’s course — pick one that is, or leave it unlinked.');
+    }
+    const start = Date.parse(exam.starts_at);
+    const end = start + exam.duration_minutes * 60_000;
+    await ctx.onyxAssess.updateAssessment(tenantId, assessmentId, {
+      opens_at: new Date(start).toISOString(),
+      closes_at: new Date(end).toISOString(),
+      duration_minutes: exam.duration_minutes,
+      // A cancelled exam's paper stops taking attempts; scheduling or
+      // editing an active one never force-publishes it -- that stays the
+      // office's own decision, made once the paper is actually ready.
+      status: exam.status === 'cancelled' ? 'closed' : undefined,
+    });
+  }
 
   // =========================================================================
   // CMP-01a -- faculty allocation
@@ -198,10 +253,6 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
   // =========================================================================
 
   app.post('/api/onyx/exams', async (req) => {
-    // Guard first, validate second. The service checks the role too -- that is
-    // where the rule lives -- but reaching validation is itself an answer, and
-    // somebody who may not schedule an exam should not get one.
-    requireOnyxRole(asReq(req), ctx.jwtSecret, ...EXAMS);
     const { claims, viewer } = viewerOf(req);
     const body = validate(z.object({
       semester_id: z.number().int().positive(),
@@ -213,7 +264,16 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
       pass_marks: z.number().int().min(0).max(1000).optional(),
       assessment_id: z.number().int().positive().nullish(),
     }), req.body);
-    return ok(await ctx.onyxExams.schedule(claims.tenant_id, viewer, body));
+    // Course_id only exists once the body is parsed, so the scoped guard has
+    // to come after validation here -- unlike a plain role check, "does this
+    // person teach this course" cannot be answered before knowing which
+    // course somebody means.
+    await assertCanRunExam(claims.tenant_id, body.course_id, claims.user_id, claims.tenant_role);
+    const exam = await ctx.onyxExams.schedule(claims.tenant_id, viewer, body);
+    if (body.assessment_id && exam) {
+      await syncExamAssessmentWindow(claims.tenant_id, body.assessment_id, exam);
+    }
+    return ok(exam);
   });
 
   app.get('/api/onyx/exams', async (req) => {
@@ -230,10 +290,13 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
     return ok(await ctx.onyxExams.exam(claims.tenant_id, idOf(req)));
   });
 
-  /** Correct a scheduled exam, or cancel it -- the examinations office's
-   * fix for its own mistake, not a route anyone else can reach. */
+  /** Correct a scheduled exam, or cancel it -- the examinations office, or
+   * this exam's own course's faculty (see assertCanRunExam). */
   app.patch('/api/onyx/exams/:id', async (req) => {
     const { claims, viewer } = viewerOf(req);
+    const existing = await ctx.onyxExams.exam(claims.tenant_id, idOf(req));
+    await assertCanRunExam(
+      claims.tenant_id, Number(existing.course_id), claims.user_id, claims.tenant_role);
     const body = validate(z.object({
       title: z.string().min(1).max(255).optional(),
       starts_at: z.string().nullish(),
@@ -242,7 +305,17 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
       pass_marks: z.number().min(0).max(1000).optional(),
       status: z.enum(['draft', 'scheduled', 'completed', 'cancelled']).optional(),
     }), req.body);
-    return ok(await ctx.onyxExams.updateExam(claims.tenant_id, idOf(req), viewer, body), 'Updated.');
+    const exam = await ctx.onyxExams.updateExam(claims.tenant_id, idOf(req), viewer, body);
+    // Re-sync only when there was something to re-sync for: an exam with no
+    // linked paper, or an edit that touched neither the time nor the
+    // duration nor cancelled it, has nothing for the assessment's window to
+    // catch up on.
+    if (exam?.assessment_id
+      && (body.starts_at !== undefined || body.duration_minutes !== undefined
+        || body.status === 'cancelled')) {
+      await syncExamAssessmentWindow(claims.tenant_id, Number(exam.assessment_id), exam);
+    }
+    return ok(exam, 'Updated.');
   });
 
   /** Override one mark directly -- a dispute or a data-entry fix. */
@@ -325,6 +398,13 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
   app.post('/api/onyx/exams/:id/marks', async (req) => {
     const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...MARKERS);
     const viewer = { role: claims.tenant_role, userId: claims.user_id };
+    const exam = await ctx.onyxExams.exam(claims.tenant_id, idOf(req));
+    // MARKERS lets any faculty member through the role check; this is the
+    // course-scoped half -- entering marks for a paper you do not teach was
+    // possible before as long as the candidates named happened to be
+    // enrolled, which enterMarks()'s own roster check never ruled out.
+    await assertCanRunExam(
+      claims.tenant_id, Number(exam.course_id), claims.user_id, claims.tenant_role);
     const body = validate(z.object({
       entries: z.array(z.object({
         user_id: z.number().int().positive(),
@@ -339,8 +419,48 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
     return ok(await ctx.onyxExams.marksForExam(claims.tenant_id, idOf(req), viewer));
   });
 
+  /**
+   * Pull marks from this exam's online paper.
+   *
+   * An exam sat through the CBT engine already has a graded score sitting on
+   * every finished attempt -- this reads it across into the exam's own marks
+   * register through enterMarks(), the exact path a person typing marks in
+   * by hand goes through, so roster checks, moderation, publishing and the
+   * audit trail all work precisely as if the office had entered them by
+   * hand. Only attempts with nothing left for a marker are pulled; the rest
+   * wait for the marking queue rather than syncing in as a wrong, partial
+   * score. Scores are scaled onto the exam's own mark scheme, since the
+   * paper and the exam are not required to share one.
+   */
+  app.post('/api/onyx/exams/:id/marks/sync-from-paper', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...MARKERS);
+    const viewer = { role: claims.tenant_role, userId: claims.user_id };
+    const exam = await ctx.onyxExams.exam(claims.tenant_id, idOf(req));
+    await assertCanRunExam(
+      claims.tenant_id, Number(exam.course_id), claims.user_id, claims.tenant_role);
+    if (!exam.assessment_id) {
+      throw new HttpError(422, 'This exam has no online paper to pull marks from.');
+    }
+    const scored = await ctx.onyxAssess.scoredAttempts(claims.tenant_id, Number(exam.assessment_id));
+    if (!scored.length) {
+      return ok({ entered: 0 }, 'Nothing on the online paper is fully marked yet.');
+    }
+    const examMax = Number(exam.max_marks);
+    const entries = scored.map((a) => ({
+      user_id: a.user_id,
+      raw_marks: a.max_score > 0
+        ? Math.round((a.score / a.max_score) * examMax * 100) / 100 : 0,
+    }));
+    const result = await ctx.onyxExams.enterMarks(claims.tenant_id, idOf(req), viewer, entries);
+    return ok(result, 'Pulled ' + result.entered
+      + (result.entered === 1 ? ' mark' : ' marks') + ' from the online paper.');
+  });
+
   app.post('/api/onyx/exams/:id/moderate', async (req) => {
     const { claims, viewer } = viewerOf(req);
+    const exam = await ctx.onyxExams.exam(claims.tenant_id, idOf(req));
+    await assertCanRunExam(
+      claims.tenant_id, Number(exam.course_id), claims.user_id, claims.tenant_role);
     const body = validate(z.object({
       delta: z.number().min(-100).max(100),
       reason: z.string().min(1).max(500),
@@ -351,13 +471,18 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
 
   app.post('/api/onyx/exams/:id/publish', async (req) => {
     const { claims, viewer } = viewerOf(req);
+    const exam = await ctx.onyxExams.exam(claims.tenant_id, idOf(req));
+    await assertCanRunExam(
+      claims.tenant_id, Number(exam.course_id), claims.user_id, claims.tenant_role);
     return ok(await ctx.onyxExams.publishMarks(claims.tenant_id, idOf(req), viewer));
   });
 
   /** Your own marks. Published ones only unless you run examinations. */
   app.get('/api/onyx/results', async (req) => {
     const { claims, viewer } = viewerOf(req);
-    return ok(await ctx.onyxExams.marksFor(claims.tenant_id, claims.user_id, viewer));
+    const q = req.query as { exam_id?: string };
+    return ok(await ctx.onyxExams.marksFor(claims.tenant_id, claims.user_id, viewer,
+      { exam_id: q.exam_id ? Number(q.exam_id) : undefined }));
   });
 
   app.get('/api/onyx/results/:userId', async (req) => {

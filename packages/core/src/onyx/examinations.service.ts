@@ -116,8 +116,13 @@ export class ExaminationsService {
     duration_minutes?: number; max_marks?: number; pass_marks?: number;
     assessment_id?: number | null;
   }) {
-    if (!canRunExams(actor.role)) {
-      throw new HttpError(403, 'Only the examinations office can schedule an exam.');
+    // Course-scoping (only this course's own faculty, not faculty tenant-wide)
+    // is the route layer's job -- assertCanRunExam in campus.routes.ts -- the
+    // same split enterMarks() below already draws between "which roles" and
+    // "which course".
+    if (!canRunExams(actor.role) && actor.role !== 'faculty') {
+      throw new HttpError(403, 'Only the examinations office or the course’s own faculty '
+        + 'can schedule an exam.');
     }
     const { data: course } = await this.#db.from('onyx_courses').select('id, title')
       .eq('tenant_id', tenantId).eq('id', input.course_id).maybeSingle();
@@ -171,8 +176,9 @@ export class ExaminationsService {
       title?: string; starts_at?: string | null; duration_minutes?: number;
       max_marks?: number; pass_marks?: number; status?: string;
     }) {
-    if (!canRunExams(actor.role)) {
-      throw new HttpError(403, 'Only the examinations office can change an exam.');
+    if (!canRunExams(actor.role) && actor.role !== 'faculty') {
+      throw new HttpError(403, 'Only the examinations office or the course’s own faculty '
+        + 'can change an exam.');
     }
     const exam = await this.exam(tenantId, examId);
 
@@ -560,8 +566,9 @@ export class ExaminationsService {
    */
   async moderate(tenantId: number, examId: number, actor: { userId: number; role: Role },
     delta: number, reason: string) {
-    if (!canRunExams(actor.role)) {
-      throw new HttpError(403, 'Only the examinations office can moderate a paper.');
+    if (!canRunExams(actor.role) && actor.role !== 'faculty') {
+      throw new HttpError(403, 'Only the examinations office or the course’s own faculty '
+        + 'can moderate a paper.');
     }
     if (!reason.trim()) throw new HttpError(422, 'Moderation needs a reason.');
     const exam = await this.exam(tenantId, examId);
@@ -595,8 +602,9 @@ export class ExaminationsService {
   }
 
   async publishMarks(tenantId: number, examId: number, actor: { userId: number; role: Role }) {
-    if (!canRunExams(actor.role)) {
-      throw new HttpError(403, 'Only the examinations office can publish results.');
+    if (!canRunExams(actor.role) && actor.role !== 'faculty') {
+      throw new HttpError(403, 'Only the examinations office or the course’s own faculty '
+        + 'can publish results.');
     }
     await this.exam(tenantId, examId);
     const at = new Date(this.#now()).toISOString();

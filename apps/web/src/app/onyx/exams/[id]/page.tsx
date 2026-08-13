@@ -5,6 +5,7 @@ import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import type { Exam, SeatingPlan, Hall, ExamMark } from '@/lib/onyx-campus';
 import { AllocateSeating, EnterMarks, ExamEditForm, MarkOverride } from '@/components/onyx-manage';
+import type { Assessment } from '@/lib/onyx-assess';
 import { CreatePanel, ActionButton } from '@/components/onyx-create';
 import {
   Card, DataTable, Empty, EmptyRow, Icon, Meter, Pill, Score, SectionHead, State,
@@ -67,16 +68,20 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
     onyxApi<Me>('/api/onyx/me'),
     onyxApi<Exam>('/api/onyx/exams/' + id),
   ]);
-  // `staff` runs the examinations office: scheduling, seating, moderation,
-  // publication -- EXAM_STAFF on both the API and here. `canMark` is wider:
-  // examinations.service.ts's enterMarks() and marksForExam() have always
-  // let a course's own faculty in too (grep EXAM_STAFF there, then
-  // `role !== 'faculty'`), so a faculty member could already enter marks
-  // through the API. This page just never gave them a way to reach it.
+  // `staff` runs the examinations office institution-wide: seating stays
+  // theirs alone, a shared physical resource one course's faculty do not
+  // allocate on their own. `canMark` is wider -- scheduling, editing,
+  // marking, moderating and publishing an exam are all also open to this
+  // specific course's own faculty (assertCanRunExam on the API side draws
+  // exactly this line for every one of those routes), so it takes knowing
+  // which courses this viewer actually teaches, not just their role.
   const staff = EXAM_STAFF.includes(me.role);
-  const canMark = staff || me.role === 'faculty';
+  const myCourses = me.role === 'faculty'
+    ? await onyxApiSafe<{ id: number }[]>('/api/onyx/my/courses') : null;
+  const teachesThisCourse = (myCourses ?? []).some((c) => Number(c.id) === Number(exam.course_id));
+  const canMark = staff || (me.role === 'faculty' && teachesThisCourse);
 
-  const [seat, plan, halls, marks, roster, members] = await Promise.all([
+  const [seat, plan, halls, marks, roster, members, myMarks] = await Promise.all([
     canMark ? null : onyxApiSafe<Seat>('/api/onyx/exams/' + id + '/seat'),
     // The seating plan itself stays staff-only on the API (every candidate's
     // name against a room and a seat) -- faculty get the marks register
@@ -90,6 +95,11 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
       '/api/onyx/courses/' + exam.course_id + '/roster') : null,
     canMark ? onyxApiSafe<{ user_id: number; user: { name: string } | null }[]>(
       '/api/onyx/members') : null,
+    // A candidate's own result on the one page they'd naturally look for it --
+    // marksFor() already returns published-only for a non-staff caller asking
+    // about themselves, so an empty array here means exactly "not out yet",
+    // never a mark that exists but is being withheld.
+    canMark ? null : onyxApiSafe<ExamMark[]>('/api/onyx/results?exam_id=' + id),
   ]);
 
   const nameOf = new Map((members ?? []).map((m) => [Number(m.user_id), m.user?.name ?? null]));
@@ -102,6 +112,22 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
     current: entered.get(Number(r.user_id)) ?? null,
   }));
   const published = (marks ?? []).some((m) => m.status === 'published');
+  const myMark = (myMarks ?? [])[0] ?? null;
+
+  // The exam's own online paper, if it has one -- syncExamAssessmentWindow()
+  // is what keeps its open/close window locked to exactly this exam's slot,
+  // so this page never has to check the clock itself; AssessService.start()
+  // already refuses an attempt outside that window.
+  const [onlinePaper, proctorSnapshot] = await Promise.all([
+    exam.assessment_id
+      ? onyxApiSafe<Assessment>('/api/onyx/assessments/' + exam.assessment_id) : null,
+    exam.assessment_id && canMark
+      ? onyxApiSafe<{ status: string; integrity_flags: number }[]>(
+        '/api/onyx/proctor/queue?assessment_id=' + exam.assessment_id)
+      : null,
+  ]);
+  const sittingNow = (proctorSnapshot ?? []).filter((r) => r.status === 'in_progress').length;
+  const examFlagged = (proctorSnapshot ?? []).filter((r) => r.integrity_flags > 0).length;
 
   // The whole mark, not just the raw figure, for the register's Mark column.
   const markOf = new Map((marks ?? []).map((m) => [Number(m.user_id), m]));
@@ -156,41 +182,47 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
 
         {/* CMP-02 end to end: seat the hall, enter the marks, moderate them,
             publish the results. Every step already existed on the API and had
-            no way to reach it from a browser. Seating/moderation/publication
-            stay staff-only (examinations office); marking is wider -- a
-            faculty member marking their own course's paper is the ordinary
-            case, not the exception. */}
+            no way to reach it from a browser. Seating stays staff-only --
+            physical halls are a shared institution-wide resource, not
+            something one course's faculty allocate on their own -- but
+            editing, marking, moderating and publishing are all open to this
+            exam's own course faculty now, the ordinary case rather than the
+            exception. */}
         {canMark ? (
           <div className="flex flex-wrap items-start gap-2">
-            {staff ? <ExamEditForm examId={Number(id)} exam={exam} /> : null}
+            <ExamEditForm examId={Number(id)} exam={exam} />
             {staff ? <AllocateSeating examId={Number(id)} halls={halls ?? []} /> : null}
             <EnterMarks examId={Number(id)} maxMarks={exam.max_marks}
               candidates={candidates} />
-            {staff ? (
-              <CreatePanel
-                title="Moderate this paper" cta="Moderate" icon="chart" compact
-                endpoint={'exams/' + id + '/moderate'}
-                fields={[
-                  { name: 'delta', label: 'Add to every mark', type: 'number',
-                    min: -100, max: 100, required: true,
-                    help: 'The raw mark is kept; this is recorded beside it.' },
-                  { name: 'reason', label: 'Reason', required: true, wide: true,
-                    placeholder: 'Paper harder than intended' },
-                ]}
-              />
+            {/* Only while there is somewhere to pull from, and something left
+                to pull: once every mark is published, sync-from-paper would
+                only ever hit enterMarks()'s "not undone by re-entry" guard. */}
+            {exam.assessment_id && !published ? (
+              <ActionButton endpoint={'exams/' + id + '/marks/sync-from-paper'}
+                label="Pull marks from online paper"
+                confirm="Pull every fully-marked score from the online paper into this exam's marks register?" />
             ) : null}
-            {staff ? (
-              published ? (
-                <span className="inline-flex min-h-[38px] items-center gap-1.5 rounded-2xl
-                                 bg-green-50 px-3.5 text-[13px] font-bold text-green-700">
-                  <Icon name="check" className="h-4 w-4" />
-                  Results published
-                </span>
-              ) : (
-                <ActionButton endpoint={'exams/' + id + '/publish'} label="Publish results"
-                  confirm="Publish results to every candidate?" />
-              )
-            ) : null}
+            <CreatePanel
+              title="Moderate this paper" cta="Moderate" icon="chart" compact
+              endpoint={'exams/' + id + '/moderate'}
+              fields={[
+                { name: 'delta', label: 'Add to every mark', type: 'number',
+                  min: -100, max: 100, required: true,
+                  help: 'The raw mark is kept; this is recorded beside it.' },
+                { name: 'reason', label: 'Reason', required: true, wide: true,
+                  placeholder: 'Paper harder than intended' },
+              ]}
+            />
+            {published ? (
+              <span className="inline-flex min-h-[38px] items-center gap-1.5 rounded-2xl
+                               bg-green-50 px-3.5 text-[13px] font-bold text-green-700">
+                <Icon name="check" className="h-4 w-4" />
+                Results published
+              </span>
+            ) : (
+              <ActionButton endpoint={'exams/' + id + '/publish'} label="Publish results"
+                confirm="Publish results to every candidate?" />
+            )}
           </div>
         ) : null}
 
@@ -215,6 +247,67 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
             phone, instead of the table scrolling inside its own box. */}
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_290px] lg:items-start">
           <div className="min-w-0 space-y-6">
+            {/* This exam's paper is sat through the assessment engine, not
+                started here -- the actual start/resume button, with its own
+                eligibility and resume logic, already exists on the
+                assessment's own page. This is only ever the status: before,
+                during, or after the one window it can be sat in, which is
+                the whole difference between an exam and an ordinary
+                assessment (CMP-02's "scheduled time only" vs LRN-04's
+                "any time before the deadline"). */}
+            {!canMark && onlinePaper ? (
+              <Card className="p-4">
+                <div className="text-[10.5px] font-bold uppercase tracking-[.08em] text-muted">
+                  Online paper
+                </div>
+                {running ? (
+                  <>
+                    <p className="mt-1 text-[15px] font-bold text-green-700">
+                      Open now — {when.lead.toLowerCase()}.
+                    </p>
+                    <Link href={'/onyx/assessments/' + onlinePaper.id}
+                      className="mt-3 inline-flex min-h-[40px] items-center gap-1.5 rounded-2xl
+                                 bg-brand-600 px-3.5 text-[13px] font-bold text-white
+                                 hover:bg-brand-700">
+                      <Icon name="play" className="h-3.5 w-3.5" />
+                      Sit this exam
+                    </Link>
+                  </>
+                ) : now < start ? (
+                  <p className="mt-1 text-[13.5px] text-slate-700">
+                    Opens {when.sub.split(' – ')[0]}. Unlike an assessment, this cannot be
+                    started early — the window opens with the exam and nowhere sooner.
+                  </p>
+                ) : (
+                  <p className="mt-1 text-[13.5px] text-slate-700">
+                    This exam’s window has closed. If you sat it, your result appears here
+                    once it is published.
+                  </p>
+                )}
+              </Card>
+            ) : null}
+
+            {/* The result itself, not just a promise it exists somewhere --
+                published marks used to live only on the standalone /results
+                page, so a candidate finishing here had nowhere on this page
+                to actually see what they got. */}
+            {!canMark && myMark ? (
+              <Card className="p-4">
+                <div className="text-[10.5px] font-bold uppercase tracking-[.08em] text-muted">
+                  Your result
+                </div>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <Score value={myMark.final_marks} outOf={exam.max_marks}
+                    band={myMark.final_marks >= exam.pass_marks ? 'hi' : 'lo'} />
+                  {myMark.grade ? <Pill tone="brand">{myMark.grade}</Pill> : null}
+                </div>
+                <div className="mt-1.5 text-[13px] text-muted">
+                  {myMark.final_marks >= exam.pass_marks ? 'Passed' : 'Below the pass mark'}
+                  {myMark.moderation_delta ? ' · moderated' : ''}
+                </div>
+              </Card>
+            ) : null}
+
             {!canMark ? (
               seat ? (
                 <Card className="p-4">
@@ -402,6 +495,63 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
                       </dd>
                     </div>
                   </dl>
+                </Card>
+              </section>
+            ) : null}
+
+            {/* Only ever shown to staff who can actually reach it: the
+                proctor queue this reads is now scoped to a faculty
+                member's own courses (see /proctor/queue's own comment), so
+                an exam on somebody else's course would return nothing here
+                rather than leak flags across it. */}
+            {canMark && onlinePaper ? (
+              <section>
+                <SectionHead title="Online paper" />
+                <Card className="p-4">
+                  <p className="text-[13px] text-muted">
+                    Sat through the assessment engine, locked to this exam’s slot.
+                  </p>
+                  <dl className="mt-3 divide-y divide-line border-t border-line text-[13.5px]">
+                    <div className="flex items-center justify-between gap-3 py-2.5">
+                      <dt className="text-muted">Sitting now</dt>
+                      <dd className="font-bold tabular-nums">{sittingNow}</dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 py-2.5">
+                      <dt className="text-muted">Flagged by the proctor</dt>
+                      <dd className="font-bold tabular-nums">{examFlagged}</dd>
+                    </div>
+                    <div className="flex items-center justify-between gap-3 py-2.5">
+                      <dt className="text-muted">Results</dt>
+                      <dd>
+                        {onlinePaper.results_published_at
+                          ? <State tone="on">Published</State>
+                          : <State tone="idle">Not published</State>}
+                      </dd>
+                    </div>
+                  </dl>
+                  <div className="mt-3.5 flex flex-wrap gap-2 border-t border-line pt-3.5">
+                    <Link href={'/onyx/invigilate'}
+                      className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl
+                                 border border-line px-3 text-[12.5px] font-bold text-slate-700
+                                 hover:bg-brand-50">
+                      <Icon name="shield" className="h-3.5 w-3.5" />
+                      Invigilate
+                    </Link>
+                    <Link href={'/onyx/assessments/' + onlinePaper.id + '/marking'}
+                      className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl
+                                 border border-line px-3 text-[12.5px] font-bold text-slate-700
+                                 hover:bg-brand-50">
+                      <Icon name="edit" className="h-3.5 w-3.5" />
+                      Marking queue
+                    </Link>
+                    <Link href={'/onyx/assessments/' + onlinePaper.id + '/results'}
+                      className="inline-flex min-h-[36px] items-center gap-1.5 rounded-xl
+                                 border border-line px-3 text-[12.5px] font-bold text-slate-700
+                                 hover:bg-brand-50">
+                      <Icon name="chart" className="h-3.5 w-3.5" />
+                      Results
+                    </Link>
+                  </div>
                 </Card>
               </section>
             ) : null}

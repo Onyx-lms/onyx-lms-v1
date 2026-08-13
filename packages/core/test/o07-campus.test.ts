@@ -265,11 +265,21 @@ test('CMP-02a two exams whose rosters never intersect do not clash', async () =>
   assert.ok(second);
 });
 
-test('CMP-02a only the examinations office may schedule an exam', async () => {
+test('CMP-02a the examinations office, or faculty, may schedule an exam -- nobody else', async () => {
   const w = world();
+  // Role only: schedule() cannot know which course a faculty member actually
+  // teaches, so it admits the role and leaves *which* course to the route
+  // layer's assertCanRunExam (campus.routes.ts), the same split enterMarks()
+  // below already draws.
+  const exam = await w.exams.schedule(T, facultyMember, {
+    semester_id: 1, course_id: 1, title: 'CS101 midterm', starts_at: new Date(START).toISOString(),
+  });
+  assert.ok(exam);
+
   await assert.rejects(
-    () => w.exams.schedule(T, facultyMember, {
-      semester_id: 1, course_id: 1, title: 'Sneaky exam', starts_at: new Date(START).toISOString(),
+    () => w.exams.schedule(T, student, {
+      semester_id: 1, course_id: 1, title: 'Sneaky exam',
+      starts_at: new Date(START + 60 * 60_000).toISOString(),
     }),
     (e: unknown) => e instanceof HttpError && e.status === 403);
 });

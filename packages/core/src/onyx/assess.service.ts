@@ -375,6 +375,16 @@ export class AssessService {
     return data ?? [];
   }
 
+  /** Just the ids, across several courses at once -- a faculty member
+   *  teaching more than one course needs every assessment on any of them,
+   *  not one course at a time. */
+  async assessmentIdsForCourses(tenantId: number, courseIds: number[]): Promise<number[]> {
+    if (!courseIds.length) return [];
+    const { data } = await this.#db.from('onyx_assessments').select('id')
+      .eq('tenant_id', tenantId).in('course_id', courseIds);
+    return (data ?? []).map((a) => Number(a.id));
+  }
+
   async publishAssessment(tenantId: number, id: number) {
     const assessment = await this.assessment(tenantId, id);
     const sections = (assessment.sections ?? []) as unknown as { take: number }[];
@@ -684,6 +694,28 @@ export class AssessService {
       // The whole point of anonymous marking: the grader cannot see whose it is.
       user_id: anonymous ? null : a.user_id,
       candidate: anonymous ? 'Candidate ' + (i + 1) : null,
+    }));
+  }
+
+  /**
+   * Every finished attempt's score, keyed by candidate -- for reading across
+   * into something else's own marks register (see the exam<->assessment
+   * link in campus.routes.ts).
+   *
+   * Deliberately not the anonymised shape markingQueue() returns: a system
+   * pulling scores across already knows exactly whose they are, unlike the
+   * human marker anonymous_marking exists to keep unbiased. `score` stays
+   * `null`, and is filtered out here, until every subjective question has
+   * been marked -- an attempt still waiting on a person is not "0", it is
+   * not ready to sync at all.
+   */
+  async scoredAttempts(tenantId: number, assessmentId: number) {
+    const { data } = await this.#db.from('onyx_assessment_attempts')
+      .select('user_id, score, max_score')
+      .eq('tenant_id', tenantId).eq('assessment_id', assessmentId)
+      .neq('status', 'in_progress').not('score', 'is', null);
+    return (data ?? []).map((a) => ({
+      user_id: Number(a.user_id), score: Number(a.score), max_score: Number(a.max_score),
     }));
   }
 

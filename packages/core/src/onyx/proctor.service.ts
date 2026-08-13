@@ -171,11 +171,22 @@ export class ProctorService {
    * event, so the answer to "is their camera actually on?" is on the list
    * rather than one click away per candidate.
    */
-  async reviewQueue(tenantId: number, assessmentId?: number) {
+  /**
+   * `assessmentIds`, plural, so a faculty member's own view of this queue
+   * can be narrowed to their own courses -- this used to take one optional
+   * id and nothing ever passed it, so every faculty account reached
+   * `/proctor/queue` and saw every flagged or running attempt at the
+   * institution, on courses they had nothing to do with. An empty array
+   * (as opposed to undefined) means "narrowed to nothing", not "no filter".
+   */
+  async reviewQueue(tenantId: number, assessmentIds?: number[]) {
     let q = this.#db.from('onyx_assessment_attempts')
       .select(ATTEMPT_COLUMNS).eq('tenant_id', tenantId)
       .or('integrity_flags.gt.0,status.eq.in_progress');
-    if (assessmentId) q = q.eq('assessment_id', assessmentId);
+    if (assessmentIds) {
+      if (!assessmentIds.length) return [];
+      q = q.in('assessment_id', assessmentIds);
+    }
     const { data } = await q.order('integrity_flags', { ascending: false });
     const attempts = data ?? [];
     if (!attempts.length) return [];

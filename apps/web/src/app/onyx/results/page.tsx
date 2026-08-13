@@ -4,6 +4,7 @@ import { OnyxShell } from '@/components/onyx-shell';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import type { ExamMark, Transcript } from '@/lib/onyx-campus';
+import type { MyAttempt } from '@/lib/onyx-assess';
 import { CreatePanel } from '@/components/onyx-create';
 import {
   ActionLink, Card, Empty, Icon, ListRow, Pill, RowList, Score, SectionHead, StatTile,
@@ -54,10 +55,16 @@ export default async function OnyxResultsPage() {
   ]);
   const learners = (members ?? []).filter((m) => m.role === 'student');
 
-  const [marks, transcripts] = await Promise.all([
+  const [marks, transcripts, myAttempts] = await Promise.all([
     onyxApi<ExamMark[]>('/api/onyx/results'),
     onyxApi<Transcript[]>('/api/onyx/transcripts'),
+    // Marked coursework, alongside marked exams -- the two used to live on
+    // separate pages, so a faculty grade on an assessment never reached the
+    // one screen a learner (or, through them, a guardian) actually calls
+    // "my results". myAttempts() already returns published-only scores.
+    onyxApi<MyAttempt[]>('/api/onyx/my/assessments'),
   ]);
+  const assessmentResults = myAttempts.filter((a) => a.results_published && a.score !== null);
 
   // The numbers a learner is actually asked for -- by a scholarship form, by a
   // placement office, by a parent. Every one is read off what the API already
@@ -122,7 +129,7 @@ export default async function OnyxResultsPage() {
         ) : null}
 
         <section>
-          <SectionHead title="Marks" />
+          <SectionHead title="Exam marks" />
           {/* The mark is the thing the page exists for, so it is the largest
               element on the row rather than the middle cell of three. The band
               is never the only signal: the number sits inside it, and the grade
@@ -151,6 +158,35 @@ export default async function OnyxResultsPage() {
                 <Empty icon="award">
                   No results have been published yet. A mark appears here only once the
                   examinations office releases it.
+                </Empty>
+              </li>
+            ) : null}
+          </RowList>
+        </section>
+
+        <section>
+          <SectionHead title="Assessment results" />
+          {/* Marked coursework -- quizzes, assignments, the online paper of an
+              exam sat through the CBT engine. Same rule as the exam marks
+              above: a score exists here only once both the attempt and the
+              assessment are published, never a mark still open to appeal. */}
+          <RowList label="Your published assessment results">
+            {assessmentResults.map((a) => (
+              <ListRow
+                key={a.attempt_id}
+                icon="award"
+                tone="brand"
+                title={a.title}
+                meta={a.passed === null ? 'Marked' : a.passed ? 'Passed' : 'Not passed'}
+                trailing={<Score value={a.score!} outOf={a.max_score}
+                  band={a.passed === false ? 'lo' : undefined} />}
+              />
+            ))}
+            {assessmentResults.length === 0 ? (
+              <li>
+                <Empty icon="award">
+                  No assessment results have been published yet. A score appears here once
+                  it is marked and released.
                 </Empty>
               </li>
             ) : null}

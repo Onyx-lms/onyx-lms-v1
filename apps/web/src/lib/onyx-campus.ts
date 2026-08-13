@@ -139,6 +139,9 @@ export interface Exam {
   max_marks: number;
   pass_marks: number;
   status: 'draft' | 'scheduled' | 'completed' | 'cancelled';
+  /** Set only when this exam is sat online rather than on paper -- see the
+   *  exam routes' syncExamAssessmentWindow() for what that actually does. */
+  assessment_id: number | null;
 }
 
 export interface Hall {
