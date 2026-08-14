@@ -1181,15 +1181,16 @@ export class PlatformService {
       .eq('id', markId).maybeSingle();
     if (!mark || Number(mark.tenant_id) !== tenantId) throw new HttpError(404, 'No such mark.');
     const { data: exam } = await this.#db.from('onyx_exams')
-      .select('max_marks').eq('id', mark.exam_id).maybeSingle();
+      .select('max_marks, pass_marks').eq('id', mark.exam_id).maybeSingle();
     const maxMarks = Number(exam?.max_marks ?? 0);
+    const passMarks = Number(exam?.pass_marks ?? 0);
 
     const raw = patch.raw_marks ?? Number(mark.raw_marks);
     const final = patch.final_marks ?? raw;
     if (maxMarks > 0 && (final < 0 || final > maxMarks)) {
       throw new HttpError(422, 'A mark has to be between 0 and ' + maxMarks + '.');
     }
-    const band = gradeFor(final, maxMarks || 100);
+    const band = gradeFor(final, maxMarks || 100, passMarks);
 
     const before = { raw_marks: mark.raw_marks, final_marks: mark.final_marks, grade: mark.grade };
     const after = {

@@ -40,27 +40,17 @@ const EXAM_STAFF: Role[] = ['admin', 'exams'];
 const canRunExams = (role: Role) => EXAM_STAFF.includes(role);
 
 /**
- * The grade bands, as a percentage of the paper's maximum.
- *
- * Deliberately a plain table rather than a configurable rule engine: an
- * institution that needs different bands needs a migration and a conversation,
- * not a JSON field somebody edits at midnight during results week.
+ * Pass or fail, against the paper's own pass mark -- nothing finer than that.
+ * Kept as a function, not an inline comparison at each call site, for the
+ * same reason it was one before: one place decides what a mark means, so
+ * entering, moderating and overriding can never quietly disagree with each
+ * other. `points` stays because a transcript's GPA line sums it (see
+ * issueTranscript) -- 1 for a pass, 0 for a fail, so that GPA now reads as a
+ * pass rate rather than a letter-grade average.
  */
-const GRADE_BANDS: { min: number; grade: string; points: number }[] = [
-  { min: 90, grade: 'A+', points: 10 },
-  { min: 80, grade: 'A', points: 9 },
-  { min: 70, grade: 'B+', points: 8 },
-  { min: 60, grade: 'B', points: 7 },
-  { min: 50, grade: 'C', points: 6 },
-  { min: 40, grade: 'D', points: 5 },
-  { min: 0, grade: 'F', points: 0 },
-];
-
-export function gradeFor(marks: number, maxMarks: number): { grade: string; points: number } {
-  if (maxMarks <= 0) return { grade: 'F', points: 0 };
-  const percent = (marks / maxMarks) * 100;
-  const band = GRADE_BANDS.find((b) => percent >= b.min) ?? GRADE_BANDS[GRADE_BANDS.length - 1]!;
-  return { grade: band.grade, points: band.points };
+export function gradeFor(marks: number, maxMarks: number, passMarks: number): { grade: string; points: number } {
+  const passed = maxMarks > 0 && marks >= passMarks;
+  return { grade: passed ? 'Pass' : 'Fail', points: passed ? 1 : 0 };
 }
 
 /**
@@ -503,6 +493,7 @@ export class ExaminationsService {
     }
     const exam = await this.exam(tenantId, examId);
     const maxMarks = Number(exam.max_marks);
+    const passMarks = Number(exam.pass_marks);
 
     const roster = await this.#candidates(tenantId, Number(exam.course_id));
     const written: string[] = [];
@@ -516,7 +507,7 @@ export class ExaminationsService {
           + '; got ' + entry.raw_marks + ' for user ' + entry.user_id + '.');
       }
 
-      const band = gradeFor(entry.raw_marks, maxMarks);
+      const band = gradeFor(entry.raw_marks, maxMarks, passMarks);
       const { data: existing } = await this.#db.from('onyx_exam_marks').select('id, status')
         .eq('tenant_id', tenantId).eq('exam_id', examId).eq('user_id', entry.user_id)
         .maybeSingle();
@@ -572,13 +563,14 @@ export class ExaminationsService {
     if (!mark) throw new HttpError(404, 'No such mark.');
     const exam = await this.exam(tenantId, Number(mark.exam_id));
     const maxMarks = Number(exam.max_marks);
+    const passMarks = Number(exam.pass_marks);
 
     const raw = patch.raw_marks ?? Number(mark.raw_marks);
     const final = patch.final_marks ?? raw;
     if (final < 0 || final > maxMarks) {
       throw new HttpError(422, 'A mark has to be between 0 and ' + maxMarks + '.');
     }
-    const band = gradeFor(final, maxMarks);
+    const band = gradeFor(final, maxMarks, passMarks);
     const before = { raw_marks: mark.raw_marks, final_marks: mark.final_marks, grade: mark.grade };
     const after = {
       raw_marks: raw, final_marks: final, grade: band.grade, grade_points: band.points,
@@ -608,6 +600,7 @@ export class ExaminationsService {
     if (!reason.trim()) throw new HttpError(422, 'Moderation needs a reason.');
     const exam = await this.exam(tenantId, examId);
     const maxMarks = Number(exam.max_marks);
+    const passMarks = Number(exam.pass_marks);
 
     const { data: marks } = await this.#db.from('onyx_exam_marks').select(MARK_COLUMNS)
       .eq('tenant_id', tenantId).eq('exam_id', examId).neq('status', 'published');
@@ -616,7 +609,7 @@ export class ExaminationsService {
     const at = new Date(this.#now()).toISOString();
     for (const mark of marks) {
       const final = Math.max(0, Math.min(maxMarks, Number(mark.raw_marks) + delta));
-      const band = gradeFor(final, maxMarks);
+      const band = gradeFor(final, maxMarks, passMarks);
       await this.#db.from('onyx_exam_marks').update({
         moderation_delta: delta,
         final_marks: final,

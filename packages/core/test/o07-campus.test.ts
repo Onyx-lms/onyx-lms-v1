@@ -332,10 +332,11 @@ test('CMP-02b a learner cannot read the full seating plan, only their own seat',
 // CMP-02c: marks, moderation, transcripts
 // ---------------------------------------------------------------------------
 
-test('CMP-02c grade bands compute consistently at the boundaries', () => {
-  assert.deepEqual(gradeFor(90, 100), { grade: 'A+', points: 10 });
-  assert.deepEqual(gradeFor(89, 100), { grade: 'A', points: 9 });
-  assert.deepEqual(gradeFor(39, 100), { grade: 'F', points: 0 });
+test('CMP-02c grade is pass or fail against the paper\'s own pass mark, nothing finer', () => {
+  assert.deepEqual(gradeFor(50, 100, 50), { grade: 'Pass', points: 1 }, 'exactly the pass mark passes');
+  assert.deepEqual(gradeFor(49, 100, 50), { grade: 'Fail', points: 0 });
+  assert.deepEqual(gradeFor(100, 100, 50), { grade: 'Pass', points: 1 });
+  assert.deepEqual(gradeFor(0, 0, 0), { grade: 'Fail', points: 0 }, 'a zero-max paper fails, not a divide-by-zero pass');
 });
 
 test('CMP-02c moderation keeps the raw mark and stores only the delta', async () => {
