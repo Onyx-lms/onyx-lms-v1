@@ -663,22 +663,41 @@ export class PlatformService {
    * way past, the same as grant()/revoke()/suspend() do for writes. An
    * unlogged read here would be indistinguishable from an exfiltration.
    */
-  async tenantGrades(id: number, actorId: number | null, opts: { limit?: number } = {}) {
+  async tenantGrades(id: number, actorId: number | null, opts: {
+    limit?: number; examId?: number; assessmentId?: number;
+  } = {}) {
     const tenant = await this.#requireTenant(id);
     const limit = clampLimit(opts.limit);
+    // Grades are read one exam or one assessment at a time now -- an
+    // operator picks which from the Examinations/Assessments list first, the
+    // same drill-down every other platform screen already uses, rather than
+    // one flat "most recent 200 marks, mixing every exam and assessment at
+    // this institution" table. Scoped to one exam/assessment, the 200-row
+    // cap that made sense for an institution-wide feed no longer applies --
+    // a single exam's cohort is naturally bounded -- so it reads the whole
+    // set instead of just the most recent slice of it.
+    const scoped = Boolean(opts.examId) || Boolean(opts.assessmentId);
+    const rowCap = scoped ? SCAN_CAP : limit + 1;
 
     const [markQ, attemptQ] = await Promise.all([
-      this.#db.from('onyx_exam_marks')
-        .select('id, exam_id, user_id, raw_marks, moderation_delta, final_marks, grade, grade_points, status, published_at, created_at')
-        .eq('tenant_id', id).order('created_at', { ascending: false }).limit(limit + 1),
-      this.#db.from('onyx_assessment_attempts')
-        .select('id, assessment_id, user_id, attempt, score, max_score, status, submitted_at')
-        .eq('tenant_id', id).not('score', 'is', null)
-        .order('submitted_at', { ascending: false, nullsFirst: false }).limit(limit + 1),
+      opts.assessmentId ? Promise.resolve({ data: [] as Record<string, unknown>[] }) : (() => {
+        let q = this.#db.from('onyx_exam_marks')
+          .select('id, exam_id, user_id, raw_marks, moderation_delta, final_marks, grade, grade_points, status, published_at, created_at')
+          .eq('tenant_id', id);
+        if (opts.examId) q = q.eq('exam_id', opts.examId);
+        return q.order('created_at', { ascending: false }).limit(rowCap);
+      })(),
+      opts.examId ? Promise.resolve({ data: [] as Record<string, unknown>[] }) : (() => {
+        let q = this.#db.from('onyx_assessment_attempts')
+          .select('id, assessment_id, user_id, attempt, score, max_score, status, submitted_at')
+          .eq('tenant_id', id).not('score', 'is', null);
+        if (opts.assessmentId) q = q.eq('assessment_id', opts.assessmentId);
+        return q.order('submitted_at', { ascending: false, nullsFirst: false }).limit(rowCap);
+      })(),
     ]);
 
-    const markRows = (markQ.data ?? []).slice(0, limit);
-    const attemptRows = (attemptQ.data ?? []).slice(0, limit);
+    const markRows = scoped ? (markQ.data ?? []) : (markQ.data ?? []).slice(0, limit);
+    const attemptRows = scoped ? (attemptQ.data ?? []) : (attemptQ.data ?? []).slice(0, limit);
 
     const examIds = [...new Set(markRows.map((m) => num(m.exam_id)))];
     const assessmentIds = [...new Set(attemptRows.map((a) => num(a.assessment_id)))];
@@ -808,14 +827,16 @@ export class PlatformService {
       exam_marks_read: examMarks.length,
       assessment_grades_read: assessmentGrades.length,
       limit,
+      exam_id: opts.examId ?? null,
+      assessment_id: opts.assessmentId ?? null,
     });
 
     return {
       tenant: { id: num(tenant.id), name: String(tenant.name), slug: String(tenant.slug) },
       limit,
       capped: {
-        exam_marks: (markQ.data ?? []).length > limit,
-        assessment_grades: (attemptQ.data ?? []).length > limit,
+        exam_marks: !scoped && (markQ.data ?? []).length > limit,
+        assessment_grades: !scoped && (attemptQ.data ?? []).length > limit,
       },
       exam_marks: examMarks,
       assessment_grades: assessmentGrades,

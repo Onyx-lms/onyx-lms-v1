@@ -92,8 +92,15 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
     const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const q = validate(z.object({
       limit: z.coerce.number().int().positive().max(200).optional(),
+      // Present together with the exam/assessment list itself: pick one from
+      // there, land here scoped to it. Mutually exclusive by construction --
+      // a caller sending both gets the exam, since exam_id is checked first
+      // in the service -- but nothing here forces only one to be sent.
+      exam_id: z.coerce.number().int().positive().optional(),
+      assessment_id: z.coerce.number().int().positive().optional(),
     }), req.query ?? {});
-    return ok(await ctx.onyxPlatform.tenantGrades(idOf(req), claims.user_id, q));
+    return ok(await ctx.onyxPlatform.tenantGrades(idOf(req), claims.user_id,
+      { limit: q.limit, examId: q.exam_id, assessmentId: q.assessment_id }));
   });
 
   app.post('/api/onyx/platform/tenants', async (req) => {

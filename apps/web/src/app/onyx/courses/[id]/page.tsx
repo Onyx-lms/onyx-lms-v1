@@ -65,9 +65,21 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
     ])
     : [null, null, null, null];
 
+  // Every published assignment, not only the ones with a deadline -- this
+  // used to filter on `a.due_at` too, so an assignment created with no due
+  // date (due_at is optional both in the form and in AssignmentsService)
+  // was published, gradable, submittable by a direct link... and never
+  // listed anywhere a learner would find it. relativeDue(null) already
+  // renders "No due date", so undated ones just sort last instead of
+  // vanishing.
   const due = (assignments ?? [])
-    .filter((a) => a.status === 'published' && a.due_at)
-    .sort((a, b) => Date.parse(a.due_at!) - Date.parse(b.due_at!));
+    .filter((a) => a.status === 'published')
+    .sort((a, b) => {
+      if (!a.due_at && !b.due_at) return 0;
+      if (!a.due_at) return 1;
+      if (!b.due_at) return -1;
+      return Date.parse(a.due_at) - Date.parse(b.due_at);
+    });
 
   // The next thing to do: the first lesson that is neither finished nor locked,
   // in the order the course is taught. This is what the hero's button points
@@ -409,8 +421,8 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
 
           {due.length ? (
             <section>
-              <SectionHead title="Due" />
-              <RowList label="Work due on this course">
+              <SectionHead title="Assignments" />
+              <RowList label="Assignments set on this course">
                 {due.map((a) => {
                   const when = relativeDue(a.due_at);
                   return (

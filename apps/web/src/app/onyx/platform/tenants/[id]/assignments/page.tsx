@@ -1,7 +1,8 @@
+import Link from 'next/link';
 import type { Metadata } from 'next';
 import { requirePlatformSession } from '@/lib/onyx-platform-session';
 import {
-  attempt, DueCell, SCROLLER, TenantBackLink, Unavailable, Workflow, type AcademicsPayload,
+  attempt, DueCell, SCROLLER, Unavailable, Workflow, type AcademicsPayload,
 } from '@/lib/onyx-platform-tenant';
 import {
   CreateAssignmentForm, AssignmentEditToggle, AssignmentSubmissionsToggle,
@@ -23,7 +24,15 @@ export default async function OnyxPlatformAssignmentsPage(
 
   return (
     <div className="min-w-0 space-y-4">
-      <TenantBackLink tenantId={tenantId} />
+      {/* Assignments live under Courses now, not their own nav entry -- see
+          onyx-platform-tenant-nav.tsx. Back goes there, not to the
+          institution root, since that is genuinely where this was reached
+          from. */}
+      <Link href={'/onyx/platform/tenants/' + tenantId + '/courses'}
+        className="inline-flex items-center gap-1 text-[13px] font-semibold text-muted
+                   hover:text-brand-700 hover:underline">
+        &larr; Courses
+      </Link>
       <CreateAssignmentForm tenantId={tenantId} courses={courses} />
 
       {academics === null ? <Unavailable what="assignment list" /> : (

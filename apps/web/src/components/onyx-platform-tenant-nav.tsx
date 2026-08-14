@@ -28,10 +28,18 @@ const GROUPS: TenantNavGroup[] = [
     { seg: 'faculty', label: 'Faculty', icon: 'user' },
     { seg: 'staff', label: 'Other roles', icon: 'shield' },
   ] },
+  // Assignments has no nav entry here on purpose -- it isn't a top-level
+  // destination on the tenant side either (there is no student/faculty
+  // "Assignments" nav item; onyx-nav.ts has none). An assignment is
+  // course-scoped, created and read from inside a course, the same way
+  // courses/[id]/page.tsx does it for faculty and students. Listing it here
+  // as a sibling of Assessments and Examinations implied a second,
+  // coequal testing system that does not exist in the product -- the
+  // platform's own assignments page is still reachable, linked from
+  // Courses below, where the real feature actually lives.
   { label: 'Academics', items: [
     { seg: 'courses', label: 'Courses', icon: 'book' },
     { seg: 'timetable', label: 'Timetable', icon: 'calendar' },
-    { seg: 'assignments', label: 'Assignments', icon: 'edit' },
     { seg: 'examinations', label: 'Examinations', icon: 'award' },
     { seg: 'assessments', label: 'Assessments', icon: 'target' },
   ] },
