@@ -80,12 +80,17 @@ export function registerOnyxTenancyRoutes(app: FastifyInstance, ctx: AppContext)
 
   app.get('/api/onyx/me', async (req) => {
     const claims = requireOnyx(asReq(req), ctx.jwtSecret);
-    const memberships = await ctx.onyxTenancy.membershipsFor(claims.user_id);
+    const [memberships, name, tenant] = await Promise.all([
+      ctx.onyxTenancy.membershipsFor(claims.user_id),
+      ctx.onyxTenancy.userName(claims.user_id),
+      ctx.onyxTenancy.tenant(claims.tenant_id),
+    ]);
     return ok({
       user_id: claims.user_id,
+      name,
       email: claims.email,
       role: claims.tenant_role,
-      tenant: await ctx.onyxTenancy.tenant(claims.tenant_id),
+      tenant,
       memberships: memberships.map((m) => ({ tenant: m.tenant, role: m.role })),
     });
   });

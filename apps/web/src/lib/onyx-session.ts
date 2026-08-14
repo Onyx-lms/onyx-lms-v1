@@ -29,6 +29,8 @@ export interface Tenant { id: number; name: string; slug: string; plan: string |
 
 export interface Me {
   user_id: number;
+  /** Null for an account somehow missing a name row -- email is the fallback. */
+  name: string | null;
   email: string;
   role: Role;
   tenant: Tenant;

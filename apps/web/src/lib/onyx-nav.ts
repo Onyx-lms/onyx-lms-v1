@@ -80,7 +80,7 @@ const NAV: Record<Role, OnyxNavGroup[]> = {
     { items: [I.dashboard, I.courses, I.practice, I.spaces] },
     { label: 'Assessment', items: [I.assess, I.exams, I.invigilate] },
     { label: 'Teaching', items: [I.programs, I.timetable, I.allocate, I.people] },
-    { label: 'Support', items: [I.mentor, I.inbox] },
+    { label: 'Support', items: [I.mentor, I.inbox, I.profile] },
   ],
   // Dashboard dropped from both: `/onyx/dashboard` redirects exams and
   // placement straight back to the pages already below (see the dashboard's
@@ -95,18 +95,19 @@ const NAV: Record<Role, OnyxNavGroup[]> = {
   // picker on that screen -- browsing the catalogue was never the step.
   exams: [
     { label: 'Examinations', items: [I.assess, I.invigilate, I.exams, I.timetable, I.certs] },
-    { items: [I.inbox] },
+    { items: [I.inbox, I.profile] },
   ],
   placement: [
     { label: 'Placement', items: [I.placement, I.jobs, I.interviews, I.contests, I.certs] },
-    { items: [I.inbox] },
+    { items: [I.inbox, I.profile] },
   ],
   // An employer is an outsider with an account: their own posts and the
   // interviews they are conducting, and nothing that belongs to the institution.
-  employer: [{ items: [I.posts, I.interviews, I.inbox] }],
-  // A guardian has exactly one page -- everything they see is derived from
-  // links other people control, so there is nowhere else to navigate to.
-  guardian: [{ items: [I.family, I.inbox] }],
+  employer: [{ items: [I.posts, I.interviews, I.inbox, I.profile] }],
+  // A guardian has one page of their own (Family) plus the inbox and their own
+  // account profile -- everything ELSE they see is derived from links other
+  // people control, which is the reason there is nowhere else to navigate to.
+  guardian: [{ items: [I.family, I.inbox, I.profile] }],
   admin: [
     // Practice (a learner's own coding drills) dropped from here: it is not
     // a job an administrator does, unlike Workspaces, which stays -- an
@@ -123,7 +124,7 @@ const NAV: Record<Role, OnyxNavGroup[]> = {
     { label: 'Campus', items: [I.programs, I.timetable, I.allocate,
       I.students, I.facultyList, I.finance] },
     { label: 'Career', items: [I.placement, I.jobs] },
-    { label: 'Operations', items: [I.mentor, I.inbox, I.audit] },
+    { label: 'Operations', items: [I.mentor, I.inbox, I.audit, I.profile] },
   ],
 };
 

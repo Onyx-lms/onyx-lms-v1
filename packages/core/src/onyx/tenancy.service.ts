@@ -159,6 +159,20 @@ export class TenancyService {
     return { user: { id: user.id, email: user.email, name: user.name }, membership };
   }
 
+  /**
+   * Just a name, for `GET /me` -- the token carries email because email is
+   * how a session is issued, but it never carried a name, so "Your profile"
+   * had nothing to greet anyone by except an inbox address. One row, not
+   * folded into the token: the alternative (embedding name in the JWT at
+   * login) means every session issued before that change is missing it until
+   * it naturally expires, for a field this page is the only caller of.
+   */
+  async userName(userId: number): Promise<string | null> {
+    const { data } = await this.#db.from('onyx_users')
+      .select('name').eq('id', userId).maybeSingle();
+    return data?.name ? String(data.name) : null;
+  }
+
   async members(tenantId: number, filters: { role?: Role; search?: string } = {}) {
     let query = this.#db.from('onyx_memberships')
       .select(MEMBERSHIP_COLUMNS).eq('tenant_id', tenantId);
