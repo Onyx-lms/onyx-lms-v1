@@ -58,7 +58,7 @@ function Shell({ title, open, setOpen, cta, children, onSubmit, pending, error }
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-bold">{title}</h3>
         <button type="button" onClick={() => setOpen(false)} aria-label="Cancel"
-          className="grid h-8 w-8 place-items-center rounded-lg border border-line text-muted">
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line text-muted">
           ✕
         </button>
       </div>
@@ -159,7 +159,7 @@ export function EnterMarks({ examId, maxMarks, candidates }: {
       <ul className="divide-y divide-line rounded-xl border border-line">
         {candidates.map((c) => (
           <li key={c.user_id} className="flex items-center gap-3 px-3 py-2">
-            <span className="flex-1 text-sm">{c.name}</span>
+            <span className="min-w-0 flex-1 truncate text-sm">{c.name}</span>
             <label className="sr-only" htmlFor={'mark-' + c.user_id}>
               Marks for {c.name}
             </label>
@@ -242,7 +242,7 @@ export function ExamEditForm({ examId, exam }: {
         <input id="ex-title" name="title" defaultValue={exam.title} required maxLength={255}
           className={input + ' mt-1 w-full'} />
       </div>
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid gap-2.5 sm:grid-cols-2">
         <div>
           <label className="block text-xs font-semibold text-slate-700" htmlFor="ex-starts">
             Starts
@@ -258,7 +258,7 @@ export function ExamEditForm({ examId, exam }: {
             defaultValue={exam.duration_minutes} className={input + ' mt-1 w-full'} />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid gap-2.5 sm:grid-cols-2">
         <div>
           <label className="block text-xs font-semibold text-slate-700" htmlFor="ex-max">
             Out of
@@ -315,7 +315,8 @@ export function MarkOverride({ markId, maxMarks, current }: {
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)}
-        className="rounded-md p-0.5 text-faint hover:bg-brand-50 hover:text-brand-600"
+        className="grid min-h-[32px] min-w-[32px] place-items-center rounded-md text-faint
+                   hover:bg-brand-50 hover:text-brand-600"
         aria-label="Override this mark">
         <Icon name="edit" className="h-3.5 w-3.5" />
       </button>
@@ -413,7 +414,7 @@ export function AssessmentEditForm({ assessmentId, assessment }: {
         <input id="as-title" name="title" defaultValue={assessment.title} required maxLength={255}
           className={input + ' mt-1 w-full'} />
       </div>
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid gap-2.5 sm:grid-cols-2">
         <div>
           <label className="block text-xs font-semibold text-slate-700" htmlFor="as-opens">
             Opens
@@ -429,7 +430,7 @@ export function AssessmentEditForm({ assessmentId, assessment }: {
             defaultValue={localValue(assessment.closes_at)} className={input + ' mt-1 w-full'} />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid gap-2.5 sm:grid-cols-2">
         <div>
           <label className="block text-xs font-semibold text-slate-700" htmlFor="as-duration">
             Duration (min)
@@ -485,7 +486,8 @@ export function ScoreOverride({ attemptId, maxScore, current }: {
   if (!open) {
     return (
       <button type="button" onClick={() => setOpen(true)}
-        className="rounded-md p-0.5 text-faint hover:bg-brand-50 hover:text-brand-600"
+        className="grid min-h-[32px] min-w-[32px] place-items-center rounded-md text-faint
+                   hover:bg-brand-50 hover:text-brand-600"
         aria-label="Override this score">
         <Icon name="edit" className="h-3.5 w-3.5" />
       </button>
@@ -901,7 +903,8 @@ export function TestCases({ problemId, initial, published }: {
               </label>
               {cases.length > 1 ? (
                 <button type="button" aria-label={'Remove ' + (c.name || 'case ' + (i + 1))}
-                  className="text-xs font-semibold text-rose-700 hover:underline"
+                  className="inline-flex min-h-[36px] items-center px-2 text-xs font-semibold
+                             text-rose-700 hover:underline"
                   onClick={() => setCases((cs) => cs.filter((_, j) => j !== i))}>
                   Remove
                 </button>
@@ -1004,7 +1007,7 @@ export function ProblemSettingsForm({ problemId, problem, courses }: {
         <textarea id="ps-stmt" rows={4} value={statement}
           onChange={(e) => setStatement(e.target.value)} className={input + ' mt-1 w-full'} />
       </div>
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid gap-2.5 sm:grid-cols-2">
         <div>
           <label className="block text-xs font-semibold text-slate-700" htmlFor="ps-diff">
             Difficulty
@@ -1027,7 +1030,7 @@ export function ProblemSettingsForm({ problemId, problem, courses }: {
         <input id="ps-tags" value={tags} onChange={(e) => setTags(e.target.value)}
           placeholder="arrays, easy" className={input + ' mt-1 w-full'} />
       </div>
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid gap-2.5 sm:grid-cols-2">
         <div>
           <label className="block text-xs font-semibold text-slate-700" htmlFor="ps-time">
             Time per case (s)
@@ -1462,7 +1465,7 @@ export function RecordRound({ roundId, roundName, candidates }: {
       <ul className="divide-y divide-line rounded-xl border border-line">
         {candidates.map((c) => (
           <li key={c.user_id} className="flex items-center gap-3 px-3 py-2">
-            <span className="flex-1 text-sm">{c.name}</span>
+            <span className="min-w-0 flex-1 truncate text-sm">{c.name}</span>
             <label className="sr-only" htmlFor={'rd-' + roundId + '-' + c.user_id}>
               Outcome for {c.name}
             </label>
@@ -1647,7 +1650,8 @@ export function LinkEmployerAccount({ employerId, candidates }: {
         {pending ? '…' : 'Link'}
       </button>
       <button type="button" onClick={() => setOpen(false)}
-        className="text-[11px] font-semibold text-faint hover:text-slate-600">
+        className="inline-flex min-h-[36px] items-center px-2 text-[11px] font-semibold
+                   text-faint hover:text-slate-600">
         Cancel
       </button>
       {error ? <span role="alert" className="text-[11px] text-rose-700">{error}</span> : null}
@@ -1824,7 +1828,7 @@ export function CourseFacultyManager({ courseId, current, options, canManage }: 
             <li key={f.user_id}
               className="flex items-center justify-between gap-2 rounded-xl border border-line
                          bg-white px-3 py-2 text-sm">
-              <span className="font-semibold">{f.name}</span>
+              <span className="min-w-0 truncate font-semibold">{f.name}</span>
               {canManage ? (
                 <button
                   type="button"
@@ -1836,7 +1840,8 @@ export function CourseFacultyManager({ courseId, current, options, canManage }: 
                     if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
                     router.refresh();
                   })}
-                  className="text-xs font-semibold text-rose-700 hover:underline disabled:opacity-50"
+                  className="inline-flex min-h-[36px] shrink-0 items-center px-2 text-xs
+                             font-semibold text-rose-700 hover:underline disabled:opacity-50"
                 >
                   Remove
                 </button>
@@ -1938,8 +1943,8 @@ export function CourseRosterManager({ courseId, roster, options, canManage }: {
                     if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
                     router.refresh();
                   })}
-                  className="shrink-0 text-xs font-semibold text-rose-700 hover:underline
-                             disabled:opacity-50"
+                  className="inline-flex min-h-[36px] shrink-0 items-center px-2 text-xs
+                             font-semibold text-rose-700 hover:underline disabled:opacity-50"
                 >
                   Withdraw
                 </button>
@@ -2005,8 +2010,9 @@ export function TimetableSlotDelete({ slotId }: { slotId: number }) {
   if (!confirming) {
     return (
       <button type="button" onClick={() => setConfirming(true)}
-        className="absolute right-1 top-1 rounded-md p-0.5 text-current opacity-60
-                   hover:bg-white/60 hover:opacity-100" aria-label="Remove this session">
+        className="absolute right-0.5 top-0.5 grid min-h-[32px] min-w-[32px] place-items-center
+                   rounded-md text-current opacity-60 hover:bg-white/60 hover:opacity-100"
+        aria-label="Remove this session">
         <Icon name="x" className="h-3 w-3" />
       </button>
     );
@@ -2086,7 +2092,7 @@ export function CourseSettingsForm({ courseId, course }: {
         <input id="cs-title" name="title" defaultValue={course.title} required maxLength={255}
           className={input + ' mt-1 w-full'} />
       </div>
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid gap-2.5 sm:grid-cols-2">
         <div>
           <label className="block text-xs font-semibold text-slate-700" htmlFor="cs-code">Code</label>
           <input id="cs-code" name="code" defaultValue={course.code} required maxLength={50}

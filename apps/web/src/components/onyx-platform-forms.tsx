@@ -564,7 +564,17 @@ export function MemberEditForm({ tenantId, person, onClose }: {
   );
 }
 
-/** The "Edit" toggle + panel, as one cell -- used by both the Students and Faculty tables. */
+/**
+ * The "Edit" toggle -- used by the Students, Faculty and Other roles tables.
+ *
+ * Used to expand inline inside its own trailing `<td>`, with a hard-coded
+ * `min-w-[280px]` fighting the rest of that row's columns for space -- on a
+ * phone, editing a member meant a form squeezed into one narrow slice of an
+ * already horizontally-scrolling table. A `Modal` needs no `<td>` at all: it
+ * escapes the table and centres itself over the whole viewport, the same
+ * idiom the sidebar's own create-forms (`CreateTenantForm`, `GrantAdminForm`)
+ * already use.
+ */
 export function MemberEditToggle({ tenantId, person }: {
   tenantId: number; person: PlatformPerson;
 }) {
@@ -573,9 +583,9 @@ export function MemberEditToggle({ tenantId, person }: {
     return <button type="button" onClick={() => setOpen(true)} className={linkButton}>Edit</button>;
   }
   return (
-    <div className="min-w-[280px] rounded-xl border border-line bg-slate-50 p-3">
+    <Modal title={'Edit ' + person.name} onClose={() => setOpen(false)}>
       <MemberEditForm tenantId={tenantId} person={person} onClose={() => setOpen(false)} />
-    </div>
+    </Modal>
   );
 }
 
@@ -592,39 +602,41 @@ export function ExamMarkEditToggle({ tenantId, markId, rawMarks, finalMarks }: {
     return <button type="button" onClick={() => setOpen(true)} className={linkButton}>Edit</button>;
   }
   return (
-    <form
-      className="flex flex-wrap items-end gap-2 rounded-xl border border-line bg-slate-50 p-3"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const data = new FormData(e.currentTarget);
-        setError(null);
-        start(async () => {
-          const res = await patch('onyx/platform/tenants/' + tenantId + '/exam-marks/' + markId, {
-            raw_marks: Number(data.get('raw_marks')),
-            final_marks: Number(data.get('final_marks')),
+    <Modal title="Override this mark" onClose={() => setOpen(false)}>
+      <form
+        className="flex flex-wrap items-end gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const data = new FormData(e.currentTarget);
+          setError(null);
+          start(async () => {
+            const res = await patch('onyx/platform/tenants/' + tenantId + '/exam-marks/' + markId, {
+              raw_marks: Number(data.get('raw_marks')),
+              final_marks: Number(data.get('final_marks')),
+            });
+            if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+            setOpen(false);
+            router.refresh();
           });
-          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
-          setOpen(false);
-          router.refresh();
-        });
-      }}
-    >
-      {error ? <p role="alert" className="w-full text-[12.5px] text-red-700">{error}</p> : null}
-      <div>
-        <label className={smallLabel} htmlFor={'raw-' + markId}>Raw</label>
-        <input id={'raw-' + markId} name="raw_marks" type="number" step="0.5"
-          defaultValue={rawMarks} required className={smallField + ' w-24'} />
-      </div>
-      <div>
-        <label className={smallLabel} htmlFor={'final-' + markId}>Final</label>
-        <input id={'final-' + markId} name="final_marks" type="number" step="0.5"
-          defaultValue={finalMarks} required className={smallField + ' w-24'} />
-      </div>
-      <button type="submit" disabled={pending} className={saveButton}>
-        {pending ? 'Saving…' : 'Save'}
-      </button>
-      <button type="button" onClick={() => setOpen(false)} className={cancelButton}>Cancel</button>
-    </form>
+        }}
+      >
+        {error ? <p role="alert" className="w-full text-[12.5px] text-red-700">{error}</p> : null}
+        <div>
+          <label className={smallLabel} htmlFor={'raw-' + markId}>Raw</label>
+          <input id={'raw-' + markId} name="raw_marks" type="number" step="0.5"
+            defaultValue={rawMarks} required className={smallField + ' w-24'} />
+        </div>
+        <div>
+          <label className={smallLabel} htmlFor={'final-' + markId}>Final</label>
+          <input id={'final-' + markId} name="final_marks" type="number" step="0.5"
+            defaultValue={finalMarks} required className={smallField + ' w-24'} />
+        </div>
+        <button type="submit" disabled={pending} className={saveButton}>
+          {pending ? 'Saving…' : 'Save'}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className={cancelButton}>Cancel</button>
+      </form>
+    </Modal>
   );
 }
 
@@ -771,7 +783,7 @@ function SubmissionCard({ tenantId, submission, onGraded }: {
           <div className="font-semibold">{submission.student?.name ?? 'Unknown'}</div>
           <div className="break-all text-[12.5px] text-muted">{submission.student?.email}</div>
         </div>
-        <div className="flex items-center gap-3 text-[12.5px]">
+        <div className="flex flex-wrap items-center gap-3 text-[12.5px]">
           <span>{submission.status}</span>
           <span className="tabular-nums">
             {submission.score == null ? 'Unmarked' : submission.score}
@@ -915,57 +927,58 @@ export function CourseEditToggle({ tenantId, course }: {
     return <button type="button" onClick={() => setOpen(true)} className={linkButton}>Edit</button>;
   }
   return (
-    <form
-      className="grid min-w-[320px] gap-2 rounded-xl border border-line bg-slate-50 p-3
-                 sm:grid-cols-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const data = new FormData(e.currentTarget);
-        setError(null);
-        start(async () => {
-          const res = await patch('onyx/platform/tenants/' + tenantId + '/courses/' + course.id, {
-            title: String(data.get('title') ?? ''),
-            code: String(data.get('code') ?? ''),
-            credits: Number(data.get('credits')),
-            status: Number(data.get('status')),
+    <Modal title={'Edit ' + course.title} onClose={() => setOpen(false)}>
+      <form
+        className="grid gap-2 sm:grid-cols-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const data = new FormData(e.currentTarget);
+          setError(null);
+          start(async () => {
+            const res = await patch('onyx/platform/tenants/' + tenantId + '/courses/' + course.id, {
+              title: String(data.get('title') ?? ''),
+              code: String(data.get('code') ?? ''),
+              credits: Number(data.get('credits')),
+              status: Number(data.get('status')),
+            });
+            if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+            setOpen(false);
+            router.refresh();
           });
-          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
-          setOpen(false);
-          router.refresh();
-        });
-      }}
-    >
-      {error ? <p role="alert" className="col-span-full text-[12.5px] text-red-700">{error}</p> : null}
-      <div>
-        <label className={smallLabel} htmlFor={'c-title-' + course.id}>Title</label>
-        <input id={'c-title-' + course.id} name="title" defaultValue={course.title}
-          required className={smallField} />
-      </div>
-      <div>
-        <label className={smallLabel} htmlFor={'c-code-' + course.id}>Code</label>
-        <input id={'c-code-' + course.id} name="code" defaultValue={course.code}
-          required className={smallField} />
-      </div>
-      <div>
-        <label className={smallLabel} htmlFor={'c-credits-' + course.id}>Credits</label>
-        <input id={'c-credits-' + course.id} name="credits" type="number"
-          defaultValue={course.credits} required className={smallField} />
-      </div>
-      <div>
-        <label className={smallLabel} htmlFor={'c-status-' + course.id}>Status</label>
-        <select id={'c-status-' + course.id} name="status" defaultValue={course.status}
-          className={smallField}>
-          <option value={1}>Open</option>
-          <option value={0}>Draft</option>
-        </select>
-      </div>
-      <div className="col-span-full flex gap-2">
-        <button type="submit" disabled={pending} className={saveButton}>
-          {pending ? 'Saving…' : 'Save'}
-        </button>
-        <button type="button" onClick={() => setOpen(false)} className={cancelButton}>Cancel</button>
-      </div>
-    </form>
+        }}
+      >
+        {error ? <p role="alert" className="col-span-full text-[12.5px] text-red-700">{error}</p> : null}
+        <div>
+          <label className={smallLabel} htmlFor={'c-title-' + course.id}>Title</label>
+          <input id={'c-title-' + course.id} name="title" defaultValue={course.title}
+            required className={smallField} />
+        </div>
+        <div>
+          <label className={smallLabel} htmlFor={'c-code-' + course.id}>Code</label>
+          <input id={'c-code-' + course.id} name="code" defaultValue={course.code}
+            required className={smallField} />
+        </div>
+        <div>
+          <label className={smallLabel} htmlFor={'c-credits-' + course.id}>Credits</label>
+          <input id={'c-credits-' + course.id} name="credits" type="number"
+            defaultValue={course.credits} required className={smallField} />
+        </div>
+        <div>
+          <label className={smallLabel} htmlFor={'c-status-' + course.id}>Status</label>
+          <select id={'c-status-' + course.id} name="status" defaultValue={course.status}
+            className={smallField}>
+            <option value={1}>Open</option>
+            <option value={0}>Draft</option>
+          </select>
+        </div>
+        <div className="col-span-full flex gap-2">
+          <button type="submit" disabled={pending} className={saveButton}>
+            {pending ? 'Saving…' : 'Save'}
+          </button>
+          <button type="button" onClick={() => setOpen(false)} className={cancelButton}>Cancel</button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -983,63 +996,64 @@ export function AssignmentEditToggle({ tenantId, assignment }: {
     return <button type="button" onClick={() => setOpen(true)} className={linkButton}>Edit</button>;
   }
   return (
-    <form
-      className="grid min-w-[320px] gap-2 rounded-xl border border-line bg-slate-50 p-3
-                 sm:grid-cols-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const data = new FormData(e.currentTarget);
-        setError(null);
-        start(async () => {
-          const dueRaw = String(data.get('due_at') ?? '');
-          const res = await patch(
-            'onyx/platform/tenants/' + tenantId + '/assignments/' + assignment.id,
-            {
-              title: String(data.get('title') ?? ''),
-              due_at: dueRaw ? new Date(dueRaw).toISOString() : null,
-              total_points: Number(data.get('total_points')),
-              status: String(data.get('status') ?? assignment.status),
-            },
-          );
-          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
-          setOpen(false);
-          router.refresh();
-        });
-      }}
-    >
-      {error ? <p role="alert" className="col-span-full text-[12.5px] text-red-700">{error}</p> : null}
-      <div className="col-span-full">
-        <label className={smallLabel} htmlFor={'a-title-' + assignment.id}>Title</label>
-        <input id={'a-title-' + assignment.id} name="title" defaultValue={assignment.title}
-          required className={smallField} />
-      </div>
-      <div>
-        <label className={smallLabel} htmlFor={'a-due-' + assignment.id}>Due</label>
-        <input id={'a-due-' + assignment.id} name="due_at" type="datetime-local"
-          defaultValue={assignment.due_at ? assignment.due_at.slice(0, 16) : ''}
-          className={smallField} />
-      </div>
-      <div>
-        <label className={smallLabel} htmlFor={'a-points-' + assignment.id}>Out of</label>
-        <input id={'a-points-' + assignment.id} name="total_points" type="number"
-          defaultValue={assignment.total_points} required className={smallField} />
-      </div>
-      <div>
-        <label className={smallLabel} htmlFor={'a-status-' + assignment.id}>Status</label>
-        <select id={'a-status-' + assignment.id} name="status" defaultValue={assignment.status}
-          className={smallField}>
-          <option value="draft">Draft</option>
-          <option value="published">Published</option>
-          <option value="closed">Closed</option>
-        </select>
-      </div>
-      <div className="col-span-full flex gap-2">
-        <button type="submit" disabled={pending} className={saveButton}>
-          {pending ? 'Saving…' : 'Save'}
-        </button>
-        <button type="button" onClick={() => setOpen(false)} className={cancelButton}>Cancel</button>
-      </div>
-    </form>
+    <Modal title={'Edit ' + assignment.title} onClose={() => setOpen(false)}>
+      <form
+        className="grid gap-2 sm:grid-cols-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const data = new FormData(e.currentTarget);
+          setError(null);
+          start(async () => {
+            const dueRaw = String(data.get('due_at') ?? '');
+            const res = await patch(
+              'onyx/platform/tenants/' + tenantId + '/assignments/' + assignment.id,
+              {
+                title: String(data.get('title') ?? ''),
+                due_at: dueRaw ? new Date(dueRaw).toISOString() : null,
+                total_points: Number(data.get('total_points')),
+                status: String(data.get('status') ?? assignment.status),
+              },
+            );
+            if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+            setOpen(false);
+            router.refresh();
+          });
+        }}
+      >
+        {error ? <p role="alert" className="col-span-full text-[12.5px] text-red-700">{error}</p> : null}
+        <div className="col-span-full">
+          <label className={smallLabel} htmlFor={'a-title-' + assignment.id}>Title</label>
+          <input id={'a-title-' + assignment.id} name="title" defaultValue={assignment.title}
+            required className={smallField} />
+        </div>
+        <div>
+          <label className={smallLabel} htmlFor={'a-due-' + assignment.id}>Due</label>
+          <input id={'a-due-' + assignment.id} name="due_at" type="datetime-local"
+            defaultValue={assignment.due_at ? assignment.due_at.slice(0, 16) : ''}
+            className={smallField} />
+        </div>
+        <div>
+          <label className={smallLabel} htmlFor={'a-points-' + assignment.id}>Out of</label>
+          <input id={'a-points-' + assignment.id} name="total_points" type="number"
+            defaultValue={assignment.total_points} required className={smallField} />
+        </div>
+        <div>
+          <label className={smallLabel} htmlFor={'a-status-' + assignment.id}>Status</label>
+          <select id={'a-status-' + assignment.id} name="status" defaultValue={assignment.status}
+            className={smallField}>
+            <option value="draft">Draft</option>
+            <option value="published">Published</option>
+            <option value="closed">Closed</option>
+          </select>
+        </div>
+        <div className="col-span-full flex gap-2">
+          <button type="submit" disabled={pending} className={saveButton}>
+            {pending ? 'Saving…' : 'Save'}
+          </button>
+          <button type="button" onClick={() => setOpen(false)} className={cancelButton}>Cancel</button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -1060,70 +1074,71 @@ export function AssessmentEditToggle({ tenantId, assessment }: {
     return <button type="button" onClick={() => setOpen(true)} className={linkButton}>Edit</button>;
   }
   return (
-    <form
-      className="grid min-w-[320px] gap-2 rounded-xl border border-line bg-slate-50 p-3
-                 sm:grid-cols-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const data = new FormData(e.currentTarget);
-        setError(null);
-        start(async () => {
-          const closesRaw = String(data.get('closes_at') ?? '');
-          const passRaw = String(data.get('pass_mark') ?? '');
-          const res = await patch(
-            'onyx/platform/tenants/' + tenantId + '/assessments/' + assessment.id,
-            {
-              title: String(data.get('title') ?? ''),
-              closes_at: closesRaw ? new Date(closesRaw).toISOString() : null,
-              pass_mark: passRaw ? Number(passRaw) : null,
-              duration_minutes: Number(data.get('duration_minutes')),
-              status: String(data.get('status') ?? assessment.status),
-            },
-          );
-          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
-          setOpen(false);
-          router.refresh();
-        });
-      }}
-    >
-      {error ? <p role="alert" className="col-span-full text-[12.5px] text-red-700">{error}</p> : null}
-      <div className="col-span-full">
-        <label className={smallLabel} htmlFor={'as-title-' + assessment.id}>Title</label>
-        <input id={'as-title-' + assessment.id} name="title" defaultValue={assessment.title}
-          required className={smallField} />
-      </div>
-      <div>
-        <label className={smallLabel} htmlFor={'as-closes-' + assessment.id}>Closes</label>
-        <input id={'as-closes-' + assessment.id} name="closes_at" type="datetime-local"
-          defaultValue={assessment.closes_at ? assessment.closes_at.slice(0, 16) : ''}
-          className={smallField} />
-      </div>
-      <div>
-        <label className={smallLabel} htmlFor={'as-pass-' + assessment.id}>Pass mark</label>
-        <input id={'as-pass-' + assessment.id} name="pass_mark" type="number"
-          defaultValue={assessment.pass_mark ?? ''} className={smallField} />
-      </div>
-      <div>
-        <label className={smallLabel} htmlFor={'as-dur-' + assessment.id}>Minutes</label>
-        <input id={'as-dur-' + assessment.id} name="duration_minutes" type="number"
-          defaultValue={assessment.duration_minutes} required className={smallField} />
-      </div>
-      <div>
-        <label className={smallLabel} htmlFor={'as-status-' + assessment.id}>Status</label>
-        <select id={'as-status-' + assessment.id} name="status" defaultValue={assessment.status}
-          className={smallField}>
-          <option value="draft">Draft</option>
-          <option value="published">Published</option>
-          <option value="closed">Closed</option>
-        </select>
-      </div>
-      <div className="col-span-full flex gap-2">
-        <button type="submit" disabled={pending} className={saveButton}>
-          {pending ? 'Saving…' : 'Save'}
-        </button>
-        <button type="button" onClick={() => setOpen(false)} className={cancelButton}>Cancel</button>
-      </div>
-    </form>
+    <Modal title={'Edit ' + assessment.title} onClose={() => setOpen(false)}>
+      <form
+        className="grid gap-2 sm:grid-cols-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const data = new FormData(e.currentTarget);
+          setError(null);
+          start(async () => {
+            const closesRaw = String(data.get('closes_at') ?? '');
+            const passRaw = String(data.get('pass_mark') ?? '');
+            const res = await patch(
+              'onyx/platform/tenants/' + tenantId + '/assessments/' + assessment.id,
+              {
+                title: String(data.get('title') ?? ''),
+                closes_at: closesRaw ? new Date(closesRaw).toISOString() : null,
+                pass_mark: passRaw ? Number(passRaw) : null,
+                duration_minutes: Number(data.get('duration_minutes')),
+                status: String(data.get('status') ?? assessment.status),
+              },
+            );
+            if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+            setOpen(false);
+            router.refresh();
+          });
+        }}
+      >
+        {error ? <p role="alert" className="col-span-full text-[12.5px] text-red-700">{error}</p> : null}
+        <div className="col-span-full">
+          <label className={smallLabel} htmlFor={'as-title-' + assessment.id}>Title</label>
+          <input id={'as-title-' + assessment.id} name="title" defaultValue={assessment.title}
+            required className={smallField} />
+        </div>
+        <div>
+          <label className={smallLabel} htmlFor={'as-closes-' + assessment.id}>Closes</label>
+          <input id={'as-closes-' + assessment.id} name="closes_at" type="datetime-local"
+            defaultValue={assessment.closes_at ? assessment.closes_at.slice(0, 16) : ''}
+            className={smallField} />
+        </div>
+        <div>
+          <label className={smallLabel} htmlFor={'as-pass-' + assessment.id}>Pass mark</label>
+          <input id={'as-pass-' + assessment.id} name="pass_mark" type="number"
+            defaultValue={assessment.pass_mark ?? ''} className={smallField} />
+        </div>
+        <div>
+          <label className={smallLabel} htmlFor={'as-dur-' + assessment.id}>Minutes</label>
+          <input id={'as-dur-' + assessment.id} name="duration_minutes" type="number"
+            defaultValue={assessment.duration_minutes} required className={smallField} />
+        </div>
+        <div>
+          <label className={smallLabel} htmlFor={'as-status-' + assessment.id}>Status</label>
+          <select id={'as-status-' + assessment.id} name="status" defaultValue={assessment.status}
+            className={smallField}>
+            <option value="draft">Draft</option>
+            <option value="published">Published</option>
+            <option value="closed">Closed</option>
+          </select>
+        </div>
+        <div className="col-span-full flex gap-2">
+          <button type="submit" disabled={pending} className={saveButton}>
+            {pending ? 'Saving…' : 'Save'}
+          </button>
+          <button type="button" onClick={() => setOpen(false)} className={cancelButton}>Cancel</button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -1144,73 +1159,74 @@ export function ExamEditToggle({ tenantId, exam }: {
     return <button type="button" onClick={() => setOpen(true)} className={linkButton}>Edit</button>;
   }
   return (
-    <form
-      className="grid min-w-[340px] gap-2 rounded-xl border border-line bg-slate-50 p-3
-                 sm:grid-cols-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        const data = new FormData(e.currentTarget);
-        setError(null);
-        start(async () => {
-          const startsRaw = String(data.get('starts_at') ?? '');
-          const res = await patch('onyx/platform/tenants/' + tenantId + '/exams/' + exam.id, {
-            title: String(data.get('title') ?? ''),
-            starts_at: startsRaw ? new Date(startsRaw).toISOString() : null,
-            duration_minutes: Number(data.get('duration_minutes')),
-            max_marks: Number(data.get('max_marks')),
-            pass_marks: Number(data.get('pass_marks')),
-            status: String(data.get('status') ?? exam.status),
+    <Modal title={'Edit ' + exam.title} onClose={() => setOpen(false)}>
+      <form
+        className="grid gap-2 sm:grid-cols-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const data = new FormData(e.currentTarget);
+          setError(null);
+          start(async () => {
+            const startsRaw = String(data.get('starts_at') ?? '');
+            const res = await patch('onyx/platform/tenants/' + tenantId + '/exams/' + exam.id, {
+              title: String(data.get('title') ?? ''),
+              starts_at: startsRaw ? new Date(startsRaw).toISOString() : null,
+              duration_minutes: Number(data.get('duration_minutes')),
+              max_marks: Number(data.get('max_marks')),
+              pass_marks: Number(data.get('pass_marks')),
+              status: String(data.get('status') ?? exam.status),
+            });
+            if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+            setOpen(false);
+            router.refresh();
           });
-          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
-          setOpen(false);
-          router.refresh();
-        });
-      }}
-    >
-      {error ? <p role="alert" className="col-span-full text-[12.5px] text-red-700">{error}</p> : null}
-      <div className="col-span-full">
-        <label className={smallLabel} htmlFor={'ex-title-' + exam.id}>Title</label>
-        <input id={'ex-title-' + exam.id} name="title" defaultValue={exam.title}
-          required className={smallField} />
-      </div>
-      <div>
-        <label className={smallLabel} htmlFor={'ex-starts-' + exam.id}>Starts</label>
-        <input id={'ex-starts-' + exam.id} name="starts_at" type="datetime-local"
-          defaultValue={exam.starts_at ? exam.starts_at.slice(0, 16) : ''}
-          className={smallField} />
-      </div>
-      <div>
-        <label className={smallLabel} htmlFor={'ex-dur-' + exam.id}>Minutes</label>
-        <input id={'ex-dur-' + exam.id} name="duration_minutes" type="number"
-          defaultValue={exam.duration_minutes} required className={smallField} />
-      </div>
-      <div>
-        <label className={smallLabel} htmlFor={'ex-max-' + exam.id}>Out of</label>
-        <input id={'ex-max-' + exam.id} name="max_marks" type="number"
-          defaultValue={exam.max_marks} required className={smallField} />
-      </div>
-      <div>
-        <label className={smallLabel} htmlFor={'ex-pass-' + exam.id}>Pass mark</label>
-        <input id={'ex-pass-' + exam.id} name="pass_marks" type="number"
-          defaultValue={exam.pass_marks} required className={smallField} />
-      </div>
-      <div>
-        <label className={smallLabel} htmlFor={'ex-status-' + exam.id}>Status</label>
-        <select id={'ex-status-' + exam.id} name="status" defaultValue={exam.status}
-          className={smallField}>
-          <option value="draft">Draft</option>
-          <option value="scheduled">Scheduled</option>
-          <option value="completed">Completed</option>
-          <option value="cancelled">Cancelled</option>
-        </select>
-      </div>
-      <div className="col-span-full flex gap-2">
-        <button type="submit" disabled={pending} className={saveButton}>
-          {pending ? 'Saving…' : 'Save'}
-        </button>
-        <button type="button" onClick={() => setOpen(false)} className={cancelButton}>Cancel</button>
-      </div>
-    </form>
+        }}
+      >
+        {error ? <p role="alert" className="col-span-full text-[12.5px] text-red-700">{error}</p> : null}
+        <div className="col-span-full">
+          <label className={smallLabel} htmlFor={'ex-title-' + exam.id}>Title</label>
+          <input id={'ex-title-' + exam.id} name="title" defaultValue={exam.title}
+            required className={smallField} />
+        </div>
+        <div>
+          <label className={smallLabel} htmlFor={'ex-starts-' + exam.id}>Starts</label>
+          <input id={'ex-starts-' + exam.id} name="starts_at" type="datetime-local"
+            defaultValue={exam.starts_at ? exam.starts_at.slice(0, 16) : ''}
+            className={smallField} />
+        </div>
+        <div>
+          <label className={smallLabel} htmlFor={'ex-dur-' + exam.id}>Minutes</label>
+          <input id={'ex-dur-' + exam.id} name="duration_minutes" type="number"
+            defaultValue={exam.duration_minutes} required className={smallField} />
+        </div>
+        <div>
+          <label className={smallLabel} htmlFor={'ex-max-' + exam.id}>Out of</label>
+          <input id={'ex-max-' + exam.id} name="max_marks" type="number"
+            defaultValue={exam.max_marks} required className={smallField} />
+        </div>
+        <div>
+          <label className={smallLabel} htmlFor={'ex-pass-' + exam.id}>Pass mark</label>
+          <input id={'ex-pass-' + exam.id} name="pass_marks" type="number"
+            defaultValue={exam.pass_marks} required className={smallField} />
+        </div>
+        <div>
+          <label className={smallLabel} htmlFor={'ex-status-' + exam.id}>Status</label>
+          <select id={'ex-status-' + exam.id} name="status" defaultValue={exam.status}
+            className={smallField}>
+            <option value="draft">Draft</option>
+            <option value="scheduled">Scheduled</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+        <div className="col-span-full flex gap-2">
+          <button type="submit" disabled={pending} className={saveButton}>
+            {pending ? 'Saving…' : 'Save'}
+          </button>
+          <button type="button" onClick={() => setOpen(false)} className={cancelButton}>Cancel</button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -1358,8 +1374,8 @@ export function RemoveMemberButton({ tenantId, membershipId, name }: {
     );
   }
   return (
-    <div className="flex items-center gap-1.5 whitespace-nowrap">
-      <span className="text-[12px] text-muted">Remove {name}?</span>
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="max-w-[14rem] truncate text-[12px] text-muted">Remove {name}?</span>
       <button
         type="button"
         disabled={pending}
@@ -1848,6 +1864,12 @@ export function FeeStructureStatusButtons({ tenantId, structureId, status }: {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Archive got the same visual weight and the same single-click-and-it's-
+  // done behavior as Publish/Back to draft, even though it is the one of the
+  // three that takes a fee structure out of use for every student on it.
+  // Reversible (Publish/Back to draft still bring it back), so a light inline
+  // confirm rather than DeleteTenantButton's type-to-confirm.
+  const [confirmingArchive, setConfirmingArchive] = useState(false);
 
   const setStatus = (next: string) => start(async () => {
     setError(null);
@@ -1855,6 +1877,7 @@ export function FeeStructureStatusButtons({ tenantId, structureId, status }: {
       'onyx/platform/tenants/' + tenantId + '/fee-structures/' + structureId + '/status',
       { status: next });
     if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+    setConfirmingArchive(false);
     router.refresh();
   });
 
@@ -1868,11 +1891,25 @@ export function FeeStructureStatusButtons({ tenantId, structureId, status }: {
         </button>
       ) : null}
       {status !== 'archived' ? (
-        <button type="button" disabled={pending} onClick={() => setStatus('archived')}
-          className="rounded-lg border border-red-600 px-2.5 py-1 text-[12px] font-semibold
-                     text-red-700 disabled:opacity-50">
-          Archive
-        </button>
+        confirmingArchive ? (
+          <span className="flex flex-wrap items-center gap-1.5 text-[12px] text-muted">
+            Archive this?
+            <button type="button" disabled={pending} onClick={() => setStatus('archived')}
+              className="font-bold text-red-700 hover:underline disabled:opacity-50">
+              {pending ? 'Archiving…' : 'Yes'}
+            </button>
+            <button type="button" onClick={() => setConfirmingArchive(false)}
+              className="text-muted hover:underline">
+              No
+            </button>
+          </span>
+        ) : (
+          <button type="button" disabled={pending} onClick={() => setConfirmingArchive(true)}
+            className="rounded-lg border border-slate-300 px-2.5 py-1 text-[12px] font-semibold
+                       text-red-700 disabled:opacity-50">
+            Archive
+          </button>
+        )
       ) : null}
       {status !== 'draft' ? (
         <button type="button" disabled={pending} onClick={() => setStatus('draft')}
@@ -1886,13 +1923,33 @@ export function FeeStructureStatusButtons({ tenantId, structureId, status }: {
   );
 }
 
-export function RevokeAdminButton({ id }: { id: number }) {
+/**
+ * Revoking someone's global platform power used to fire on a single click,
+ * with no confirm step at all -- the only high-consequence action in this
+ * file that had none (compare RemoveMemberButton just above, or
+ * DeleteTenantButton's type-to-confirm). One fat finger, and a colleague is
+ * locked out of the console. Same inline "Revoke {name}? Yes/No" pattern as
+ * RemoveMemberButton now.
+ */
+export function RevokeAdminButton({ id, name }: { id: number; name: string }) {
   const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  if (!confirming) {
+    return (
+      <button type="button" onClick={() => setConfirming(true)}
+        className="rounded-lg border border-red-600 px-3 py-1.5 text-xs text-red-700">
+        Revoke
+      </button>
+    );
+  }
   return (
-    <div>
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="max-w-[14rem] truncate text-[12px] text-muted">
+        Revoke {name}&rsquo;s admin access?
+      </span>
       <button
         type="button"
         disabled={pending}
@@ -1902,11 +1959,15 @@ export function RevokeAdminButton({ id }: { id: number }) {
           if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
           router.refresh();
         })}
-        className="rounded-lg border border-red-600 px-3 py-1.5 text-xs text-red-700 disabled:opacity-50"
+        className="text-[12.5px] font-bold text-red-700 hover:underline disabled:opacity-50"
       >
-        {pending ? 'Working…' : 'Revoke'}
+        {pending ? 'Revoking…' : 'Yes'}
       </button>
-      {error ? <p role="alert" className="mt-1 text-xs text-red-700">{error}</p> : null}
+      <button type="button" onClick={() => setConfirming(false)}
+        className="text-[12.5px] text-muted hover:underline">
+        No
+      </button>
+      {error ? <span role="alert" className="text-[12px] text-red-700">{error}</span> : null}
     </div>
   );
 }

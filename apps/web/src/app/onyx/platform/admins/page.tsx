@@ -57,7 +57,7 @@ export default async function OnyxPlatformAdminsPage() {
                 </span>
               </span>
               {admins.length > 1
-                ? <RevokeAdminButton id={a.id} />
+                ? <RevokeAdminButton id={a.id} name={a.user?.name ?? 'User #' + a.user_id} />
                 : <Pill tone="neutral">Last operator</Pill>}
             </li>
           ))}

@@ -308,7 +308,7 @@ export function OnyxSitPaper({ assessment, attempt }: {
                     : null}
                 </span>
               </div>
-              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">{q.prompt}</p>
+              <p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-800">{q.prompt}</p>
               <div className="mt-3">
                 <QuestionInput
                   question={q}

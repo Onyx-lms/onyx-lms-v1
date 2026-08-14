@@ -63,11 +63,11 @@ export function OnyxMarker({ paper }: { paper: MarkerPaper }) {
               </span>
               <span className="text-xs text-muted">{q.points} marks</span>
             </div>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-slate-800">{q.prompt}</p>
+            <p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-800">{q.prompt}</p>
 
             <div className="mt-3 rounded-lg bg-slate-50 p-3">
               <div className="text-xs uppercase tracking-wide text-muted">Answer given</div>
-              <p className="mt-1 whitespace-pre-wrap text-sm">
+              <p className="mt-1 whitespace-pre-wrap break-words text-sm">
                 {formatResponse(q.response, q.options) || <span className="text-muted">Nothing</span>}
               </p>
             </div>

@@ -32,7 +32,7 @@ export default async function OnyxPlatformFacultyPage(
                 <th scope="col">Role</th>
                 <th scope="col">Courses</th>
                 <th scope="col">Account</th>
-                <th scope="col">Joined</th>
+                <th scope="col" className="hidden sm:table-cell">Joined</th>
                 <th scope="col">&nbsp;</th>
               </>
             }
@@ -51,7 +51,9 @@ export default async function OnyxPlatformFacultyPage(
                 <td><Pill tone="brand">{p.role}</Pill></td>
                 <td className="tabular-nums">{p.teaching_count}</td>
                 <td><AccountState status={p.account_status} /></td>
-                <td className="whitespace-nowrap text-[12.5px] text-muted">{ago(p.joined_at)}</td>
+                <td className="hidden whitespace-nowrap text-[12.5px] text-muted sm:table-cell">
+                  {ago(p.joined_at)}
+                </td>
                 <td className="text-right">
                   <div className="flex flex-col items-end gap-1.5">
                     <MemberEditToggle tenantId={tenantId} person={p} />

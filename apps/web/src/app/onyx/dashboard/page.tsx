@@ -230,7 +230,7 @@ export default async function OnyxDashboard() {
                   also personally teach, since teaching is not the job this
                   screen is for. Revenue is covered by the Finance card in
                   Operations below rather than a bare total up here. */}
-              <div className="mb-5 grid grid-cols-3 gap-3">
+              <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <StatTile label="Students" value={counts.student ?? 0}
                   note={headcount ? 'of ' + headcount + ' people' : undefined} />
                 <StatTile label="Faculty" value={counts.faculty ?? 0}

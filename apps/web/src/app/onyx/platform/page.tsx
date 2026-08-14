@@ -119,51 +119,53 @@ export default async function OnyxPlatformPage(
           </p>
         ) : null}
 
-        <DataTable
-          caption="Every institution on the platform"
-          head={
-            <>
-              <th scope="col">Institution</th>
-              <th scope="col">Address</th>
-              <th scope="col">Plan</th>
-              <th scope="col">Members</th>
-              <th scope="col">Created</th>
-              <th scope="col">Status</th>
-              <th scope="col"><span className="sr-only">Open</span></th>
-            </>
-          }
-        >
-          {tenants.map((t) => (
-            <tr key={t.id} className={t.status === 1 ? undefined : 'bg-red-50/40'}>
-              <td>
-                <Link href={'/onyx/platform/tenants/' + t.id}
-                  className="font-semibold hover:underline">
-                  {t.name}
-                </Link>
-              </td>
-              <td className="font-mono text-[12.5px] text-muted">{t.slug}</td>
-              <td className="text-[13px]">
-                {t.plan ?? <span className="text-muted">—</span>}
-              </td>
-              <td className="tabular-nums">{t.member_count}</td>
-              <td className="whitespace-nowrap text-muted">
-                {new Date(t.created_at).toLocaleDateString(undefined,
-                  { day: 'numeric', month: 'short', year: 'numeric' })}
-              </td>
-              <td><StatusDot on={t.status === 1} /></td>
-              <td className="text-right">
-                <ActionLink href={'/onyx/platform/tenants/' + t.id} label="Open" tone="quiet" />
-              </td>
-            </tr>
-          ))}
-          {tenants.length === 0 ? (
-            <EmptyRow colSpan={7} icon="building">
-              {filtered
-                ? 'Nothing matches that filter.'
-                : 'No institutions yet. Creating one seeds its roles and its first administrator.'}
-            </EmptyRow>
-          ) : null}
-        </DataTable>
+        <div tabIndex={0} role="region" aria-label="Institutions">
+          <DataTable
+            caption="Every institution on the platform"
+            head={
+              <>
+                <th scope="col">Institution</th>
+                <th scope="col">Address</th>
+                <th scope="col">Plan</th>
+                <th scope="col">Members</th>
+                <th scope="col">Created</th>
+                <th scope="col">Status</th>
+                <th scope="col"><span className="sr-only">Open</span></th>
+              </>
+            }
+          >
+            {tenants.map((t) => (
+              <tr key={t.id} className={t.status === 1 ? undefined : 'bg-red-50/40'}>
+                <td>
+                  <Link href={'/onyx/platform/tenants/' + t.id}
+                    className="font-semibold hover:underline">
+                    {t.name}
+                  </Link>
+                </td>
+                <td className="font-mono text-[12.5px] text-muted">{t.slug}</td>
+                <td className="text-[13px]">
+                  {t.plan ?? <span className="text-muted">—</span>}
+                </td>
+                <td className="tabular-nums">{t.member_count}</td>
+                <td className="whitespace-nowrap text-muted">
+                  {new Date(t.created_at).toLocaleDateString(undefined,
+                    { day: 'numeric', month: 'short', year: 'numeric' })}
+                </td>
+                <td><StatusDot on={t.status === 1} /></td>
+                <td className="text-right">
+                  <ActionLink href={'/onyx/platform/tenants/' + t.id} label="Open" tone="quiet" />
+                </td>
+              </tr>
+            ))}
+            {tenants.length === 0 ? (
+              <EmptyRow colSpan={7} icon="building">
+                {filtered
+                  ? 'Nothing matches that filter.'
+                  : 'No institutions yet. Creating one seeds its roles and its first administrator.'}
+              </EmptyRow>
+            ) : null}
+          </DataTable>
+        </div>
       </div>
     </OnyxPlatformShell>
   );

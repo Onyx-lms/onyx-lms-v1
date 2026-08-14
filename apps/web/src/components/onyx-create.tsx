@@ -199,7 +199,7 @@ export function CreatePanel({
         <h3 className="text-sm font-bold">{title}</h3>
         <button type="button" onClick={() => { setOpen(false); setError(null); }}
           aria-label="Cancel"
-          className="grid h-8 w-8 place-items-center rounded-lg border border-line text-muted">
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line text-muted">
           ✕
         </button>
       </div>

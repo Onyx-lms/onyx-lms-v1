@@ -30,10 +30,12 @@ export default async function OnyxPlatformStudentsPage(
               <>
                 <th scope="col">Student</th>
                 <th scope="col">Batch</th>
-                <th scope="col">Programme</th>
+                {/* Least essential above sm -- a phone reads Student, Batch,
+                    Enrolments, Account and the actions without them. */}
+                <th scope="col" className="hidden sm:table-cell">Programme</th>
                 <th scope="col">Enrolments</th>
                 <th scope="col">Account</th>
-                <th scope="col">Joined</th>
+                <th scope="col" className="hidden sm:table-cell">Joined</th>
                 <th scope="col">&nbsp;</th>
               </>
             }
@@ -53,12 +55,14 @@ export default async function OnyxPlatformStudentsPage(
                   ? <Pill tone="brand">{p.batch.code}</Pill>
                   : <span className="text-[12.5px] text-muted">Unassigned</span>}
                 </td>
-                <td className="text-[13px]">
+                <td className="hidden text-[13px] sm:table-cell">
                   {p.programme?.name ?? <span className="text-muted">—</span>}
                 </td>
                 <td className="tabular-nums">{p.enrollment_count}</td>
                 <td><AccountState status={p.account_status} /></td>
-                <td className="whitespace-nowrap text-[12.5px] text-muted">{ago(p.joined_at)}</td>
+                <td className="hidden whitespace-nowrap text-[12.5px] text-muted sm:table-cell">
+                  {ago(p.joined_at)}
+                </td>
                 <td className="text-right">
                   <div className="flex flex-col items-end gap-1.5">
                     <MemberEditToggle tenantId={tenantId} person={p} />
