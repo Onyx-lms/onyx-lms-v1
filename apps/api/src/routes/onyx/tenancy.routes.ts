@@ -95,6 +95,30 @@ export function registerOnyxTenancyRoutes(app: FastifyInstance, ctx: AppContext)
     });
   });
 
+  /**
+   * The institution's own settings -- one flag today (can faculty schedule an
+   * exam themselves, or does every one have to come from admin or the exams
+   * office), on the tenant row itself. Admin only: this changes what an
+   * entire staff role can do, the same reach as a role change on a single
+   * membership, just aimed at everyone holding that role at once.
+   */
+  app.patch('/api/onyx/tenant/settings', async (req) => {
+    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const body = validate(z.object({
+      faculty_can_schedule_exams: z.boolean(),
+    }), req.body);
+    const before = await ctx.onyxTenancy.tenant(claims.tenant_id);
+    const tenant = await ctx.onyxTenancy.setFacultyCanScheduleExams(
+      claims.tenant_id, body.faculty_can_schedule_exams);
+    await ctx.onyxAudit.record(claims, {
+      action: 'tenant.updated', entityType: 'tenant', entityId: claims.tenant_id,
+      before: { faculty_can_schedule_exams: before.faculty_can_schedule_exams },
+      after: { faculty_can_schedule_exams: tenant.faculty_can_schedule_exams },
+      ip: ipOf(req),
+    });
+    return ok(tenant, 'Updated.');
+  });
+
   // ---- F-06: onboarding a new institution ----
 
   /**

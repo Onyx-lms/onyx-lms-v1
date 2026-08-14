@@ -12,7 +12,7 @@ import { HttpError } from '../http/errors.ts';
 import { hashPassword, verifyPassword } from '../auth/password.ts';
 import { slugify } from '../authoring/slug.ts';
 
-const TENANT_COLUMNS = 'id, name, slug, status, plan, created_at, updated_at';
+const TENANT_COLUMNS = 'id, name, slug, status, plan, faculty_can_schedule_exams, created_at, updated_at';
 const USER_COLUMNS = 'id, email, name, phone, photo, status, email_verified_at, created_at';
 const MEMBERSHIP_COLUMNS = 'id, tenant_id, user_id, role, status, created_at';
 
@@ -171,6 +171,23 @@ export class TenancyService {
     const { data } = await this.#db.from('onyx_users')
       .select('name').eq('id', userId).maybeSingle();
     return data?.name ? String(data.name) : null;
+  }
+
+  /**
+   * Whether faculty may schedule an examination on their own, or every one
+   * has to come from admin or the exams office. Defaults true (every
+   * institution's existing behaviour) on the tenant row itself rather than a
+   * separate settings table -- one flag does not earn its own table, and
+   * `GET /me`'s tenant object already carries this to every screen that asks
+   * "can I schedule this?" for free.
+   */
+  async setFacultyCanScheduleExams(tenantId: number, allow: boolean) {
+    const { data, error } = await this.#db.from('onyx_tenants')
+      .update({ faculty_can_schedule_exams: allow, updated_at: new Date().toISOString() })
+      .eq('id', tenantId).select(TENANT_COLUMNS).maybeSingle();
+    if (error) throw new HttpError(500, 'Could not change that setting: ' + error.message);
+    if (!data) throw new HttpError(404, 'Institution not found.');
+    return data;
   }
 
   async members(tenantId: number, filters: { role?: Role; search?: string } = {}) {

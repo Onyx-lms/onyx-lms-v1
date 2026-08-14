@@ -66,6 +66,7 @@ const I = {
   inbox:     { href: '/onyx/inbox', label: 'Inbox', icon: 'bell' },
   certs:     { href: '/onyx/certificates', label: 'Certificates', icon: 'award' },
   allocate:  { href: '/onyx/allocations', label: 'Teaching load', icon: 'chart' },
+  settings:  { href: '/onyx/settings', label: 'Settings', icon: 'settings' },
 } satisfies Record<string, OnyxNavItem>;
 
 const NAV: Record<Role, OnyxNavGroup[]> = {
@@ -124,7 +125,7 @@ const NAV: Record<Role, OnyxNavGroup[]> = {
     { label: 'Campus', items: [I.programs, I.timetable, I.allocate,
       I.students, I.facultyList, I.finance] },
     { label: 'Career', items: [I.placement, I.jobs] },
-    { label: 'Operations', items: [I.mentor, I.inbox, I.audit, I.profile] },
+    { label: 'Operations', items: [I.mentor, I.inbox, I.audit, I.settings, I.profile] },
   ],
 };
 

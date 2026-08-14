@@ -99,8 +99,14 @@ export default async function OnyxExamsPage() {
   // Scheduling an exam is the examinations office institution-wide, or this
   // specific course's own faculty -- assertCanRunExam on the API side draws
   // exactly this line; the picker below just avoids offering a faculty
-  // member a course the submit would refuse anyway.
-  const canSchedule = me.role === 'admin' || me.role === 'exams' || me.role === 'faculty';
+  // member a course the submit would refuse anyway. For faculty specifically
+  // there's a second gate now: an institution can switch this off from
+  // Settings, in which case every exam has to come from admin or the exams
+  // office (see assertCanScheduleExam in campus.routes.ts) -- facultyLocked
+  // is what lets this page explain that instead of just hiding the panel.
+  const facultyLocked = me.role === 'faculty' && me.tenant.faculty_can_schedule_exams === false;
+  const canSchedule = (me.role === 'admin' || me.role === 'exams'
+    || (me.role === 'faculty' && !facultyLocked));
   const canManageHalls = me.role === 'admin' || me.role === 'exams';
   // For the "Online paper" picker below -- staff see every assessment
   // regardless of status, same as the assessments page itself.
@@ -231,6 +237,20 @@ export default async function OnyxExamsPage() {
               ]}
             />
           ) : null}
+        </div>
+      ) : null}
+
+      {/* facultyLocked, not just "faculty who can't schedule" -- a student or
+          an employer never scheduling an exam needs no explanation, but a
+          faculty member who used to and now can't is the one case where
+          silently hiding the panel reads as broken rather than as a choice
+          their own institution made. */}
+      {facultyLocked ? (
+        <div className="mb-6">
+          <Banner tone="info" icon="shield">
+            Your institution has switched off faculty scheduling exams themselves. Ask an
+            administrator to schedule this one, or to turn it back on from Settings.
+          </Banner>
         </div>
       ) : null}
 

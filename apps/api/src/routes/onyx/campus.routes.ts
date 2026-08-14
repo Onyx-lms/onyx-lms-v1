@@ -78,6 +78,53 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
     await ctx.onyxAcademics.assertCanTeach(tenantId, courseId, userId, role);
   }
 
+  /**
+   * Scheduling specifically, not the rest of what assertCanRunExam gates.
+   * An institution can switch this off for faculty while leaving marking,
+   * publishing and everything else about an exam faculty already run
+   * untouched -- this is deliberately its own check, not folded into
+   * assertCanRunExam, so it is never accidentally checked on those other
+   * actions too.
+   */
+  async function assertCanScheduleExam(tenantId: number, role: Role) {
+    if (role !== 'faculty') return;
+    const tenant = await ctx.onyxTenancy.tenant(tenantId);
+    if (!tenant.faculty_can_schedule_exams) {
+      throw new HttpError(403,
+        'Your institution has switched off faculty scheduling exams. Ask an administrator.');
+    }
+  }
+
+  /**
+   * Tells the course's own faculty (other than whoever just scheduled it)
+   * and everyone enrolled that a paper landed on their calendar. Notifying
+   * never blocks or fails the request it followed from -- see NotifyService's
+   * own doc comment -- so this runs after the exam already exists and its
+   * own errors go nowhere the caller can see.
+   */
+  async function notifyExamScheduled(
+    tenantId: number, scheduledBy: number, courseId: number,
+    exam: { id: number; title: string; starts_at: string },
+  ) {
+    const [faculty, roster] = await Promise.all([
+      ctx.onyxAcademics.faculty(tenantId, courseId),
+      ctx.onyxAcademics.roster(tenantId, courseId),
+    ]);
+    const when = new Date(exam.starts_at).toLocaleString(undefined,
+      { weekday: 'long', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    const recipients = [
+      ...faculty.map((f) => Number(f.user_id)).filter((id) => id !== scheduledBy),
+      ...roster.map((r) => Number(r.user_id)),
+    ];
+    await ctx.onyxNotify.notifyAll(tenantId, recipients.map((userId) => ({
+      userId,
+      kind: 'exam.scheduled' as const,
+      title: '"' + exam.title + '" has been scheduled',
+      body: 'Starts ' + when + '.',
+      link: '/onyx/exams/' + exam.id,
+    })));
+  }
+
   async function syncExamAssessmentWindow(
     tenantId: number, assessmentId: number,
     exam: { course_id: number; starts_at: string; duration_minutes: number; status: string },
@@ -273,6 +320,7 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
       assessment_id: z.number().int().positive().nullish(),
     }), req.body);
     await assertCanRunExam(claims.tenant_id, body.course_id, claims.user_id, claims.tenant_role);
+    await assertCanScheduleExam(claims.tenant_id, claims.tenant_role);
     // Checked here, before the exam is written, not only inside
     // syncExamAssessmentWindow() below -- that check used to run AFTER
     // schedule() had already inserted the row, so a mismatched course threw
@@ -294,6 +342,7 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
     if (body.assessment_id && exam) {
       await syncExamAssessmentWindow(claims.tenant_id, body.assessment_id, exam);
     }
+    if (exam) await notifyExamScheduled(claims.tenant_id, claims.user_id, body.course_id, exam);
     return ok(exam);
   });
 

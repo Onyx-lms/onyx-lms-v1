@@ -49,6 +49,10 @@ export type NotificationKind =
   | 'certificate.issued'
   | 'invoice.issued'
   | 'discussion.mentioned'
+  /** A paper was put on the calendar for a course. Sent to that course's
+   *  faculty (other than whoever just scheduled it) and everyone enrolled --
+   *  the calendar entry existing is not the same as anyone having been told. */
+  | 'exam.scheduled'
   /**
    * An attempt has crossed the review threshold while it is still being sat.
    * Sent to invigilating staff, not to the candidate: telling somebody

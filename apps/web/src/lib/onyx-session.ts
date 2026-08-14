@@ -25,7 +25,12 @@ export interface OnyxClaims {
   exp: number;
 }
 
-export interface Tenant { id: number; name: string; slug: string; plan: string | null }
+export interface Tenant {
+  id: number; name: string; slug: string; plan: string | null;
+  /** Whether faculty may schedule an exam themselves, or every one has to
+   *  come from admin or the exams office. Set from Settings, admin only. */
+  faculty_can_schedule_exams?: boolean;
+}
 
 export interface Me {
   user_id: number;
