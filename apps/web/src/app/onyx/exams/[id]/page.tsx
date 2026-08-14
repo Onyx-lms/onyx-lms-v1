@@ -4,7 +4,9 @@ import { OnyxShell } from '@/components/onyx-shell';
 import { navFor } from '@/lib/onyx-nav';
 import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import type { Exam, SeatingPlan, Hall, ExamMark } from '@/lib/onyx-campus';
-import { AllocateSeating, EnterMarks, ExamEditForm, MarkOverride } from '@/components/onyx-manage';
+import {
+  AllocateSeating, DeleteExamButton, EnterMarks, ExamEditForm, MarkOverride,
+} from '@/components/onyx-manage';
 import type { Assessment } from '@/lib/onyx-assess';
 import { ActionButton } from '@/components/onyx-create';
 import {
@@ -594,6 +596,24 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
                 </dl>
               </Card>
             </section>
+
+            {/* Down here, not next to "Edit exam" above, same reasoning as the
+                tenant "Danger zone": read past what the exam actually is
+                before reaching the one control that removes it outright. */}
+            {canMark ? (
+              <section>
+                <SectionHead title="Danger zone" />
+                <Card className="border-red-200 p-4">
+                  <p className="text-[13px] text-muted">
+                    Removes this exam and its seating and marks. The paper it draws on, if
+                    any, is not touched — only this one scheduled slot.
+                  </p>
+                  <div className="mt-3 border-t border-red-100 pt-3">
+                    <DeleteExamButton examId={Number(id)} />
+                  </div>
+                </Card>
+              </section>
+            ) : null}
           </aside>
         </div>
       </div>

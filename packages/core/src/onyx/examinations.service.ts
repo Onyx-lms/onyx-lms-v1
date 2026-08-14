@@ -202,6 +202,39 @@ export class ExaminationsService {
   }
 
   /**
+   * Removes an exam outright -- not the same as cancelling it (updateExam's
+   * `status: 'cancelled'`), which keeps the row as a record of what was
+   * scheduled and then called off. This is for the case that record
+   * shouldn't exist at all: a mis-scheduled paper, a duplicate, a test.
+   *
+   * Seating and marks cascade at the database (onyx_seat_allocations.exam_id
+   * and onyx_exam_marks.exam_id are both ON DELETE CASCADE -- confirmed
+   * against 0008_campus.sql). The linked assessment, if there is one, is
+   * NOT touched: the paper and its bank are the course's, independent of any
+   * one exam slot that happened to draw on them.
+   *
+   * Same authorization as updateExam -- the route applies the course-scoped
+   * check (assertCanRunExam) before this runs; this is the role-only
+   * backstop, same redundancy updateExam already has.
+   */
+  async remove(tenantId: number, examId: number, actor: { userId: string; role: Role }): Promise<void> {
+    if (!canRunExams(actor.role) && actor.role !== 'faculty') {
+      throw new HttpError(403, 'Only the examinations office or the course’s own faculty '
+        + 'can remove an exam.');
+    }
+    const exam = await this.exam(tenantId, examId);
+    const { error } = await this.#db.from('onyx_exams')
+      .delete().eq('tenant_id', tenantId).eq('id', examId);
+    if (error) throw new HttpError(500, 'Could not remove the exam: ' + error.message);
+
+    await this.#audit.record({ tenant_id: tenantId, user_id: actor.userId }, {
+      action: 'exam.updated', entityType: 'exam', entityId: examId,
+      before: { title: exam.title, starts_at: exam.starts_at, status: exam.status },
+      after: { removed: true },
+    });
+  }
+
+  /**
    * Whether any one person would end up sitting two papers at the same time.
    *
    * Returns a sentence naming the collision, or null. The message names the

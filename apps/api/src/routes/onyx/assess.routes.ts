@@ -60,7 +60,8 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
       description: z.string().max(5000).nullish(),
       course_id: z.number().int().positive().nullish(),
     }), req.body);
-    return ok(await ctx.onyxAssess.createBank(claims.tenant_id, claims.user_id, body),
+    return ok(await ctx.onyxAssess.createBank(
+      claims.tenant_id, { userId: claims.user_id, role: claims.tenant_role }, body),
       'Bank created.');
   });
 
@@ -91,7 +92,8 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
       tags: z.array(z.string().max(50)).max(20).optional(),
     }), req.body);
     return ok(await ctx.onyxAssess.addQuestion(
-      claims.tenant_id, idOf(req), claims.user_id, body), 'Question added.');
+      claims.tenant_id, idOf(req), { userId: claims.user_id, role: claims.tenant_role }, body),
+      'Question added.');
   });
 
   /** Editing writes a new version; the old one stays as it was sat. */
@@ -107,13 +109,16 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
       difficulty: z.string().max(20).optional(),
       tags: z.array(z.string().max(50)).max(20).optional(),
     }), req.body);
-    return ok(await ctx.onyxAssess.editQuestion(claims.tenant_id, idOf(req), body),
+    return ok(await ctx.onyxAssess.editQuestion(
+      claims.tenant_id, idOf(req), { userId: claims.user_id, role: claims.tenant_role }, body),
       'Question updated.');
   });
 
   app.delete('/api/onyx/questions/:id', async (req) => {
     const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
-    return ok(await ctx.onyxAssess.retireQuestion(claims.tenant_id, idOf(req)), 'Retired.');
+    return ok(await ctx.onyxAssess.retireQuestion(
+      claims.tenant_id, idOf(req), { userId: claims.user_id, role: claims.tenant_role }),
+      'Retired.');
   });
 
   // -------------------------------------------------------------------------
@@ -152,7 +157,8 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
       moderation_required: z.boolean().optional(),
       pass_mark: z.number().int().min(0).nullish(),
     }), req.body);
-    return ok(await ctx.onyxAssess.createAssessment(claims.tenant_id, claims.user_id, body),
+    return ok(await ctx.onyxAssess.createAssessment(
+      claims.tenant_id, { userId: claims.user_id, role: claims.tenant_role }, body),
       'Assessment created.');
   });
 
@@ -183,7 +189,7 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
       status: z.string().max(20).optional(),
     }), req.body);
     const { assessment, before, after } = await ctx.onyxAssess.updateAssessment(
-      claims.tenant_id, idOf(req), body);
+      claims.tenant_id, idOf(req), { userId: claims.user_id, role: claims.tenant_role }, body);
     if (Object.keys(after).length) {
       await ctx.onyxAudit.record(claims, {
         action: 'assessment.updated', entityType: 'assessment', entityId: idOf(req),

@@ -2,9 +2,9 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { OnyxShell } from '@/components/onyx-shell';
 import { navFor } from '@/lib/onyx-nav';
-import { requireOnyxSession, onyxApi, type Me } from '@/lib/onyx-session';
+import { requireOnyxSession, onyxApi, onyxApiSafe, type Me } from '@/lib/onyx-session';
 import { isExamsStaff } from '@/lib/onyx-assess';
-import { AddQuestion } from '@/components/onyx-manage';
+import { AddQuestion, EditQuestionForm, RetireQuestionButton } from '@/components/onyx-manage';
 import {
   CardGrid, DataTable, EmptyRow, Icon, Pill, SectionHead, StatTile,
 } from '@/components/onyx-ui';
@@ -17,6 +17,10 @@ interface Question {
   type: 'single' | 'multiple' | 'truefalse' | 'short' | 'essay';
   prompt: string;
   options: { id: string; text: string }[] | null;
+  /** Fetched but not rendered in the read-only row -- see the page's own
+   *  comment. Only reaches the screen inside EditQuestionForm, and only for
+   *  a viewer who can actually author this bank (see `canEdit` below). */
+  answer: unknown;
   points: number;
   difficulty: string;
   version: number;
@@ -49,13 +53,26 @@ export default async function OnyxBankPage({ params }: { params: Promise<{ id: s
   if (!isExamsStaff(me.role)) redirect('/onyx/denied');
 
   const [banks, questions] = await Promise.all([
-    onyxApi<{ id: number; name: string; description: string | null }[]>('/api/onyx/banks'),
+    onyxApi<{ id: number; name: string; description: string | null; course_id: number | null }[]>(
+      '/api/onyx/banks'),
     onyxApi<Question[]>('/api/onyx/banks/' + id + '/questions'),
   ]);
   const bank = banks.find((b) => String(b.id) === id);
   const marks = questions.reduce((sum, q) => sum + Number(q.points), 0);
   const objective = questions.filter((q) => OBJECTIVE.has(q.type)).length;
   const revised = questions.filter((q) => q.version > 1).length;
+
+  // Same course-ownership rule the API enforces (AssessService#assertCanAuthor):
+  // admin and exams author anything, a bank with no course is open to any of
+  // this page's staff, and otherwise it takes actually teaching the course.
+  // Gating on this here, not just relying on the API to 403, matters because
+  // the edit form pre-fills the answer key -- a viewer who cannot save a
+  // change to this bank should not see its key rendered either.
+  const myCourses = me.role === 'faculty'
+    ? await onyxApiSafe<{ id: number }[]>('/api/onyx/my/courses') : null;
+  const teachesThisCourse = (myCourses ?? []).some((c) => Number(c.id) === Number(bank?.course_id));
+  const canEdit = me.role === 'admin' || me.role === 'exams'
+    || !bank?.course_id || teachesThisCourse;
 
   return (
     <OnyxShell
@@ -90,9 +107,11 @@ export default async function OnyxBankPage({ params }: { params: Promise<{ id: s
           note="earlier versions kept" />
       </CardGrid>
 
-      <div className="mt-5">
-        <AddQuestion bankId={Number(id)} />
-      </div>
+      {canEdit ? (
+        <div className="mt-5">
+          <AddQuestion bankId={Number(id)} />
+        </div>
+      ) : null}
 
       {/* A table, because building a paper is comparing type, difficulty and
           marks down three columns to avoid setting the cohort the same five
@@ -109,6 +128,7 @@ export default async function OnyxBankPage({ params }: { params: Promise<{ id: s
             <th scope="col">Type</th>
             <th scope="col">Difficulty</th>
             <th scope="col" className="text-right">Marks</th>
+            {canEdit ? <th scope="col" className="w-20"><span className="sr-only">Actions</span></th> : null}
           </>}
         >
           {questions.map((q, i) => (
@@ -126,6 +146,9 @@ export default async function OnyxBankPage({ params }: { params: Promise<{ id: s
                       + 'the wording it was sat with'
                     : ''}
                 </span>
+                {canEdit ? (
+                  <div className="mt-2"><EditQuestionForm questionId={q.id} question={q} /></div>
+                ) : null}
               </td>
               <td><Pill>{TYPE_LABELS[q.type] ?? q.type}</Pill></td>
               <td>
@@ -137,10 +160,13 @@ export default async function OnyxBankPage({ params }: { params: Promise<{ id: s
                 </div>
               </td>
               <td className="text-right tabular-nums font-bold">{q.points}</td>
+              {canEdit ? (
+                <td className="text-right"><RetireQuestionButton questionId={q.id} /></td>
+              ) : null}
             </tr>
           ))}
           {questions.length === 0 ? (
-            <EmptyRow colSpan={5} icon="edit">
+            <EmptyRow colSpan={canEdit ? 6 : 5} icon="edit">
               Nothing here yet. A question added to this bank can be drawn into any paper.
             </EmptyRow>
           ) : null}

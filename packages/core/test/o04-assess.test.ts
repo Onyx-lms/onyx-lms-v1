@@ -23,6 +23,10 @@ import { HttpError } from '../src/http/errors.ts';
 const T = 1;
 const OTHER = 2;
 const START = 1_800_000_000_000;
+// 'exams' bypasses the course-ownership check (#assertCanAuthor) the same
+// way 'admin' does -- these tests author banks/questions/assessments freely
+// across courses, the way the examinations office actually can.
+const ACTOR = { userId: 'user-20', role: 'exams' as const };
 
 /** A clock the tests move by hand, so "time is up" is deterministic. */
 function clock(at = START) {
@@ -62,29 +66,29 @@ function world(c = clock()) {
 
 /** A bank with one of each type, and an assessment drawing all five. */
 async function withPaper(w: ReturnType<typeof world>, over: Record<string, unknown> = {}) {
-  const bank = await w.assess.createBank(T, 'user-20', { name: 'Bank' });
+  const bank = await w.assess.createBank(T, ACTOR, { name: 'Bank' });
   const bid = Number(bank.id);
   const q = {
-    single: await w.assess.addQuestion(T, bid, 'user-20', {
+    single: await w.assess.addQuestion(T, bid, ACTOR, {
       type: 'single', prompt: '2 + 2?', points: 2,
       options: [{ id: 'a', text: '3' }, { id: 'b', text: '4' }], answer: 'b',
     }),
-    multiple: await w.assess.addQuestion(T, bid, 'user-20', {
+    multiple: await w.assess.addQuestion(T, bid, ACTOR, {
       type: 'multiple', prompt: 'Primes?', points: 2,
       options: [{ id: 'a', text: '2' }, { id: 'b', text: '4' }, { id: 'c', text: '3' }],
       answer: ['a', 'c'],
     }),
-    truefalse: await w.assess.addQuestion(T, bid, 'user-20', {
+    truefalse: await w.assess.addQuestion(T, bid, ACTOR, {
       type: 'truefalse', prompt: 'Zero is even.', answer: 'true', points: 1,
     }),
-    short: await w.assess.addQuestion(T, bid, 'user-20', {
+    short: await w.assess.addQuestion(T, bid, ACTOR, {
       type: 'short', prompt: 'Capital of France?', answer: ['Paris'], points: 1,
     }),
-    essay: await w.assess.addQuestion(T, bid, 'user-20', {
+    essay: await w.assess.addQuestion(T, bid, ACTOR, {
       type: 'essay', prompt: 'Explain induction.', points: 4,
     }),
   };
-  const assessment = await w.assess.createAssessment(T, 'user-20', {
+  const assessment = await w.assess.createAssessment(T, ACTOR, {
     title: 'Midterm', course_id: 1, duration_minutes: 60, pass_mark: 6,
     sections: [{ id: 's1', title: 'All', bank_id: bid, take: 5 }],
     ...over,
@@ -132,17 +136,17 @@ test('hasKey tells a real answer apart from nothing having been chosen', () => {
 
 test('an MCQ authored with no correct option is allowed, and marked by hand, not auto-graded wrong', async () => {
   const w = world();
-  const bank = await w.assess.createBank(T, 'user-20', { name: 'B' });
+  const bank = await w.assess.createBank(T, ACTOR, { name: 'B' });
   const bid = Number(bank.id);
   // No `answer` at all -- nobody picked a correct option yet.
-  const noKey = await w.assess.addQuestion(T, bid, 'user-20', {
+  const noKey = await w.assess.addQuestion(T, bid, ACTOR, {
     type: 'single', prompt: 'Pending review', points: 5,
     options: [{ id: 'a', text: 'One' }, { id: 'b', text: 'Two' }],
   });
-  const essay = await w.assess.addQuestion(T, bid, 'user-20', {
+  const essay = await w.assess.addQuestion(T, bid, ACTOR, {
     type: 'essay', prompt: 'Explain.', points: 3,
   });
-  const assessment = await w.assess.createAssessment(T, 'user-20', {
+  const assessment = await w.assess.createAssessment(T, ACTOR, {
     title: 'Pending', course_id: 1, duration_minutes: 30,
     sections: [{ id: 's1', title: 'All', bank_id: bid, take: 2 }],
   });
@@ -187,32 +191,32 @@ test('the shuffle is deterministic, so a resumed attempt deals the same hand', (
 
 test('a question whose key is not among its options is refused', async () => {
   const w = world();
-  const bank = await w.assess.createBank(T, 'user-20', { name: 'B' });
+  const bank = await w.assess.createBank(T, ACTOR, { name: 'B' });
   const bid = Number(bank.id);
   // Unanswerable, and nobody would find out until it was sat.
-  await assert.rejects(w.assess.addQuestion(T, bid, 'user-20', {
+  await assert.rejects(w.assess.addQuestion(T, bid, ACTOR, {
     type: 'single', prompt: 'x', options: [{ id: 'a', text: '1' }, { id: 'b', text: '2' }],
     answer: 'z',
   }), (e: HttpError) => e.status === 422);
-  await assert.rejects(w.assess.addQuestion(T, bid, 'user-20', {
+  await assert.rejects(w.assess.addQuestion(T, bid, ACTOR, {
     type: 'single', prompt: 'x', options: [{ id: 'a', text: '1' }], answer: 'a',
   }), (e: HttpError) => e.status === 422);
-  await assert.rejects(w.assess.addQuestion(T, bid, 'user-20', {
+  await assert.rejects(w.assess.addQuestion(T, bid, ACTOR, {
     type: 'truefalse', prompt: 'x', answer: 'maybe',
   }), (e: HttpError) => e.status === 422);
-  await assert.rejects(w.assess.addQuestion(T, bid, 'user-20', {
+  await assert.rejects(w.assess.addQuestion(T, bid, ACTOR, {
     type: 'short', prompt: 'x', answer: ['  '],
   }), (e: HttpError) => e.status === 422);
 });
 
 test('a section wanting more questions than its bank holds is refused at authoring', async () => {
   const w = world();
-  const bank = await w.assess.createBank(T, 'user-20', { name: 'B' });
-  await w.assess.addQuestion(T, Number(bank.id), 'user-20', {
+  const bank = await w.assess.createBank(T, ACTOR, { name: 'B' });
+  await w.assess.addQuestion(T, Number(bank.id), ACTOR, {
     type: 'truefalse', prompt: 'x', answer: 'true',
   });
   // Discovered at start otherwise, which is the worst possible moment.
-  await assert.rejects(w.assess.createAssessment(T, 'user-20', {
+  await assert.rejects(w.assess.createAssessment(T, ACTOR, {
     title: 'Too big', sections: [{ id: 's', title: 'All', bank_id: Number(bank.id), take: 5 }],
   }), (e: HttpError) => e.status === 422);
 });
@@ -220,7 +224,7 @@ test('a section wanting more questions than its bank holds is refused at authori
 test('editing a question writes a new version and keeps the old one', async () => {
   const w = world();
   const { q } = await withPaper(w);
-  const edited = await w.assess.editQuestion(T, Number(q.single.id), {
+  const edited = await w.assess.editQuestion(T, Number(q.single.id), ACTOR, {
     prompt: '2 + 2? (edited)', answer: 'a',
   });
   assert.equal(edited.version, 2);
@@ -244,7 +248,7 @@ test('ASS-01a: editing a question does not change a paper already sat', async ()
   await w.assess.saveAnswer(T, attempt.id, 'user-10', { question_id: sat.question_id, response: 'b' });
 
   // The key changes AFTER the answer was given.
-  await w.assess.editQuestion(T, Number(q.single.id), {
+  await w.assess.editQuestion(T, Number(q.single.id), ACTOR, {
     prompt: 'Something else entirely', answer: 'a',
   });
 
@@ -389,11 +393,11 @@ test('submitting auto-marks the objective questions and leaves the essay', async
 
 test('a paper with nothing subjective is finished on submission', async () => {
   const w = world();
-  const bank = await w.assess.createBank(T, 'user-20', { name: 'Objective only' });
-  await w.assess.addQuestion(T, Number(bank.id), 'user-20', {
+  const bank = await w.assess.createBank(T, ACTOR, { name: 'Objective only' });
+  await w.assess.addQuestion(T, Number(bank.id), ACTOR, {
     type: 'truefalse', prompt: 'Zero is even.', answer: 'true', points: 1,
   });
-  const assessment = await w.assess.createAssessment(T, 'user-20', {
+  const assessment = await w.assess.createAssessment(T, ACTOR, {
     title: 'Quick', sections: [{ id: 's', title: 'All', bank_id: Number(bank.id), take: 1 }],
   });
   await w.assess.publishAssessment(T, Number(assessment.id));
@@ -668,14 +672,14 @@ test('ASS-04a: the discrimination index matches a hand calculation', () => {
 
 test('ASS-04a: item statistics match a hand calculation on a seeded cohort', async () => {
   const w = world();
-  const bank = await w.assess.createBank(T, 'user-20', { name: 'Stats' });
-  const easy = await w.assess.addQuestion(T, Number(bank.id), 'user-20', {
+  const bank = await w.assess.createBank(T, ACTOR, { name: 'Stats' });
+  const easy = await w.assess.addQuestion(T, Number(bank.id), ACTOR, {
     type: 'truefalse', prompt: 'Everyone gets this.', answer: 'true', points: 1,
   });
-  const split = await w.assess.addQuestion(T, Number(bank.id), 'user-20', {
+  const split = await w.assess.addQuestion(T, Number(bank.id), ACTOR, {
     type: 'truefalse', prompt: 'Half get this.', answer: 'true', points: 1,
   });
-  const assessment = await w.assess.createAssessment(T, 'user-20', {
+  const assessment = await w.assess.createAssessment(T, ACTOR, {
     title: 'Stats', shuffle_questions: false,
     sections: [{ id: 's', title: 'All', bank_id: Number(bank.id), take: 2 }],
   });

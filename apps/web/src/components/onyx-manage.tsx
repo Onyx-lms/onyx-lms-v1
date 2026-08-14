@@ -178,9 +178,11 @@ export function EnterMarks({ examId, maxMarks, candidates }: {
 
 /**
  * Editing the exam record itself -- title, timing, marks scheme, status.
- * `PATCH /api/onyx/exams/:id` is examinations-office only (canRunExams: admin
- * or exams), same gate as scheduling it in the first place. Deliberately does
- * not re-run the clash check `schedule()` does; see the service for why.
+ * `PATCH /api/onyx/exams/:id` is open to the examinations office (admin or
+ * exams) and, same as scheduling it in the first place, to this exam's own
+ * course's faculty (assertCanRunExam) -- not examinations-office only.
+ * Deliberately does not re-run the clash check `schedule()` does; see the
+ * service for why.
  */
 export function ExamEditForm({ examId, exam }: {
   examId: number;
@@ -293,6 +295,54 @@ export function ExamEditForm({ examId, exam }: {
         <button type="button" onClick={() => setOpen(false)} className={ghost}>Cancel</button>
       </div>
     </form>
+  );
+}
+
+/**
+ * Removing an exam outright -- not the same as `ExamEditForm`'s "Cancelled"
+ * status, which keeps the row as a record of what was scheduled and then
+ * called off. This is for the case that record shouldn't exist at all: a
+ * mis-scheduled paper, a duplicate, a test. Seating and marks go with it
+ * (cascaded at the database); the linked assessment, if there is one, does
+ * not -- the paper and its bank are the course's, not this one slot's.
+ * `DELETE /api/onyx/exams/:id` shares the same guard as editing it
+ * (assertCanRunExam), so this is offered wherever `ExamEditForm` is.
+ * Navigates back to the exam list on success, since this page stops existing.
+ */
+export function DeleteExamButton({ examId }: { examId: number }) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  if (!confirming) {
+    return (
+      <button type="button" onClick={() => setConfirming(true)}
+        className="inline-flex min-h-[38px] items-center gap-2 rounded-2xl border
+                   border-rose-600 px-3.5 text-[13px] font-bold text-rose-700
+                   hover:bg-rose-50">
+        <Icon name="trash" className="h-4 w-4" />Delete exam
+      </button>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span className="text-[13px] font-semibold text-rose-700">Delete this exam for good?</span>
+      <button type="button" disabled={pending}
+        className="rounded-xl bg-rose-600 px-3 py-2 text-[13px] font-bold text-white
+                   disabled:opacity-60"
+        onClick={() => start(async () => {
+          setError(null);
+          const res = await send('exams/' + examId, undefined, 'DELETE');
+          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+          router.push('/onyx/exams');
+          router.refresh();
+        })}>
+        {pending ? 'Deleting…' : 'Delete'}
+      </button>
+      <button type="button" onClick={() => setConfirming(false)} className={ghost}>Cancel</button>
+      {error ? <span role="alert" className="text-[13px] text-rose-700">{error}</span> : null}
+    </span>
   );
 }
 
@@ -1255,6 +1305,227 @@ export function AddQuestion({ bankId }: { bankId: number }) {
         )}
       </div>
     </Shell>
+  );
+}
+
+/**
+ * Editing a question already in a bank -- same fields as adding one, with the
+ * current type, prompt, options and answer key pre-filled. `PATCH
+ * /api/onyx/questions/:id` writes a new version rather than overwriting the
+ * old one, so a paper already sat still marks against the wording it was
+ * sat with; this form does not need to know that, it just sends the change.
+ */
+export function EditQuestionForm({ questionId, question }: {
+  questionId: number;
+  question: {
+    type: string; prompt: string; points: number;
+    options: { id: string; text: string }[] | null;
+    answer: unknown;
+  };
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [type, setType] = useState(question.type);
+  const [prompt, setPrompt] = useState(question.prompt);
+  const [points, setPoints] = useState(String(question.points));
+  const [options, setOptions] = useState(
+    question.options && question.options.length
+      ? question.options
+      : [{ id: 'a', text: '' }, { id: 'b', text: '' }]);
+  const [correct, setCorrect] = useState<string[]>(() => {
+    if (question.type !== 'single' && question.type !== 'multiple') return [];
+    return Array.isArray(question.answer)
+      ? question.answer as string[]
+      : question.answer !== undefined && question.answer !== null ? [String(question.answer)] : [];
+  });
+  const [answer, setAnswer] = useState(() => {
+    if (question.type === 'truefalse') {
+      return question.answer === true || question.answer === 'true' ? 'true' : 'false';
+    }
+    if (question.type === 'short') {
+      return Array.isArray(question.answer) ? (question.answer as string[]).join('\n') : '';
+    }
+    return 'false';
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  const choice = type === 'single' || type === 'multiple';
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} aria-label="Edit this question"
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-faint
+                   hover:bg-brand-50 hover:text-brand-600">
+        <Icon name="edit" className="h-4 w-4" />
+      </button>
+    );
+  }
+  return (
+    <form
+      className="mt-2 grid gap-3 rounded-xl border border-line bg-white p-3.5 text-left"
+      onSubmit={(e) => {
+        e.preventDefault();
+        start(async () => {
+          setError(null);
+          const body: Record<string, unknown> = { type, prompt, points: Number(points) || 1 };
+          if (choice) {
+            const clean = options.filter((o) => o.text.trim());
+            if (clean.length < 2) { setError('A choice question needs two options.'); return; }
+            body.options = clean;
+            const picked = correct.filter((id) => clean.some((o) => o.id === id));
+            if (!picked.length) { setError('Mark which option is correct.'); return; }
+            body.answer = type === 'multiple' ? picked : picked[0];
+          } else if (type === 'truefalse') {
+            body.answer = answer === 'true' ? 'true' : 'false';
+          } else if (type === 'short') {
+            const accepted = answer.split('\n').map((a) => a.trim()).filter(Boolean);
+            if (!accepted.length) { setError('Give at least one accepted answer.'); return; }
+            body.answer = accepted;
+          }
+          const res = await send('questions/' + questionId, body, 'PATCH');
+          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+          setOpen(false);
+          router.refresh();
+        });
+      }}
+    >
+      {error ? <p role="alert" className="text-xs text-rose-700">{error}</p> : null}
+      <div>
+        <label className="block text-[13px] font-semibold text-slate-700" htmlFor={'eq-prompt-' + questionId}>
+          Question
+        </label>
+        <textarea id={'eq-prompt-' + questionId} required rows={3} value={prompt}
+          onChange={(e) => setPrompt(e.target.value)} className={input + ' mt-1 w-full'} />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="block text-[13px] font-semibold text-slate-700" htmlFor={'eq-type-' + questionId}>
+            Type
+          </label>
+          <select id={'eq-type-' + questionId} value={type} onChange={(e) => setType(e.target.value)}
+            className={input + ' mt-1 w-full'}>
+            {QUESTION_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[13px] font-semibold text-slate-700" htmlFor={'eq-points-' + questionId}>
+            Marks
+          </label>
+          <input id={'eq-points-' + questionId} type="number" min={1} max={1000} value={points}
+            onChange={(e) => setPoints(e.target.value)} className={input + ' mt-1 w-full'} />
+        </div>
+      </div>
+
+      {choice ? (
+        <fieldset>
+          <legend className="text-[13px] font-semibold text-slate-700">
+            Options — tick the correct {type === 'multiple' ? 'ones' : 'one'}
+          </legend>
+          <ul className="mt-2 space-y-2">
+            {options.map((o, i) => (
+              <li key={o.id} className="flex items-center gap-2">
+                <input
+                  type={type === 'multiple' ? 'checkbox' : 'radio'}
+                  name={'eq-correct-' + questionId} className="h-4 w-4"
+                  aria-label={'Option ' + o.id.toUpperCase() + ' is correct'}
+                  checked={correct.includes(o.id)}
+                  onChange={(e) => setCorrect(type === 'multiple'
+                    ? (e.target.checked ? [...correct, o.id] : correct.filter((c) => c !== o.id))
+                    : [o.id])} />
+                <input value={o.text} className={input + ' flex-1'}
+                  aria-label={'Option ' + o.id.toUpperCase()}
+                  placeholder={'Option ' + o.id.toUpperCase()}
+                  onChange={(e) => setOptions(options.map((x, j) =>
+                    j === i ? { ...x, text: e.target.value } : x))} />
+              </li>
+            ))}
+          </ul>
+          <button type="button" className={ghost + ' mt-2'}
+            onClick={() => setOptions([...options,
+              { id: String.fromCharCode(97 + options.length), text: '' }])}>
+            Add an option
+          </button>
+        </fieldset>
+      ) : type === 'truefalse' ? (
+        <div>
+          <label className="block text-[13px] font-semibold text-slate-700" htmlFor={'eq-tf-' + questionId}>
+            Correct answer
+          </label>
+          <select id={'eq-tf-' + questionId} value={answer} onChange={(e) => setAnswer(e.target.value)}
+            className={input + ' mt-1 w-full'}>
+            <option value="false">False</option>
+            <option value="true">True</option>
+          </select>
+        </div>
+      ) : type === 'short' ? (
+        <div>
+          <label className="block text-[13px] font-semibold text-slate-700" htmlFor={'eq-short-' + questionId}>
+            Accepted answers
+          </label>
+          <textarea id={'eq-short-' + questionId} rows={3} value={answer}
+            onChange={(e) => setAnswer(e.target.value)} className={input + ' mt-1 w-full'} />
+          <p className="mt-1 text-xs text-muted">One per line. Any of them scores the mark.</p>
+        </div>
+      ) : (
+        <p className="text-xs text-muted">
+          An essay carries no answer key — it is marked by hand after the paper closes.
+        </p>
+      )}
+
+      <div className="flex gap-2 pt-1">
+        <button type="submit" disabled={pending} className={btn}>
+          {pending ? 'Saving…' : 'Save'}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className={ghost}>Cancel</button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * Retiring a question out of a bank -- not a hard delete: an old paper may
+ * already reference it by id, so the row stays, marked `retired`, and simply
+ * stops being offered to any new paper drawn from this bank. `DELETE
+ * /api/onyx/questions/:id` on the API does exactly this, not a real DELETE.
+ */
+export function RetireQuestionButton({ questionId }: { questionId: number }) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  if (!confirming) {
+    return (
+      <button type="button" onClick={() => setConfirming(true)} aria-label="Retire this question"
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-faint
+                   hover:bg-rose-50 hover:text-rose-700">
+        <Icon name="trash" className="h-4 w-4" />
+      </button>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="text-[11px] text-muted">Retire?</span>
+      <button type="button" disabled={pending}
+        className="rounded-md bg-rose-600 px-1.5 py-1 text-[11px] font-bold text-white
+                   disabled:opacity-60"
+        onClick={() => start(async () => {
+          setError(null);
+          const res = await send('questions/' + questionId, undefined, 'DELETE');
+          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+          setConfirming(false); router.refresh();
+        })}>
+        {pending ? '…' : 'Retire'}
+      </button>
+      <button type="button" onClick={() => setConfirming(false)} aria-label="Cancel"
+        className="rounded-md p-1 text-faint hover:bg-slate-100">
+        <Icon name="x" className="h-3.5 w-3.5" />
+      </button>
+      {error ? <span role="alert" className="text-[11px] text-rose-700">{error}</span> : null}
+    </span>
   );
 }
 

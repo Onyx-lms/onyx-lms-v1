@@ -126,6 +126,8 @@ export function scoreObjective(
   return 0;
 }
 
+export interface AssessActor { userId: string; role: Role }
+
 export class AssessService {
   #db: OnyxDb;
   #academics: AcademicsService;
@@ -137,14 +139,36 @@ export class AssessService {
     this.#now = now;
   }
 
+  /**
+   * Whether this person may author (create, edit, retire) a bank, question or
+   * assessment tied to a course. Admin and the examinations office run this
+   * institution-wide, the same "does not need to teach the course" carve-out
+   * examinations.service.ts's canRunExams gives them -- only a plain faculty
+   * member is held to "do you actually teach this course", the same check
+   * campus.routes.ts's assertCanRunExam applies to editing an exam.
+   *
+   * A bank/assessment with no course tie at all (institution-wide, `course_id`
+   * null) has nothing to scope against -- the STAFF role gate at the route is
+   * the whole check for those, same as before this existed.
+   */
+  async #assertCanAuthor(
+    tenantId: number, courseId: number | null | undefined, actor: AssessActor,
+  ): Promise<void> {
+    if (!courseId) return;
+    if (actor.role === 'admin' || actor.role === 'exams') return;
+    await this.#academics.assertCanTeach(tenantId, courseId, actor.userId, actor.role);
+  }
+
   // -------------------------------------------------------------------------
   // ASS-01a -- banks and questions
   // -------------------------------------------------------------------------
 
-  async createBank(tenantId: number, createdBy: string, input: {
+  async createBank(tenantId: number, actor: AssessActor, input: {
     name: string; description?: string | null; course_id?: number | null;
   }) {
     if (input.course_id) await this.#academics.course(tenantId, input.course_id);
+    await this.#assertCanAuthor(tenantId, input.course_id, actor);
+    const createdBy = actor.userId;
     const { data, error } = await this.#db.from('onyx_question_banks').insert({
       tenant_id: tenantId,
       course_id: input.course_id ?? null,
@@ -163,13 +187,14 @@ export class AssessService {
     return data ?? [];
   }
 
-  async addQuestion(tenantId: number, bankId: number, createdBy: string, input: {
+  async addQuestion(tenantId: number, bankId: number, actor: AssessActor, input: {
     type?: OnyxQuestionType; prompt: string;
     options?: { id: string; text: string }[];
     answer?: unknown; explanation?: string | null;
     points?: number; difficulty?: string; tags?: string[];
   }) {
-    await this.#bank(tenantId, bankId);
+    const bank = await this.#bank(tenantId, bankId);
+    await this.#assertCanAuthor(tenantId, bank.course_id as number | null, actor);
     const type = input.type ?? 'single';
     this.#validateQuestion(type, input.options ?? [], input.answer);
 
@@ -184,7 +209,7 @@ export class AssessService {
       tags: (input.tags ?? []) as never,
       version: 1,
       status: 'active',
-      created_by: createdBy,
+      created_by: actor.userId,
     }).select(QUESTION_COLUMNS).maybeSingle();
     if (error) throw new HttpError(500, 'Could not add the question: ' + error.message);
 
@@ -199,12 +224,13 @@ export class AssessService {
    * already sat was drawn against it. This is the mechanism behind ASS-01a's
    * acceptance criterion.
    */
-  async editQuestion(tenantId: number, questionId: number, input: {
+  async editQuestion(tenantId: number, questionId: number, actor: AssessActor, input: {
     prompt?: string; options?: { id: string; text: string }[];
     answer?: unknown; explanation?: string | null;
     points?: number; difficulty?: string; tags?: string[]; type?: OnyxQuestionType;
   }) {
     const current = await this.#question(tenantId, questionId);
+    await this.#assertCanAuthorQuestion(tenantId, current, actor);
     const type = input.type ?? (current.type as OnyxQuestionType);
     const options = input.options ?? (current.options as unknown as { id: string; text: string }[]);
     const answer = input.answer !== undefined ? input.answer : current.answer;
@@ -230,14 +256,23 @@ export class AssessService {
     return updated;
   }
 
-  async retireQuestion(tenantId: number, questionId: number) {
-    await this.#question(tenantId, questionId);
+  async retireQuestion(tenantId: number, questionId: number, actor: AssessActor) {
+    const current = await this.#question(tenantId, questionId);
+    await this.#assertCanAuthorQuestion(tenantId, current, actor);
     // Retired, not deleted: past attempts reference it, and a deleted question
     // would make an old paper unreadable.
     await this.#db.from('onyx_questions')
       .update({ status: 'retired', updated_at: new Date(this.#now()).toISOString() })
       .eq('tenant_id', tenantId).eq('id', questionId);
     return { id: questionId, status: 'retired' };
+  }
+
+  /** Resolves a question to its bank's course and applies #assertCanAuthor. */
+  async #assertCanAuthorQuestion(
+    tenantId: number, question: Record<string, unknown>, actor: AssessActor,
+  ): Promise<void> {
+    const bank = await this.#bank(tenantId, Number(question.bank_id));
+    await this.#assertCanAuthor(tenantId, bank.course_id as number | null, actor);
   }
 
   /**
@@ -268,7 +303,7 @@ export class AssessService {
   // ASS-01b -- assessments
   // -------------------------------------------------------------------------
 
-  async createAssessment(tenantId: number, createdBy: string, input: {
+  async createAssessment(tenantId: number, actor: AssessActor, input: {
     title: string; course_id?: number | null; instructions?: string | null;
     opens_at?: string | null; closes_at?: string | null;
     duration_minutes?: number; attempts_allowed?: number;
@@ -279,6 +314,8 @@ export class AssessService {
     pass_mark?: number | null;
   }) {
     if (input.course_id) await this.#academics.course(tenantId, input.course_id);
+    await this.#assertCanAuthor(tenantId, input.course_id, actor);
+    const createdBy = actor.userId;
     const duration = input.duration_minutes ?? 60;
     if (duration < 1 || duration > 1440) throw new HttpError(422, 'That is not a usable duration.');
     if (input.opens_at && input.closes_at
@@ -333,11 +370,12 @@ export class AssessService {
    * duration. Auditing happens at the route, the same as this file's other
    * writes (createAssessment, publish) -- this service has no AuditService
    * of its own to call. */
-  async updateAssessment(tenantId: number, id: number, patch: {
+  async updateAssessment(tenantId: number, id: number, actor: AssessActor, patch: {
     title?: string; opens_at?: string | null; closes_at?: string | null;
     pass_mark?: number | null; duration_minutes?: number; status?: string;
   }) {
     const current = await this.assessment(tenantId, id);
+    await this.#assertCanAuthor(tenantId, current.course_id as number | null, actor);
     if (patch.opens_at !== undefined && patch.closes_at !== undefined
       && patch.opens_at && patch.closes_at
       && Date.parse(patch.closes_at) <= Date.parse(patch.opens_at)) {

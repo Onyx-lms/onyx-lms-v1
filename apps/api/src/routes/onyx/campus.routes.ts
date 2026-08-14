@@ -132,6 +132,7 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
   async function syncExamAssessmentWindow(
     tenantId: number, assessmentId: number,
     exam: { course_id: number; starts_at: string; duration_minutes: number; status: string },
+    actor: { userId: string; role: Role },
   ) {
     const assessment = await ctx.onyxAssess.assessment(tenantId, assessmentId);
     if (Number(assessment.course_id) !== Number(exam.course_id)) {
@@ -140,7 +141,7 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
     }
     const start = Date.parse(exam.starts_at);
     const end = start + exam.duration_minutes * 60_000;
-    await ctx.onyxAssess.updateAssessment(tenantId, assessmentId, {
+    await ctx.onyxAssess.updateAssessment(tenantId, assessmentId, actor, {
       opens_at: new Date(start).toISOString(),
       closes_at: new Date(end).toISOString(),
       duration_minutes: exam.duration_minutes,
@@ -344,7 +345,7 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
     }
     const exam = await ctx.onyxExams.schedule(claims.tenant_id, viewer, body);
     if (body.assessment_id && exam) {
-      await syncExamAssessmentWindow(claims.tenant_id, body.assessment_id, exam);
+      await syncExamAssessmentWindow(claims.tenant_id, body.assessment_id, exam, viewer);
     }
     if (exam) await notifyExamScheduled(claims.tenant_id, claims.user_id, body.course_id, exam);
     return ok(exam);
@@ -387,9 +388,24 @@ export function registerOnyxCampusRoutes(app: FastifyInstance, ctx: AppContext):
     if (exam?.assessment_id
       && (body.starts_at !== undefined || body.duration_minutes !== undefined
         || body.status === 'cancelled')) {
-      await syncExamAssessmentWindow(claims.tenant_id, Number(exam.assessment_id), exam);
+      await syncExamAssessmentWindow(claims.tenant_id, Number(exam.assessment_id), exam, viewer);
     }
     return ok(exam, 'Updated.');
+  });
+
+  /**
+   * Removes an exam outright. Same guard as editing one -- the examinations
+   * office, or the course's own faculty (assertCanRunExam) -- not a
+   * separately-restricted action, matching how this codebase already treats
+   * edit and delete as one authorization boundary elsewhere.
+   */
+  app.delete('/api/onyx/exams/:id', async (req) => {
+    const { claims, viewer } = await viewerOf(req);
+    const existing = await ctx.onyxExams.exam(claims.tenant_id, idOf(req));
+    await assertCanRunExam(
+      claims.tenant_id, Number(existing.course_id), claims.user_id, claims.tenant_role);
+    await ctx.onyxExams.remove(claims.tenant_id, idOf(req), viewer);
+    return ok({}, 'Removed.');
   });
 
   /** Override one mark directly -- a dispute or a data-entry fix. */
