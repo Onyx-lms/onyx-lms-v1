@@ -7,7 +7,7 @@ import type { Exam, SeatingPlan, Hall, ExamMark } from '@/lib/onyx-campus';
 import {
   AllocateSeating, DeleteExamButton, EnterMarks, ExamEditForm, MarkOverride,
 } from '@/components/onyx-manage';
-import type { Assessment } from '@/lib/onyx-assess';
+import type { Assessment, MarkingQueueRow } from '@/lib/onyx-assess';
 import { ActionButton } from '@/components/onyx-create';
 import {
   Card, DataTable, Empty, EmptyRow, Icon, Meter, Pill, Score, SectionHead, State,
@@ -22,7 +22,7 @@ const MIN = 60_000;
 /** The pulsing live dot stops moving for anyone who has asked it to. */
 const CALM = '[&_i]:motion-reduce:animate-none';
 
-interface Seat { hall_id: number; seat_label: string; user_id: number; created_at: string }
+interface Seat { hall_id: number; seat_label: string; user_id: string; created_at: string }
 
 /** Calendar days apart, so "tomorrow" does not depend on the hour of asking. */
 function days(from: number, to: number): number {
@@ -93,9 +93,9 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
     canMark ? onyxApiSafe<ExamMark[]>('/api/onyx/exams/' + id + '/marks') : null,
     // Who sits this paper: whoever is enrolled on the course it belongs to.
     // The roster is enrolments only, so names come from the member list.
-    canMark ? onyxApiSafe<{ user_id: number }[]>(
+    canMark ? onyxApiSafe<{ user_id: string }[]>(
       '/api/onyx/courses/' + exam.course_id + '/roster') : null,
-    canMark ? onyxApiSafe<{ user_id: number; user: { name: string } | null }[]>(
+    canMark ? onyxApiSafe<{ user_id: string; user: { name: string } | null }[]>(
       '/api/onyx/members') : null,
     // A candidate's own result on the one page they'd naturally look for it --
     // marksFor() already returns published-only for a non-staff caller asking
@@ -104,14 +104,19 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
     canMark ? null : onyxApiSafe<ExamMark[]>('/api/onyx/results?exam_id=' + id),
   ]);
 
-  const nameOf = new Map((members ?? []).map((m) => [Number(m.user_id), m.user?.name ?? null]));
+  // user_id is a Supabase Auth uuid, not a bigint any more -- Number(uuid) is
+  // NaN for every row, and Map treats NaN as equal to itself (SameValueZero),
+  // so every candidate collapsed onto the one "NaN" key and inherited
+  // whichever member's name happened to be inserted last. Keying on the
+  // string itself is the fix; there is no numeric id to convert to.
+  const nameOf = new Map((members ?? []).map((m) => [m.user_id, m.user?.name ?? null]));
   // Marks already entered, so re-opening the panel shows what is there rather
   // than a blank grid that reads as "nobody has been marked".
-  const entered = new Map((marks ?? []).map((m) => [Number(m.user_id), Number(m.raw_marks)]));
+  const entered = new Map((marks ?? []).map((m) => [m.user_id, Number(m.raw_marks)]));
   const candidates = (roster ?? []).map((r) => ({
-    user_id: Number(r.user_id),
-    name: nameOf.get(Number(r.user_id)) ?? 'User ' + r.user_id,
-    current: entered.get(Number(r.user_id)) ?? null,
+    user_id: r.user_id,
+    name: nameOf.get(r.user_id) ?? 'User ' + r.user_id,
+    current: entered.get(r.user_id) ?? null,
   }));
   const published = (marks ?? []).some((m) => m.status === 'published');
   const myMark = (myMarks ?? [])[0] ?? null;
@@ -120,19 +125,35 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
   // is what keeps its open/close window locked to exactly this exam's slot,
   // so this page never has to check the clock itself; AssessService.start()
   // already refuses an attempt outside that window.
-  const [onlinePaper, proctorSnapshot] = await Promise.all([
+  const [onlinePaper, proctorSnapshot, markingQueue] = await Promise.all([
     exam.assessment_id
       ? onyxApiSafe<Assessment>('/api/onyx/assessments/' + exam.assessment_id) : null,
     exam.assessment_id && canMark
       ? onyxApiSafe<{ status: string; integrity_flags: number }[]>(
         '/api/onyx/proctor/queue?assessment_id=' + exam.assessment_id)
       : null,
+    // Who has actually submitted, for the "Review submission" / "Didn't
+    // attempt yet" column in the candidate register below.
+    exam.assessment_id && canMark && !staff
+      ? onyxApiSafe<MarkingQueueRow[]>('/api/onyx/assessments/' + exam.assessment_id + '/marking')
+      : null,
   ]);
   const sittingNow = (proctorSnapshot ?? []).filter((r) => r.status === 'in_progress').length;
   const examFlagged = (proctorSnapshot ?? []).filter((r) => r.integrity_flags > 0).length;
 
   // The whole mark, not just the raw figure, for the register's Mark column.
-  const markOf = new Map((marks ?? []).map((m) => [Number(m.user_id), m]));
+  const markOf = new Map((marks ?? []).map((m) => [m.user_id, m]));
+  // Which candidates have actually submitted the online paper, keyed the same
+  // way -- markingQueue() excludes still-in-progress attempts by design (see
+  // its own comment), so "not here" reads correctly as "nothing to review
+  // yet". Anonymised marking pseudonymises user_id to null on every row, and
+  // there is no way to attribute a specific attempt to a specific candidate
+  // in that case, so the column is hidden rather than shown wrong.
+  const showSubmissions = Boolean(exam.assessment_id) && !onlinePaper?.anonymous_marking;
+  const attemptOf = new Map(
+    (markingQueue ?? [])
+      .filter((a): a is MarkingQueueRow & { user_id: string } => a.user_id !== null)
+      .map((a) => [a.user_id, a]));
 
   const now = Date.now();
   const start = Date.parse(exam.starts_at);
@@ -276,7 +297,7 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
                                  bg-brand-600 px-3.5 text-[13px] font-bold text-white
                                  hover:bg-brand-700">
                       <Icon name="play" className="h-3.5 w-3.5" />
-                      Sit this exam
+                      Start exam
                     </Link>
                   </>
                 ) : now < start ? (
@@ -349,15 +370,17 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
                         <th scope="col">Candidate</th>
                         <th scope="col">Grade</th>
                         <th scope="col">Mark</th>
+                        {showSubmissions ? <th scope="col">Submission</th> : null}
                       </>
                     }
                   >
                     {candidates.length === 0 ? (
-                      <EmptyRow colSpan={3} icon="users">
+                      <EmptyRow colSpan={showSubmissions ? 4 : 3} icon="users">
                         Nobody is enrolled on this course yet.
                       </EmptyRow>
                     ) : candidates.map((c) => {
                       const m = markOf.get(c.user_id);
+                      const attempt = attemptOf.get(c.user_id);
                       return (
                         <tr key={c.user_id}>
                           <td className="font-semibold">{c.name}</td>
@@ -373,6 +396,20 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
                               <Score value="—" band="none" />
                             )}
                           </td>
+                          {showSubmissions ? (
+                            <td>
+                              {attempt ? (
+                                <Link href={'/onyx/attempts/' + attempt.id + '/mark'}
+                                  className="inline-flex items-center gap-1 text-[12.5px]
+                                             font-bold text-brand-600 hover:underline">
+                                  <Icon name="edit" className="h-3.5 w-3.5" />
+                                  Review submission
+                                </Link>
+                              ) : (
+                                <span className="text-[12.5px] text-muted">Didn’t attempt yet</span>
+                              )}
+                            </td>
+                          ) : null}
                         </tr>
                       );
                     })}
@@ -418,7 +455,7 @@ export default async function OnyxExamPage({ params }: { params: Promise<{ id: s
                           }
                         >
                           {h.seats.map((s) => {
-                            const m = markOf.get(Number(s.user_id));
+                            const m = markOf.get(s.user_id);
                             return (
                               <tr key={s.seat_label}>
                                 <td className="whitespace-nowrap font-semibold tabular-nums">

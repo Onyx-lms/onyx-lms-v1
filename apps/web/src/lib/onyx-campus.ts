@@ -153,13 +153,13 @@ export interface SeatingPlan {
   exam_id: number;
   total: number;
   halls: { hall_id: number; hall: string;
-    seats: { seat_label: string; user_id: number; name: string | null }[] }[];
+    seats: { seat_label: string; user_id: string; name: string | null }[] }[];
 }
 
 export interface ExamMark {
   id: number;
   exam_id: number;
-  user_id: number;
+  user_id: string;
   raw_marks: number;
   moderation_delta: number;
   final_marks: number;

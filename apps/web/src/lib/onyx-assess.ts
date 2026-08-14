@@ -88,7 +88,7 @@ export interface MarkingQueueRow {
   max_score: number;
   integrity_flags: number;
   integrity_status: string;
-  user_id: number | null;
+  user_id: string | null;
   candidate: string | null;
 }
 

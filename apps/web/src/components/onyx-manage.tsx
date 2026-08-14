@@ -127,11 +127,11 @@ export function AllocateSeating({ examId, halls }: {
 
 export function EnterMarks({ examId, maxMarks, candidates }: {
   examId: number; maxMarks: number;
-  candidates: { user_id: number; name: string; current?: number | null }[];
+  candidates: { user_id: string; name: string; current?: number | null }[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [marks, setMarks] = useState<Record<number, string>>(
+  const [marks, setMarks] = useState<Record<string, string>>(
     Object.fromEntries(candidates.map((c) => [c.user_id,
       c.current === null || c.current === undefined ? '' : String(c.current)])));
   const [error, setError] = useState<string | null>(null);
