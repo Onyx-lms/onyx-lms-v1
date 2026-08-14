@@ -47,14 +47,14 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
   // -------------------------------------------------------------------------
 
   app.get('/api/onyx/banks', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     const q = req.query as { course_id?: string };
     return ok(await ctx.onyxAssess.banks(
       claims.tenant_id, q.course_id ? Number(q.course_id) : undefined));
   });
 
   app.post('/api/onyx/banks', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     const body = validate(z.object({
       name: z.string().min(1).max(255),
       description: z.string().max(5000).nullish(),
@@ -71,7 +71,7 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
    * can reach: this is the key to every paper drawn from the bank.
    */
   app.get('/api/onyx/banks/:id/questions', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     const q = req.query as { difficulty?: string; tag?: string; retired?: string };
     return ok(await ctx.onyxAssess.questions(claims.tenant_id, idOf(req), {
       difficulty: q.difficulty, tag: q.tag, includeRetired: q.retired === '1',
@@ -79,7 +79,7 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.post('/api/onyx/banks/:id/questions', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     const body = validate(z.object({
       type: TypeSchema.optional(),
       prompt: z.string().min(1).max(20_000),
@@ -96,7 +96,7 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
 
   /** Editing writes a new version; the old one stays as it was sat. */
   app.patch('/api/onyx/questions/:id', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     const body = validate(z.object({
       type: TypeSchema.optional(),
       prompt: z.string().min(1).max(20_000).optional(),
@@ -112,7 +112,7 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.delete('/api/onyx/questions/:id', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     return ok(await ctx.onyxAssess.retireQuestion(claims.tenant_id, idOf(req)), 'Retired.');
   });
 
@@ -121,14 +121,14 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
   // -------------------------------------------------------------------------
 
   app.get('/api/onyx/assessments', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const q = req.query as { course_id?: string };
     return ok(await ctx.onyxAssess.assessments(
       claims.tenant_id, claims.tenant_role, q.course_id ? Number(q.course_id) : undefined));
   });
 
   app.post('/api/onyx/assessments', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     const body = validate(z.object({
       title: z.string().min(1).max(255),
       course_id: z.number().int().positive().nullish(),
@@ -157,7 +157,7 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.get('/api/onyx/assessments/:id', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const assessment = await ctx.onyxAssess.assessment(claims.tenant_id, idOf(req));
     const staff = (STAFF as readonly string[]).includes(claims.tenant_role);
     if (!staff && assessment.status !== 'published') {
@@ -173,7 +173,7 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
 
   /** Correct an assessment's own fields -- title, window, pass mark, duration. */
   app.patch('/api/onyx/assessments/:id', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     const body = validate(z.object({
       title: z.string().min(1).max(255).optional(),
       opens_at: z.string().nullish(),
@@ -195,7 +195,7 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
 
   /** Override one attempt's score directly -- a dispute or a data-entry fix. */
   app.patch('/api/onyx/attempts/:id/score', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     const body = validate(z.object({ score: z.number().min(0) }), req.body);
     const result = await ctx.onyxAssess.overrideScore(claims.tenant_id, idOf(req), body.score);
     await ctx.onyxAudit.record(claims, {
@@ -206,7 +206,7 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.post('/api/onyx/assessments/:id/publish', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     const published = await ctx.onyxAssess.publishAssessment(claims.tenant_id, idOf(req));
     await ctx.onyxAudit.record(claims, {
       action: 'assessment.published', entityType: 'assessment', entityId: idOf(req),
@@ -221,7 +221,7 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
 
   /** Starts, or resumes the attempt already in progress. Same call either way. */
   app.post('/api/onyx/assessments/:id/start', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       consent: z.boolean().optional(),
       // What the browser has running. A paper that requires a camera or a
@@ -235,14 +235,14 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.get('/api/onyx/attempts/:id', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxAssess.attemptForCandidate(
       claims.tenant_id, idOf(req), claims.user_id));
   });
 
   /** ASS-01c -- autosave. One answer, written as it is given. */
   app.post('/api/onyx/attempts/:id/answer', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       question_id: z.number().int().positive(),
       response: z.unknown(),
@@ -252,14 +252,14 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.post('/api/onyx/attempts/:id/submit', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxAssess.submit(claims.tenant_id, idOf(req), claims.user_id),
       'Handed in.');
   });
 
   /** Sweeps attempts whose time ran out while nobody was looking. */
   app.post('/api/onyx/assessments/expire', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     return ok(await ctx.onyxAssess.expireOverdue(claims.tenant_id));
   });
 
@@ -274,7 +274,7 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
    * another candidate's paper.
    */
   app.post('/api/onyx/attempts/:id/proctor', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       kind: z.enum(EVENT_KINDS as [string, ...string[]]),
       detail: z.unknown().optional(),
@@ -286,7 +286,7 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.get('/api/onyx/attempts/:id/proctor', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     return ok(await ctx.onyxProctor.timeline(claims.tenant_id, idOf(req)));
   });
 
@@ -299,7 +299,7 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
    * already looking at one paper.
    */
   app.get('/api/onyx/proctor/queue', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     const q = req.query as { assessment_id?: string };
     if (q.assessment_id) {
       return ok(await ctx.onyxProctor.reviewQueue(claims.tenant_id, [Number(q.assessment_id)]));
@@ -313,7 +313,7 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.post('/api/onyx/proctor/events/:id/review', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     const body = validate(z.object({
       decision: z.enum(['dismissed', 'upheld']),
       note: z.string().max(5000).nullish(),
@@ -323,7 +323,7 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.post('/api/onyx/attempts/:id/integrity', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     const body = validate(z.object({
       decision: z.enum(['cleared', 'upheld']),
       note: z.string().max(5000).nullish(),
@@ -337,18 +337,18 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
   // -------------------------------------------------------------------------
 
   app.get('/api/onyx/assessments/:id/marking', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     return ok(await ctx.onyxAssess.markingQueue(claims.tenant_id, idOf(req)));
   });
 
   /** One paper to mark. Anonymised when the assessment says so. */
   app.get('/api/onyx/attempts/:id/paper', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     return ok(await ctx.onyxAssess.attemptForMarker(claims.tenant_id, idOf(req)));
   });
 
   app.post('/api/onyx/attempts/:id/mark', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     const body = validate(z.object({
       role: z.enum(['first', 'second', 'moderation']).optional(),
       marks: z.array(z.object({
@@ -380,7 +380,7 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
    * faculty" to extend it to.
    */
   app.post('/api/onyx/assessments/:id/results/publish', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     if (claims.tenant_role !== 'admin' && claims.tenant_role !== 'exams') {
       const assessment = await ctx.onyxAssess.assessment(claims.tenant_id, idOf(req));
       if (!assessment.course_id) {
@@ -403,25 +403,25 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
   // -------------------------------------------------------------------------
 
   app.get('/api/onyx/assessments/:id/results', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     return ok(await ctx.onyxAssessAnalytics.results(claims.tenant_id, idOf(req)));
   });
 
   app.get('/api/onyx/assessments/:id/items', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     return ok(await ctx.onyxAssessAnalytics.itemAnalysis(claims.tenant_id, idOf(req)));
   });
 
   app.get('/api/onyx/courses/:id/benchmark', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     return ok(await ctx.onyxAssessAnalytics.benchmark(claims.tenant_id, idOf(req)));
   });
 
   /** ASS-04b -- the CSV an exams office actually wants. */
   app.get('/api/onyx/assessments/:id/results.csv', async (req, reply) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     const members = await ctx.onyxTenancy.members(claims.tenant_id);
-    const names = new Map(members.map((m) => [Number(m.user_id), {
+    const names = new Map(members.map((m) => [String(m.user_id), {
       name: m.user?.name ?? '', email: m.user?.email ?? '',
     }]));
     const csv = await ctx.onyxAssessAnalytics.exportCsv(claims.tenant_id, idOf(req), { names });
@@ -434,12 +434,12 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
 
   /** ASS-04b -- the same report as a document, for the board paper. */
   app.get('/api/onyx/assessments/:id/results.pdf', async (req, reply) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...STAFF);
     const [members, tenant] = await Promise.all([
       ctx.onyxTenancy.members(claims.tenant_id),
       ctx.onyxTenancy.tenant(claims.tenant_id),
     ]);
-    const names = new Map(members.map((m) => [Number(m.user_id), {
+    const names = new Map(members.map((m) => [String(m.user_id), {
       name: m.user?.name ?? '', email: m.user?.email ?? '',
     }]));
     const pdf = await ctx.onyxAssessAnalytics.exportPdf(claims.tenant_id, idOf(req), {
@@ -454,7 +454,7 @@ export function registerOnyxAssessRoutes(app: FastifyInstance, ctx: AppContext):
 
   /** A candidate's own results, once they exist. */
   app.get('/api/onyx/my/assessments', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxAssess.myAttempts(claims.tenant_id, claims.user_id));
   });
 }

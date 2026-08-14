@@ -22,7 +22,7 @@ export default async function OnyxInterviewPage({ params }: { params: Promise<{ 
     onyxApi<Me>('/api/onyx/me'),
     onyxApi<Interview>('/api/onyx/interviews/' + id),
   ]);
-  const isInterviewer = Number(interview.interviewer_id) === claims.user_id;
+  const isInterviewer = String(interview.interviewer_id) === claims.user_id;
 
   return (
     <OnyxShell

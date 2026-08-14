@@ -93,8 +93,8 @@ export class CareerService {
   // CAR-03 -- certificates
   // -------------------------------------------------------------------------
 
-  async issueCertificate(tenantId: number, issuedBy: number, input: {
-    user_id: number; title: string; kind?: CertificateKind;
+  async issueCertificate(tenantId: number, issuedBy: string, input: {
+    user_id: string; title: string; kind?: CertificateKind;
     course_id?: number | null; assessment_id?: number | null;
     detail?: Record<string, unknown>; expires_at?: string | null;
   }) {
@@ -121,7 +121,7 @@ export class CareerService {
     return data!;
   }
 
-  async certificates(tenantId: number, userId: number) {
+  async certificates(tenantId: number, userId: string) {
     const { data } = await this.#db.from('onyx_certificates')
       .select(CERTIFICATE_COLUMNS)
       .eq('tenant_id', tenantId).eq('user_id', userId)
@@ -138,7 +138,7 @@ export class CareerService {
    * first, because the reason someone opens this list is almost always the
    * thing that was issued a moment ago.
    */
-  async issuedCertificates(tenantId: number, opts: { userId?: number } = {}) {
+  async issuedCertificates(tenantId: number, opts: { userId?: string } = {}) {
     let q = this.#db.from('onyx_certificates')
       .select(CERTIFICATE_COLUMNS).eq('tenant_id', tenantId);
     if (opts.userId) q = q.eq('user_id', opts.userId);
@@ -202,7 +202,7 @@ export class CareerService {
    * verifier the truth whatever the paper says.
    */
   async certificatePdf(tenantId: number, id: number, opts: {
-    viewer?: { userId: number; role: Role };
+    viewer?: { userId: string; role: Role };
     baseUrl?: string;
   } = {}): Promise<{ file: Buffer; filename: string }> {
     const { data } = await this.#db.from('onyx_certificates')
@@ -211,7 +211,7 @@ export class CareerService {
 
     // A holder may take their own; an issuer may take anyone's. Nobody else.
     if (opts.viewer
-      && Number(data.user_id) !== opts.viewer.userId
+      && String(data.user_id) !== opts.viewer.userId
       && !['admin', 'exams', 'placement'].includes(opts.viewer.role)) {
       throw new HttpError(403, 'That is not your certificate.');
     }
@@ -291,7 +291,7 @@ export class CareerService {
    * opened.
    */
   async awardSkill(tenantId: number, input: {
-    user_id: number; skill_id: number;
+    user_id: string; skill_id: number;
     source_type: SkillSource; source_id: number | null;
     strength?: number; evidence?: Record<string, unknown>;
   }) {
@@ -323,7 +323,7 @@ export class CareerService {
    * passport that says otherwise is the sort of claim an employer will find out
    * about.
    */
-  async passport(tenantId: number, userId: number) {
+  async passport(tenantId: number, userId: string) {
     const [rows, catalogue] = await Promise.all([
       this.#learnerSkills(tenantId, userId),
       this.skills(tenantId),
@@ -368,7 +368,7 @@ export class CareerService {
    * Every component is 0..1 before weighting, so the weights mean what they
    * say and a missing component contributes nothing rather than a default.
    */
-  async computeReadiness(tenantId: number, userId: number) {
+  async computeReadiness(tenantId: number, userId: string) {
     const components: ReadinessComponent[] = [];
 
     // Attendance: their own figure across every course they are enrolled in.
@@ -464,7 +464,7 @@ export class CareerService {
     return { user_id: userId, score, breakdown: components, formula: READINESS_WEIGHTS, computed_at: at };
   }
 
-  async readiness(tenantId: number, userId: number) {
+  async readiness(tenantId: number, userId: string) {
     const { data } = await this.#db.from('onyx_readiness_scores')
       .select(READINESS_COLUMNS).eq('tenant_id', tenantId).eq('user_id', userId).maybeSingle();
     return data ?? null;
@@ -477,7 +477,7 @@ export class CareerService {
    * placement office sees the same; an employer sees only what a shared profile
    * carries, which is decided in the placement service rather than here.
    */
-  async profile(tenantId: number, userId: number, viewer: { role: Role; userId: number }) {
+  async profile(tenantId: number, userId: string, viewer: { role: Role; userId: string }) {
     const own = viewer.userId === userId;
     const staff = viewer.role === 'admin' || viewer.role === 'placement';
     if (!own && !staff) throw new HttpError(403, 'That is not your profile.');
@@ -511,7 +511,7 @@ export class CareerService {
     };
   }
 
-  async #learnerSkills(tenantId: number, userId: number) {
+  async #learnerSkills(tenantId: number, userId: string) {
     const { data } = await this.#db.from('onyx_learner_skills')
       .select(LEARNER_SKILL_COLUMNS)
       .eq('tenant_id', tenantId).eq('user_id', userId).order('earned_at');

@@ -8,7 +8,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, createTenant, webPage, withDb, WEB, RUN } from './harness.ts';
+import { api, createTenant, webPage, withDb, WEB, RUN, onyxWebLogin } from './harness.ts';
 
 /**
  * React splits interpolated text with HTML comments, so "belong to {n}
@@ -35,22 +35,6 @@ const state = {
   alpha: 0, beta: 0,
   cookies: {} as Record<string, string>,
 };
-
-/** Signs in through the WEB origin, which is what sets the cookie pages read. */
-async function webSignIn(email: string): Promise<string> {
-  const res = await fetch(WEB + '/api/onyx/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password: pw }),
-  });
-  const setCookie = res.headers.getSetCookie?.() ?? [];
-  const session = setCookie.find((c) => c.startsWith('onyx_tenant_session='));
-  if (!session) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error('web sign-in set no cookie: ' + (body.message ?? res.status));
-  }
-  return session.split(';')[0]!;
-}
 
 test('the sign-in and onboarding pages render for a visitor', async () => {
   const login = await webPage('/onyx/login');
@@ -119,8 +103,8 @@ test('an institution set up for it can be signed into from the web', async () =>
 
   state.alpha = await create(A, mail('alpha.admin'));
   state.beta = await create(B, mail('beta.admin'));
-  state.cookies.alpha = await webSignIn(mail('alpha.admin'));
-  state.cookies.beta = await webSignIn(mail('beta.admin'));
+  state.cookies.alpha = await onyxWebLogin(mail('alpha.admin'), pw);
+  state.cookies.beta = await onyxWebLogin(mail('beta.admin'), pw);
 });
 
 test('the shell names the institution from the token', async () => {
@@ -152,12 +136,12 @@ test('navigation matches the role, and the pages agree', async () => {
   assert.match(admin.html, /Audit log/, 'an admin was not offered the audit log');
   assert.match(admin.html, /People/);
 
-  const facultyCookie = await webSignIn(mail('faculty'));
+  const facultyCookie = await onyxWebLogin(mail('faculty'), pw);
   const faculty = await webPage('/onyx/dashboard', facultyCookie);
   assert.match(faculty.html, /People/, 'faculty was not offered the roster');
   assert.ok(!faculty.html.includes('Audit log'), 'faculty was offered the audit log');
 
-  const studentCookie = await webSignIn(mail('student'));
+  const studentCookie = await onyxWebLogin(mail('student'), pw);
   const student = await webPage('/onyx/dashboard', studentCookie);
   assert.ok(!student.html.includes('People'), 'a student was offered the roster');
   assert.ok(!student.html.includes('Audit log'), 'a student was offered the audit log');
@@ -174,7 +158,7 @@ test('the roster page shows one institution and offers editing only to admins', 
   assert.match(dom(admin.html), new RegExp(mail('student')));
   assert.ok(!admin.html.includes(mail('beta.admin')), 'the roster leaked another institution');
 
-  const facultyCookie = await webSignIn(mail('faculty'));
+  const facultyCookie = await onyxWebLogin(mail('faculty'), pw);
   const faculty = await webPage('/onyx/people', facultyCookie);
   assert.equal(faculty.status, 200);
   assert.match(dom(faculty.html), new RegExp(mail('student')), 'faculty could not read the roster');
@@ -196,7 +180,7 @@ test('the switcher appears only for someone who belongs to more than one', async
     assert.equal((await res.json()).ok, true);
   }
 
-  const sharedCookie = await webSignIn(mail('shared'));
+  const sharedCookie = await onyxWebLogin(mail('shared'), pw);
   const both = await webPage('/onyx/dashboard', sharedCookie);
   assert.match(both.html, /Switch institution/, 'no switcher for someone in two institutions');
   assert.match(text(dom(both.html)), /belong to 2 institutions/);
@@ -256,8 +240,12 @@ test('cleanup leaves nothing behind', async () => {
     await c.query('DELETE FROM public."onyx_tenants" WHERE slug = ANY($1)', [[A.slug, B.slug]]);
     await c.query('DELETE FROM public."onyx_users" WHERE email LIKE $1', ['web.%.' + RUN + '@onyx.test']);
   });
-  // And the API agrees they are gone.
+  // And the API agrees they are gone -- 403, not 401: credentials live in
+  // Supabase Auth now (ADR-011), separate from the onyx_users profile row
+  // this deletes, so signInWithPassword still succeeds and the rejection
+  // comes from the missing profile, one step later. Access is equally
+  // denied either way; only the status code differs from before.
   const gone = await api('/api/onyx/auth/login',
     { body: { email: mail('alpha.admin'), password: pw } });
-  assert.equal(gone.status, 401);
+  assert.equal(gone.status, 403);
 });

@@ -129,7 +129,7 @@ export class ContentService {
    * Someone not enrolled sees the shape of the course and its preview lessons,
    * which is what makes a catalog useful, and nothing else.
    */
-  async outline(tenantId: number, courseId: number, userId: number, role: Role) {
+  async outline(tenantId: number, courseId: number, userId: string, role: Role) {
     const course = await this.#academics.course(tenantId, courseId);
     const enrolled = isStaff(role)
       ? true
@@ -183,7 +183,7 @@ export class ContentService {
    * material that is reachable by anyone with the link is not access-controlled,
    * it is merely unlisted.
    */
-  async lesson(tenantId: number, lessonId: number, userId: number, role: Role) {
+  async lesson(tenantId: number, lessonId: number, userId: string, role: Role) {
     const lesson = await this.#lesson(tenantId, lessonId);
     if (!isStaff(role) && !lesson.is_preview) {
       await this.#academics.assertEnrolled(tenantId, Number(lesson.course_id), userId);
@@ -205,7 +205,7 @@ export class ContentService {
 
   // ---- progress ----
 
-  async progressFor(tenantId: number, courseId: number, userId: number) {
+  async progressFor(tenantId: number, courseId: number, userId: string) {
     const { data } = await this.#db.from('onyx_lesson_progress')
       .select(PROGRESS_COLUMNS)
       .eq('tenant_id', tenantId).eq('course_id', courseId).eq('user_id', userId);
@@ -218,7 +218,7 @@ export class ContentService {
    * The position only ever moves forward. Scrubbing back to check something and
    * then closing the tab must not lose the twenty minutes already watched.
    */
-  async recordProgress(tenantId: number, lessonId: number, userId: number, input: {
+  async recordProgress(tenantId: number, lessonId: number, userId: string, input: {
     position_seconds: number; completed?: boolean;
   }) {
     const lesson = await this.#lesson(tenantId, lessonId);
@@ -260,7 +260,7 @@ export class ContentService {
   // ---- LRN-02b: offline-friendly resources ----
 
   /** Uploads a file and records it in one step, under this tenant's prefix. */
-  async uploadResource(tenantId: number, courseId: number, createdBy: number, file: {
+  async uploadResource(tenantId: number, courseId: number, createdBy: string, file: {
     filename: string; contentType?: string; bytes: Uint8Array;
   }, input: { title?: string; lesson_id?: number | null }) {
     await this.#academics.course(tenantId, courseId);
@@ -275,7 +275,7 @@ export class ContentService {
     });
   }
 
-  async addResource(tenantId: number, courseId: number, createdBy: number, input: {
+  async addResource(tenantId: number, courseId: number, createdBy: string, input: {
     title: string; path: string; lesson_id?: number | null;
     mime?: string | null; size_bytes?: number | null;
   }) {
@@ -309,7 +309,7 @@ export class ContentService {
    * cannot obtain one, so the enrolment check happens here rather than at the
    * page that renders the button -- a page is not a boundary.
    */
-  async resourceUrl(tenantId: number, resourceId: number, userId: number, role: Role) {
+  async resourceUrl(tenantId: number, resourceId: number, userId: string, role: Role) {
     const { data } = await this.#db.from('onyx_resources')
       .select(RESOURCE_COLUMNS).eq('tenant_id', tenantId).eq('id', resourceId).maybeSingle();
     if (!data) throw new HttpError(404, 'Resource not found.');
@@ -342,7 +342,7 @@ export class ContentService {
     return data;
   }
 
-  async #progress(tenantId: number, lessonId: number, userId: number) {
+  async #progress(tenantId: number, lessonId: number, userId: string) {
     const { data } = await this.#db.from('onyx_lesson_progress')
       .select(PROGRESS_COLUMNS)
       .eq('tenant_id', tenantId).eq('lesson_id', lessonId).eq('user_id', userId)

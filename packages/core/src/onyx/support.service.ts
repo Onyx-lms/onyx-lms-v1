@@ -51,9 +51,9 @@ export interface TicketView {
   subject: string;
   status: TicketStatus;
   priority: TicketPriority;
-  owner_id: number | null;
+  owner_id: string | null;
   owner_name: string | null;
-  raised_by: number;
+  raised_by: string;
   raised_by_name: string | null;
   created_at: string;
   due_at: string;
@@ -81,7 +81,7 @@ export class SupportService {
   // Raising
   // -------------------------------------------------------------------------
 
-  async raise(tenantId: number, raisedBy: number, input: {
+  async raise(tenantId: number, raisedBy: string, input: {
     subject: string; body: string;
     priority?: TicketPriority; course_id?: number | null; discussion_id?: number | null;
   }) {
@@ -128,7 +128,7 @@ export class SupportService {
    * The thread keeps its replies and stays open -- escalation adds an owner,
    * it does not move the conversation somewhere the learner cannot see it.
    */
-  async escalate(tenantId: number, discussionId: number, raisedBy: number, input: {
+  async escalate(tenantId: number, discussionId: number, raisedBy: string, input: {
     note?: string; priority?: TicketPriority;
   } = {}) {
     const { data: thread } = await this.#db.from('onyx_discussions')
@@ -169,7 +169,7 @@ export class SupportService {
    * A learner asking for the same list gets only their own tickets, which is
    * why the viewer's role decides the filter rather than a query parameter.
    */
-  async queue(tenantId: number, viewer: { userId: number; role: Role }, filters: {
+  async queue(tenantId: number, viewer: { userId: string; role: Role }, filters: {
     status?: TicketStatus; mine?: boolean; unowned?: boolean;
   } = {}): Promise<TicketView[]> {
     let query = this.#db.from('onyx_tickets').select(TICKET_COLUMNS).eq('tenant_id', tenantId);
@@ -187,8 +187,8 @@ export class SupportService {
     const rows = data ?? [];
 
     const names = await this.#names([
-      ...rows.map((t) => Number(t.owner_id)),
-      ...rows.map((t) => Number(t.raised_by)),
+      ...rows.map((t) => t.owner_id ? String(t.owner_id) : null),
+      ...rows.map((t) => String(t.raised_by)),
     ]);
 
     const views = rows.map((t) => this.#view(t, names));
@@ -202,14 +202,14 @@ export class SupportService {
     });
   }
 
-  async ticket(tenantId: number, id: number, viewer: { userId: number; role: Role }) {
+  async ticket(tenantId: number, id: number, viewer: { userId: string; role: Role }) {
     const row = await this.#row(tenantId, id);
-    const mine = Number(row.raised_by) === viewer.userId || Number(row.owner_id) === viewer.userId;
+    const mine = String(row.raised_by) === viewer.userId || String(row.owner_id) === viewer.userId;
     if (!mine && !isMentor(viewer.role)) {
       throw new HttpError(403, 'That ticket is not yours.');
     }
 
-    const names = await this.#names([Number(row.owner_id), Number(row.raised_by)]);
+    const names = await this.#names([row.owner_id ? String(row.owner_id) : null, String(row.raised_by)]);
     const { data: events } = await this.#db.from('onyx_ticket_events').select(EVENT_COLUMNS)
       .eq('tenant_id', tenantId).eq('ticket_id', id).order('created_at', { ascending: true });
 
@@ -231,7 +231,7 @@ export class SupportService {
   // Working it
   // -------------------------------------------------------------------------
 
-  async assign(tenantId: number, id: number, ownerId: number, actor: { userId: number; role: Role }) {
+  async assign(tenantId: number, id: number, ownerId: string, actor: { userId: string; role: Role }) {
     if (!isMentor(actor.role)) throw new HttpError(403, 'Only staff can assign a ticket.');
     const row = await this.#row(tenantId, id);
 
@@ -259,17 +259,17 @@ export class SupportService {
   }
 
   /** Picking one up yourself, which is what actually happens. */
-  async claim(tenantId: number, id: number, actor: { userId: number; role: Role }) {
+  async claim(tenantId: number, id: number, actor: { userId: string; role: Role }) {
     return this.assign(tenantId, id, actor.userId, actor);
   }
 
-  async respond(tenantId: number, id: number, actor: { userId: number; role: Role },
+  async respond(tenantId: number, id: number, actor: { userId: string; role: Role },
     note: string) {
     const row = await this.#row(tenantId, id);
     const body = note.trim();
     if (!body) throw new HttpError(422, 'A response needs some text.');
 
-    const mine = Number(row.raised_by) === actor.userId || Number(row.owner_id) === actor.userId;
+    const mine = String(row.raised_by) === actor.userId || String(row.owner_id) === actor.userId;
     if (!mine && !isMentor(actor.role)) throw new HttpError(403, 'That ticket is not yours.');
 
     const at = new Date(this.#now()).toISOString();
@@ -293,10 +293,10 @@ export class SupportService {
     return data;
   }
 
-  async resolve(tenantId: number, id: number, actor: { userId: number; role: Role },
+  async resolve(tenantId: number, id: number, actor: { userId: string; role: Role },
     note?: string) {
     const row = await this.#row(tenantId, id);
-    const mine = Number(row.raised_by) === actor.userId;
+    const mine = String(row.raised_by) === actor.userId;
     if (!mine && !isMentor(actor.role)) throw new HttpError(403, 'That ticket is not yours.');
 
     const at = new Date(this.#now()).toISOString();
@@ -315,10 +315,10 @@ export class SupportService {
     return data;
   }
 
-  async reopen(tenantId: number, id: number, actor: { userId: number; role: Role },
+  async reopen(tenantId: number, id: number, actor: { userId: string; role: Role },
     note?: string) {
     const row = await this.#row(tenantId, id);
-    const mine = Number(row.raised_by) === actor.userId;
+    const mine = String(row.raised_by) === actor.userId;
     if (!mine && !isMentor(actor.role)) throw new HttpError(403, 'That ticket is not yours.');
 
     // Reopening does not restart the clock. The promise was made when the
@@ -351,7 +351,7 @@ export class SupportService {
 
     const rows = data ?? [];
     const names = await this.#names([
-      ...rows.map((t) => Number(t.owner_id)), ...rows.map((t) => Number(t.raised_by)),
+      ...rows.map((t) => t.owner_id ? String(t.owner_id) : null), ...rows.map((t) => String(t.raised_by)),
     ]);
     return {
       breached: rows.map((t) => this.#view(t, names)),
@@ -361,7 +361,7 @@ export class SupportService {
 
   // -------------------------------------------------------------------------
 
-  #view(t: Record<string, unknown>, names: Map<number, string>): TicketView {
+  #view(t: Record<string, unknown>, names: Map<string, string>): TicketView {
     const created = Date.parse(String(t.created_at));
     const now = this.#now();
     const resolvedAt = t.resolved_at ? String(t.resolved_at) : null;
@@ -373,10 +373,10 @@ export class SupportService {
       subject: String(t.subject),
       status: t.status as TicketStatus,
       priority: t.priority as TicketPriority,
-      owner_id: t.owner_id === null || t.owner_id === undefined ? null : Number(t.owner_id),
-      owner_name: t.owner_id ? names.get(Number(t.owner_id)) ?? null : null,
-      raised_by: Number(t.raised_by),
-      raised_by_name: names.get(Number(t.raised_by)) ?? null,
+      owner_id: t.owner_id === null || t.owner_id === undefined ? null : String(t.owner_id),
+      owner_name: t.owner_id ? names.get(String(t.owner_id)) ?? null : null,
+      raised_by: String(t.raised_by),
+      raised_by_name: names.get(String(t.raised_by)) ?? null,
       created_at: String(t.created_at),
       due_at: String(t.due_at),
       age_minutes: Math.max(0, Math.round((endedAt - created) / 60_000)),
@@ -394,14 +394,14 @@ export class SupportService {
     return data;
   }
 
-  async #names(ids: number[]) {
-    const unique = [...new Set(ids.filter((n) => Number.isFinite(n) && n > 0))];
-    if (!unique.length) return new Map<number, string>();
+  async #names(ids: (string | null)[]) {
+    const unique = [...new Set(ids.filter((id): id is string => Boolean(id)))];
+    if (!unique.length) return new Map<string, string>();
     const { data } = await this.#db.from('onyx_users').select('id, name').in('id', unique);
-    return new Map((data ?? []).map((u) => [Number(u.id), String(u.name)]));
+    return new Map((data ?? []).map((u) => [String(u.id), String(u.name)]));
   }
 
-  async #event(tenantId: number, ticketId: number, actorId: number | null,
+  async #event(tenantId: number, ticketId: number, actorId: string | null,
     kind: TicketEventKind, note: string | null, detail: Record<string, unknown>) {
     await this.#db.from('onyx_ticket_events').insert({
       tenant_id: tenantId, ticket_id: ticketId, actor_id: actorId, kind, note, detail,

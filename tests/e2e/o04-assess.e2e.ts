@@ -14,7 +14,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, createTenant, withDb, RUN } from './harness.ts';
+import { api, createTenant, withDb, RUN, onyxLogin } from './harness.ts';
 
 const pw = 'OnyxTest#2026';
 const mail = (who: string) => 'ex.' + who + '.' + RUN + '@onyx.test';
@@ -26,15 +26,9 @@ const SECRET_ANSWER = 'SECRET-KEY-' + RUN;
 const w = {
   alpha: { id: 0, admin: '', exams: '', s1: '', s2: '' },
   beta: { id: 0, admin: '' },
-  ids: {} as Record<string, number>,
+  ids: {} as Record<string, string>,
   course: 0, bank: 0, assessment: 0, attempt1: 0, attempt2: 0,
   q: {} as Record<string, number>,
-};
-
-const login = async (email: string) => {
-  const r = await api<{ token: string }>('/api/onyx/auth/login', { body: { email, password: pw } });
-  assert.equal(r.ok, true, 'login ' + email + ': ' + r.message);
-  return r.data.token;
 };
 
 test('two boards, a course and two candidates', async () => {
@@ -46,19 +40,19 @@ test('two boards, a course and two candidates', async () => {
     assert.equal(res.ok, true, res.message);
     w[key].id = Number(res.data.tenant.id);
   }
-  w.alpha.admin = await login(mail('alpha.admin'));
-  w.beta.admin = await login(mail('beta.admin'));
+  w.alpha.admin = await onyxLogin(mail('alpha.admin'), pw);
+  w.beta.admin = await onyxLogin(mail('beta.admin'), pw);
 
   for (const [who, role] of [['exams', 'exams'], ['s1', 'student'], ['s2', 'student']] as const) {
-    const r = await api<{ user: { id: number } }>('/api/onyx/members', {
+    const r = await api<{ user: { id: string } }>('/api/onyx/members', {
       token: w.alpha.admin, body: { name: who, email: mail(who), role, password: pw },
     });
     assert.equal(r.ok, true, r.message);
-    w.ids[who] = Number(r.data.user.id);
+    w.ids[who] = r.data.user.id;
   }
-  w.alpha.exams = await login(mail('exams'));
-  w.alpha.s1 = await login(mail('s1'));
-  w.alpha.s2 = await login(mail('s2'));
+  w.alpha.exams = await onyxLogin(mail('exams'), pw);
+  w.alpha.s1 = await onyxLogin(mail('s1'), pw);
+  w.alpha.s2 = await onyxLogin(mail('s2'), pw);
 
   const course = await api<{ id: number }>('/api/onyx/courses', {
     token: w.alpha.admin, body: { code: 'EX101', title: 'Examined Course' },
@@ -295,7 +289,7 @@ test('ASS-01a editing a question after an attempt does not change that attempt',
 // ---------------------------------------------------------------------------
 
 test('ASS-03a the grader cannot see the candidate when marking is anonymous', async () => {
-  const queue = await api<{ id: number; user_id: number | null; candidate: string | null }[]>(
+  const queue = await api<{ id: number; user_id: string | null; candidate: string | null }[]>(
     '/api/onyx/assessments/' + w.assessment + '/marking', { token: w.alpha.exams });
   assert.equal(queue.ok, true, queue.message);
   assert.equal(queue.data.length, 2);
@@ -310,7 +304,7 @@ test('ASS-03a the grader cannot see the candidate when marking is anonymous', as
   assert.equal(wire.includes(mail('s1')), false);
   assert.equal(wire.includes(String(w.ids.s1)), false, 'a candidate id reached the marker');
 
-  const paper = await api<{ user_id: number | null; anonymous: boolean }>(
+  const paper = await api<{ user_id: string | null; anonymous: boolean }>(
     '/api/onyx/attempts/' + w.attempt1 + '/paper', { token: w.alpha.exams });
   assert.equal(paper.data.user_id, null);
   assert.equal(paper.data.anonymous, true);
@@ -571,7 +565,7 @@ test('RLS confines the O04 tables at the database', async () => {
 
   // An attempt is the candidate's own.
   const { data: attempts } = await candidate.from('onyx_assessment_attempts').select('user_id');
-  for (const a of attempts!) assert.equal(Number(a.user_id), w.ids.s1);
+  for (const a of attempts!) assert.equal(a.user_id, w.ids.s1);
   assert.equal((await onyxTenantClient(w.alpha.s2)
     .from('onyx_assessment_attempts').select('id')).data
     ?.some((a) => Number(a.id) === w.attempt1) ?? false, false,

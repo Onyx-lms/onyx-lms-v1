@@ -54,7 +54,7 @@ export class AssignmentsService {
 
   // ---- LRN-04a: authoring ----
 
-  async create(tenantId: number, courseId: number, createdBy: number, input: {
+  async create(tenantId: number, courseId: number, createdBy: string, input: {
     title: string; instructions?: string | null; due_at?: string | null;
     total_points?: number; late_policy?: LatePolicy; late_penalty_percent?: number;
     allow_resubmission?: boolean; attachment_path?: string | null;
@@ -164,7 +164,7 @@ export class AssignmentsService {
 
   // ---- LRN-04b/c: the learner's side ----
 
-  async mySubmission(tenantId: number, assignmentId: number, userId: number) {
+  async mySubmission(tenantId: number, assignmentId: number, userId: string) {
     const { data } = await this.#db.from('onyx_assignment_submissions')
       .select(SUBMISSION_COLUMNS)
       .eq('tenant_id', tenantId).eq('assignment_id', assignmentId).eq('user_id', userId)
@@ -191,7 +191,7 @@ export class AssignmentsService {
    * caused, so it is folded into the update the winner already made rather
    * than shown as a failed save.
    */
-  async saveDraft(tenantId: number, assignmentId: number, userId: number, body: string) {
+  async saveDraft(tenantId: number, assignmentId: number, userId: string, body: string) {
     const assignment = await this.#openAssignment(tenantId, assignmentId, userId);
     const existing = await this.#submission(tenantId, assignmentId, userId);
     const now = new Date(this.#now()).toISOString();
@@ -222,7 +222,7 @@ export class AssignmentsService {
     return data!;
   }
 
-  async submit(tenantId: number, assignmentId: number, userId: number, input: {
+  async submit(tenantId: number, assignmentId: number, userId: string, input: {
     body?: string | null; file_path?: string | null;
   }) {
     const assignment = await this.#openAssignment(tenantId, assignmentId, userId);
@@ -311,7 +311,7 @@ export class AssignmentsService {
    * When a rubric exists the score is its sum, not a number typed alongside it.
    * Two numbers that are meant to agree eventually will not.
    */
-  async grade(tenantId: number, submissionId: number, gradedBy: number, input: {
+  async grade(tenantId: number, submissionId: number, gradedBy: string, input: {
     scores?: { criterion_id: number; points: number; comment?: string | null }[];
     score?: number;
     feedback?: string | null;
@@ -398,7 +398,7 @@ export class AssignmentsService {
 
   // ---- internals ----
 
-  async #openAssignment(tenantId: number, assignmentId: number, userId: number) {
+  async #openAssignment(tenantId: number, assignmentId: number, userId: string) {
     const assignment = await this.assignment(tenantId, assignmentId);
     // An unpublished assignment does not exist as far as a learner is
     // concerned, so this is a 404 rather than a 403.
@@ -407,7 +407,7 @@ export class AssignmentsService {
     return assignment;
   }
 
-  async #submission(tenantId: number, assignmentId: number, userId: number) {
+  async #submission(tenantId: number, assignmentId: number, userId: string) {
     const { data } = await this.#db.from('onyx_assignment_submissions')
       .select(SUBMISSION_COLUMNS)
       .eq('tenant_id', tenantId).eq('assignment_id', assignmentId).eq('user_id', userId)

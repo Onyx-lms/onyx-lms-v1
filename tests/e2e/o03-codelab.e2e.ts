@@ -17,7 +17,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, createTenant, withDb, RUN } from './harness.ts';
+import { api, createTenant, withDb, RUN, onyxLogin } from './harness.ts';
 
 const pw = 'OnyxTest#2026';
 const mail = (who: string) => 'cl.' + who + '.' + RUN + '@onyx.test';
@@ -30,14 +30,8 @@ const SECRET_OUTPUT = 'HIDDEN-ANSWER-' + RUN;
 const w = {
   alpha: { id: 0, admin: '', faculty: '', s1: '', s2: '' },
   beta: { id: 0, admin: '' },
-  ids: {} as Record<string, number>,
+  ids: {} as Record<string, string>,
   course: 0, problem: 0, workspace: 0, snapshot: 0, submission: 0,
-};
-
-const login = async (email: string) => {
-  const r = await api<{ token: string }>('/api/onyx/auth/login', { body: { email, password: pw } });
-  assert.equal(r.ok, true, 'login ' + email + ': ' + r.message);
-  return r.data.token;
 };
 
 test('two institutions, a course and a cohort', async () => {
@@ -49,19 +43,19 @@ test('two institutions, a course and a cohort', async () => {
     assert.equal(res.ok, true, res.message);
     w[key].id = Number(res.data.tenant.id);
   }
-  w.alpha.admin = await login(mail('alpha.admin'));
-  w.beta.admin = await login(mail('beta.admin'));
+  w.alpha.admin = await onyxLogin(mail('alpha.admin'), pw);
+  w.beta.admin = await onyxLogin(mail('beta.admin'), pw);
 
   for (const [who, role] of [['faculty', 'faculty'], ['s1', 'student'], ['s2', 'student']] as const) {
-    const r = await api<{ user: { id: number } }>('/api/onyx/members', {
+    const r = await api<{ user: { id: string } }>('/api/onyx/members', {
       token: w.alpha.admin, body: { name: who, email: mail(who), role, password: pw },
     });
     assert.equal(r.ok, true, r.message);
-    w.ids[who] = Number(r.data.user.id);
+    w.ids[who] = r.data.user.id;
   }
-  w.alpha.faculty = await login(mail('faculty'));
-  w.alpha.s1 = await login(mail('s1'));
-  w.alpha.s2 = await login(mail('s2'));
+  w.alpha.faculty = await onyxLogin(mail('faculty'), pw);
+  w.alpha.s1 = await onyxLogin(mail('s1'), pw);
+  w.alpha.s2 = await onyxLogin(mail('s2'), pw);
 
   const course = await api<{ id: number }>('/api/onyx/courses', {
     token: w.alpha.admin, body: { code: 'CL101', title: 'Code Lab Course' },
@@ -527,7 +521,7 @@ test('RLS confines the O03 tables at the database', async () => {
 
   // Submissions and workspaces are the caller's own.
   const { data: mine } = await learner.from('onyx_code_submissions').select('user_id');
-  for (const s of mine!) assert.equal(Number(s.user_id), w.ids.s1);
+  for (const s of mine!) assert.equal(s.user_id, w.ids.s1);
   assert.equal((await onyxTenantClient(w.alpha.s2)
     .from('onyx_workspaces').select('id')).data?.length ?? 0, 0,
     'one learner read another\'s workspaces');

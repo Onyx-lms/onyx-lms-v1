@@ -160,6 +160,54 @@ export async function platformToken(): Promise<string> {
   return res.data.token;
 }
 
+/**
+ * Onyx tenant login, cached the same way login()/platformToken() are.
+ *
+ * Extracted out of what used to be nine near-identical local `login()`
+ * closures across the o*.e2e.ts suites (some tenant-aware, some not) --
+ * having one place that knows how to sign in is what let the auth migration
+ * touch this file's internals instead of all nine call sites.
+ */
+export async function onyxLogin(email: string, password: string, tenantId?: number): Promise<string> {
+  const cache = readCache();
+  const key = 'onyx:' + email + (tenantId ? ':' + tenantId : '');
+  if (stillValid(cache[key])) return cache[key]!;
+
+  const res = await api<{ token: string }>('/api/onyx/auth/login',
+    { body: { email, password, tenant_id: tenantId } });
+  if (!res.ok) throw new Error('onyxLogin(' + email + ') failed: ' + res.message);
+  cache[key] = res.data.token;
+  writeCache(cache);
+  return res.data.token;
+}
+
+/**
+ * Onyx tenant web sign-in, mirroring webLogin() -- POSTs to the Next.js
+ * app's own login route (not the API directly) and returns the
+ * `onyx_tenant_session=...` cookie, cached the same way.
+ */
+export async function onyxWebLogin(email: string, password: string): Promise<string> {
+  const cache = readCache();
+  const key = 'onyx-cookie:' + email;
+  if (stillValid(cache[key]?.slice(cache[key]!.indexOf('=') + 1))) return cache[key]!;
+
+  const res = await fetch(WEB + '/api/onyx/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  const setCookie = res.headers.getSetCookie?.() ?? [];
+  const session = setCookie.find((c) => c.startsWith('onyx_tenant_session='));
+  if (!session) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error('onyx web login set no cookie for ' + email + ': ' + (body.message ?? res.status));
+  }
+  const cookie = session.split(';')[0]!;
+  cache[key] = cookie;
+  writeCache(cache);
+  return cookie;
+}
+
 export interface TenantSpec {
   name: string;
   slug?: string;

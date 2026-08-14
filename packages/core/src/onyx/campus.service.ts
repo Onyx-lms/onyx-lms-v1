@@ -74,7 +74,7 @@ export class CampusService {
   // -------------------------------------------------------------------------
 
   async allocate(tenantId: number, input: {
-    semester_id: number; course_id: number; user_id: number;
+    semester_id: number; course_id: number; user_id: string;
     batch_id?: number | null; kind?: 'lead' | 'assistant' | 'lab'; hours_per_week?: number;
   }) {
     await this.#assertBelongs('onyx_semesters', tenantId, input.semester_id, 'semester');
@@ -111,7 +111,7 @@ export class CampusService {
     return data;
   }
 
-  async allocations(tenantId: number, filters: { semester_id?: number; user_id?: number } = {}) {
+  async allocations(tenantId: number, filters: { semester_id?: number; user_id?: string } = {}) {
     let q = this.#db.from('onyx_faculty_allocations').select(ALLOCATION_COLUMNS)
       .eq('tenant_id', tenantId);
     if (filters.semester_id) q = q.eq('semester_id', filters.semester_id);
@@ -128,9 +128,9 @@ export class CampusService {
    */
   async workload(tenantId: number, semesterId: number) {
     const rows = await this.allocations(tenantId, { semester_id: semesterId });
-    const byPerson = new Map<number, { user_id: number; name: string | null; courses: number; hours: number }>();
+    const byPerson = new Map<string, { user_id: string; name: string | null; courses: number; hours: number }>();
     for (const r of rows) {
-      const id = Number(r.user_id);
+      const id = String(r.user_id);
       const entry = byPerson.get(id) ?? { user_id: id, name: null, courses: 0, hours: 0 };
       entry.courses += 1;
       entry.hours += Number(r.hours_per_week ?? 0);
@@ -139,7 +139,7 @@ export class CampusService {
     if (byPerson.size) {
       const { data } = await this.#db.from('onyx_users').select('id, name').in('id', [...byPerson.keys()]);
       for (const u of data ?? []) {
-        const entry = byPerson.get(Number(u.id));
+        const entry = byPerson.get(String(u.id));
         if (entry) entry.name = String(u.name);
       }
     }
@@ -193,7 +193,7 @@ export class CampusService {
    * a caller can run is a check that gets run.
    */
   async clashes(tenantId: number, slot: {
-    semester_id: number; room_id: number; faculty_id: number; batch_id: number;
+    semester_id: number; room_id: number; faculty_id: string; batch_id: number;
     day_of_week: number; starts_at: string; ends_at: string; exclude_id?: number;
   }): Promise<Clash[]> {
     const start = minutesOfDay(slot.starts_at);
@@ -223,7 +223,7 @@ export class CampusService {
           description: await this.#describe(tenantId, hit, when, 'room'),
         });
       }
-      if (Number(hit.faculty_id) === slot.faculty_id) {
+      if (String(hit.faculty_id) === slot.faculty_id) {
         clashes.push({
           resource: 'faculty',
           slot_id: Number(hit.id),
@@ -249,7 +249,7 @@ export class CampusService {
         .eq('tenant_id', tenantId).eq('id', Number(slot.room_id)).maybeSingle(),
       this.#db.from('onyx_courses').select('code, title')
         .eq('tenant_id', tenantId).eq('id', Number(slot.course_id)).maybeSingle(),
-      this.#db.from('onyx_users').select('name').eq('id', Number(slot.faculty_id)).maybeSingle(),
+      this.#db.from('onyx_users').select('name').eq('id', String(slot.faculty_id)).maybeSingle(),
     ]);
 
     const roomName = room.data ? String(room.data.code) : 'a room';
@@ -268,7 +268,7 @@ export class CampusService {
 
   async schedule(tenantId: number, input: {
     semester_id: number; course_id: number; batch_id: number; room_id: number;
-    faculty_id: number; day_of_week: number; starts_at: string; ends_at: string;
+    faculty_id: string; day_of_week: number; starts_at: string; ends_at: string;
   }) {
     if (input.day_of_week < 1 || input.day_of_week > 7) {
       throw new HttpError(422, 'A weekday is 1 (Monday) to 7 (Sunday).');
@@ -322,7 +322,7 @@ export class CampusService {
   }
 
   async timetable(tenantId: number, filters: {
-    semester_id?: number; batch_id?: number; faculty_id?: number; room_id?: number;
+    semester_id?: number; batch_id?: number; faculty_id?: string; room_id?: number;
     /**
      * A learner's own grid, by the courses they are actually enrolled in --
      * not by batch, because plenty of enrolments here carry no batch at all
@@ -355,7 +355,7 @@ export class CampusService {
    * still collide once a third moved -- publishing is the last point at which
    * catching that is cheap.
    */
-  async publish(tenantId: number, semesterId: number, actorId: number) {
+  async publish(tenantId: number, semesterId: number, actorId: string) {
     const slots = await this.timetable(tenantId, { semester_id: semesterId });
     if (!slots.length) throw new HttpError(422, 'There is nothing to publish.');
 
@@ -369,13 +369,20 @@ export class CampusService {
           minutesOfDay(String(b.starts_at)), minutesOfDay(String(b.ends_at)))) continue;
 
         for (const [field, label] of [
-          ['room_id', 'room'], ['faculty_id', 'lecturer'], ['batch_id', 'batch'],
+          ['room_id', 'room'], ['batch_id', 'batch'],
         ] as const) {
           if (Number(a[field]) === Number(b[field])) {
             throw new HttpError(409, 'Slots ' + a.id + ' and ' + b.id
               + ' share a ' + label + ' on ' + WEEKDAYS[Number(a.day_of_week) - 1]
               + '. Fix that before publishing.');
           }
+        }
+        // faculty_id is a person's uuid now, so it is compared as a string
+        // rather than folded into the Number() comparison above.
+        if (String(a.faculty_id) === String(b.faculty_id)) {
+          throw new HttpError(409, 'Slots ' + a.id + ' and ' + b.id
+            + ' share a lecturer on ' + WEEKDAYS[Number(a.day_of_week) - 1]
+            + '. Fix that before publishing.');
         }
       }
     }

@@ -42,7 +42,7 @@ export default async function OnyxWorkspacePage({ params }: { params: Promise<{ 
 
       <OnyxWorkspace
         workspace={workspace}
-        isOwner={Number(workspace.user_id) === claims.user_id}
+        isOwner={String(workspace.user_id) === claims.user_id}
         canReview={workspace.can_review}
       />
     </OnyxShell>

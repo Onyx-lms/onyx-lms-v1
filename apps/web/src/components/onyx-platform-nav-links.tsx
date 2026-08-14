@@ -17,6 +17,7 @@ import { usePathname } from 'next/navigation';
 const LINKS = [
   { href: '/onyx/platform', label: 'Institutions' },
   { href: '/onyx/platform/admins', label: 'Platform admins' },
+  { href: '/onyx/platform/oauth-clients', label: 'OAuth clients' },
 ];
 
 export function PlatformNavLinks() {

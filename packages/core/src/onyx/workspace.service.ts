@@ -69,7 +69,7 @@ export class WorkspaceService {
     this.#now = now;
   }
 
-  async create(tenantId: number, userId: number, input: {
+  async create(tenantId: number, userId: string, input: {
     title: string; language?: string; entry_path?: string;
     course_id?: number | null; files?: SnapshotFile[];
   }) {
@@ -94,7 +94,7 @@ export class WorkspaceService {
     return data!;
   }
 
-  async list(tenantId: number, userId: number) {
+  async list(tenantId: number, userId: string) {
     const { data } = await this.#db.from('onyx_workspaces')
       .select(WORKSPACE_COLUMNS)
       .eq('tenant_id', tenantId).eq('user_id', userId)
@@ -132,7 +132,7 @@ export class WorkspaceService {
   }
 
   /** The workspace with its tree, its snapshots and its review comments. */
-  async open(tenantId: number, workspaceId: number, userId: number, role: Role) {
+  async open(tenantId: number, workspaceId: number, userId: string, role: Role) {
     const workspace = await this.#assertReachable(tenantId, workspaceId, userId, role);
     const [files, snapshots, comments] = await Promise.all([
       this.files(tenantId, workspaceId),
@@ -167,7 +167,7 @@ export class WorkspaceService {
    * review.
    */
   async writeFiles(
-    tenantId: number, workspaceId: number, userId: number, role: Role, files: SnapshotFile[],
+    tenantId: number, workspaceId: number, userId: string, role: Role, files: SnapshotFile[],
   ) {
     const workspace = await this.#assertOwner(tenantId, workspaceId, userId, role);
     if (!files.length) throw new HttpError(422, 'There is nothing to save.');
@@ -205,7 +205,7 @@ export class WorkspaceService {
   }
 
   async deleteFile(
-    tenantId: number, workspaceId: number, userId: number, role: Role, path: string,
+    tenantId: number, workspaceId: number, userId: string, role: Role, path: string,
   ) {
     const workspace = await this.#assertOwner(tenantId, workspaceId, userId, role);
     const clean = normalisePath(path);
@@ -230,7 +230,7 @@ export class WorkspaceService {
    * Only the owner runs it, for the same reason only the owner edits it: a
    * mentor's tool here is a comment, not code they can execute themselves.
    */
-  async run(tenantId: number, workspaceId: number, userId: number, role: Role, input: {
+  async run(tenantId: number, workspaceId: number, userId: string, role: Role, input: {
     path?: string; stdin?: string;
   }): Promise<RunResult & { path: string }> {
     const workspace = await this.#assertOwner(tenantId, workspaceId, userId, role);
@@ -267,7 +267,7 @@ export class WorkspaceService {
 
   // ---- snapshots ----
 
-  async snapshot(tenantId: number, workspaceId: number, userId: number, role: Role, label: string) {
+  async snapshot(tenantId: number, workspaceId: number, userId: string, role: Role, label: string) {
     await this.#assertReachable(tenantId, workspaceId, userId, role);
     const files = await this.files(tenantId, workspaceId);
     if (!files.length) throw new HttpError(422, 'There is nothing to capture.');
@@ -303,7 +303,7 @@ export class WorkspaceService {
    * fail the one thing this feature promises.
    */
   async restore(
-    tenantId: number, workspaceId: number, snapshotId: number, userId: number, role: Role,
+    tenantId: number, workspaceId: number, snapshotId: number, userId: string, role: Role,
   ) {
     await this.#assertOwner(tenantId, workspaceId, userId, role);
     const { data: snapshot } = await this.#db.from('onyx_workspace_snapshots')
@@ -331,7 +331,7 @@ export class WorkspaceService {
 
   // ---- mentor review ----
 
-  async comment(tenantId: number, workspaceId: number, authorId: number, role: Role, input: {
+  async comment(tenantId: number, workspaceId: number, authorId: string, role: Role, input: {
     body: string; file_path?: string | null; line?: number | null; snapshot_id?: number | null;
   }) {
     await this.#assertReachable(tenantId, workspaceId, authorId, role);
@@ -356,7 +356,7 @@ export class WorkspaceService {
   }
 
   async resolveComment(
-    tenantId: number, workspaceId: number, commentId: number, userId: number, role: Role,
+    tenantId: number, workspaceId: number, commentId: number, userId: string, role: Role,
   ) {
     await this.#assertReachable(tenantId, workspaceId, userId, role);
     const { data } = await this.#db.from('onyx_workspace_comments')
@@ -371,7 +371,7 @@ export class WorkspaceService {
   }
 
   /** Faculty view: every workspace attached to a course they teach. */
-  async forCourse(tenantId: number, courseId: number, userId: number, role: Role) {
+  async forCourse(tenantId: number, courseId: number, userId: string, role: Role) {
     await this.#academics.assertCanTeach(tenantId, courseId, userId, role);
     const { data } = await this.#db.from('onyx_workspaces')
       .select(WORKSPACE_COLUMNS)
@@ -390,9 +390,9 @@ export class WorkspaceService {
   }
 
   /** Editing is the owner's alone. */
-  async #assertOwner(tenantId: number, id: number, userId: number, role: Role) {
+  async #assertOwner(tenantId: number, id: number, userId: string, role: Role) {
     const workspace = await this.#workspace(tenantId, id);
-    if (Number(workspace.user_id) !== userId) {
+    if (String(workspace.user_id) !== userId) {
       // Not even an admin edits somebody's project in place. Review is a
       // comment, not a rewrite.
       throw new HttpError(403, 'This is not your workspace.');
@@ -407,9 +407,9 @@ export class WorkspaceService {
    * The owner always. A mentor only through the course it is attached to, and
    * only if they teach that course -- a workspace with no course is private.
    */
-  async #assertReachable(tenantId: number, id: number, userId: number, role: Role) {
+  async #assertReachable(tenantId: number, id: number, userId: string, role: Role) {
     const workspace = await this.#workspace(tenantId, id);
-    if (Number(workspace.user_id) === userId) return workspace;
+    if (String(workspace.user_id) === userId) return workspace;
     // An administrator monitors every project at the institution, personal
     // or not -- the same standing they already hold over every course,
     // roster and result. Faculty stay narrower: only a course they teach,

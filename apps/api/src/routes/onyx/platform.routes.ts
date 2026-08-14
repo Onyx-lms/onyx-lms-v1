@@ -10,7 +10,7 @@
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { validate, ok, requirePlatformAdmin, issuePlatformToken, ROLES } from '@onyx/core';
+import { validate, ok, requirePlatformAdmin, ROLES } from '@onyx/core';
 import type { Role } from '@onyx/types';
 import type { AppContext } from '../../context.ts';
 
@@ -30,19 +30,21 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
       email: z.string().email(), password: z.string().min(1),
     }), req.body);
     const result = await ctx.onyxPlatform.authenticate(body.email, body.password);
-    const { token, expiresAt } = issuePlatformToken({
-      userId: result.user.id, email: result.user.email, secret: ctx.jwtSecret,
+    return ok({
+      token: result.session.access_token,
+      refresh_token: result.session.refresh_token,
+      expires_at: result.session.expires_at,
+      user: result.user,
     });
-    return ok({ token, expires_at: expiresAt, user: result.user });
   });
 
   app.get('/api/onyx/platform/me', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     return ok({ user_id: claims.user_id, email: claims.email });
   });
 
   app.get('/api/onyx/platform/tenants', async (req) => {
-    requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const q = validate(z.object({
       search: z.string().max(255).optional(),
       status: z.coerce.number().int().min(0).max(1).optional(),
@@ -52,7 +54,7 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.get('/api/onyx/platform/tenants/:id', async (req) => {
-    requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxPlatform.tenant(idOf(req)));
   });
 
@@ -61,7 +63,7 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   // not belong to through here -- and a platform token has no `tenant_id`, so
   // it cannot reach the tenant surface either. `:id` scopes every query.
   app.get('/api/onyx/platform/tenants/:id/people', async (req) => {
-    requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const q = validate(z.object({
       role: z.enum(['student', 'faculty', 'exams', 'placement', 'employer', 'admin', 'guardian'])
         .optional(),
@@ -71,7 +73,7 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.get('/api/onyx/platform/tenants/:id/academics', async (req) => {
-    requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const q = validate(z.object({
       limit: z.coerce.number().int().positive().max(200).optional(),
     }), req.query ?? {});
@@ -79,7 +81,7 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.get('/api/onyx/platform/tenants/:id/timetable', async (req) => {
-    requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const q = validate(z.object({
       semester_id: z.coerce.number().int().positive().optional(),
     }), req.query ?? {});
@@ -89,7 +91,7 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   // Audited in the service, not here: the log entry belongs next to the read it
   // describes, so no future caller can reach the data around the logging.
   app.get('/api/onyx/platform/tenants/:id/grades', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const q = validate(z.object({
       limit: z.coerce.number().int().positive().max(200).optional(),
       // Present together with the exam/assessment list itself: pick one from
@@ -104,7 +106,7 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.post('/api/onyx/platform/tenants', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       name: z.string().min(1).max(255),
       slug: z.string().max(255).optional(),
@@ -119,12 +121,12 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.post('/api/onyx/platform/tenants/:id/suspend', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxPlatform.suspend(idOf(req), claims.user_id), 'Suspended.');
   });
 
   app.post('/api/onyx/platform/tenants/:id/activate', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxPlatform.activate(idOf(req), claims.user_id), 'Activated.');
   });
 
@@ -134,7 +136,7 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   // -------------------------------------------------------------------------
 
   app.patch('/api/onyx/platform/tenants/:id', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       name: z.string().min(1).max(255).optional(),
       slug: z.string().max(255).optional(),
@@ -144,14 +146,14 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.delete('/api/onyx/platform/tenants/:id', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({ confirm_name: z.string().min(1) }), req.body);
     return ok(await ctx.onyxPlatform.deleteTenant(idOf(req), claims.user_id, body.confirm_name),
       'Institution deleted.');
   });
 
   app.post('/api/onyx/platform/tenants/:id/members', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       name: z.string().min(1).max(255),
       email: z.string().email(),
@@ -162,13 +164,13 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.delete('/api/onyx/platform/tenants/:id/members/:memberId', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxPlatform.removeMember(
       idOf(req), subIdOf(req, 'memberId'), claims.user_id), 'Member removed.');
   });
 
   app.post('/api/onyx/platform/tenants/:id/courses', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       code: z.string().min(1).max(50),
       title: z.string().min(1).max(255),
@@ -180,7 +182,7 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.post('/api/onyx/platform/tenants/:id/assignments', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       course_id: z.number().int().positive(),
       title: z.string().min(1).max(255),
@@ -192,7 +194,7 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.post('/api/onyx/platform/tenants/:id/assessments', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       course_id: z.number().int().positive().nullish(),
       title: z.string().min(1).max(255),
@@ -206,7 +208,7 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.post('/api/onyx/platform/tenants/:id/exams', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       semester_id: z.number().int().positive(),
       course_id: z.number().int().positive(),
@@ -220,17 +222,17 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.get('/api/onyx/platform/tenants/:id/semesters', async (req) => {
-    requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxPlatform.tenantSemesters(idOf(req)));
   });
 
   app.get('/api/onyx/platform/tenants/:id/fees', async (req) => {
-    requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxPlatform.tenantFees(idOf(req)));
   });
 
   app.post('/api/onyx/platform/tenants/:id/fee-heads', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       code: z.string().min(1).max(40),
       name: z.string().min(1).max(255),
@@ -242,7 +244,7 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.post('/api/onyx/platform/tenants/:id/fee-structures', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       name: z.string().min(1).max(255),
       instalments: z.number().int().min(1).max(12).optional(),
@@ -257,7 +259,7 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.post('/api/onyx/platform/tenants/:id/fee-structures/:structureId/status', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       status: z.enum(['draft', 'published', 'archived']),
     }), req.body);
@@ -266,7 +268,7 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.patch('/api/onyx/platform/tenants/:id/members/:memberId', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       name: z.string().min(1).max(255).optional(),
       email: z.string().email().optional(),
@@ -280,7 +282,7 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.patch('/api/onyx/platform/tenants/:id/exam-marks/:markId', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       raw_marks: z.number().min(0).optional(),
       final_marks: z.number().min(0).optional(),
@@ -290,24 +292,24 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.patch('/api/onyx/platform/tenants/:id/attempts/:attemptId', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({ score: z.number().min(0) }), req.body);
     return ok(await ctx.onyxPlatform.updateAssessmentAttemptScore(
       idOf(req), subIdOf(req, 'attemptId'), claims.user_id, body.score), 'Score updated.');
   });
 
   app.get('/api/onyx/platform/tenants/:id/attempts/:attemptId', async (req) => {
-    requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxPlatform.assessmentAttempt(idOf(req), subIdOf(req, 'attemptId')));
   });
 
   app.get('/api/onyx/platform/tenants/:id/submissions/:submissionId', async (req) => {
-    requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxPlatform.submission(idOf(req), subIdOf(req, 'submissionId')));
   });
 
   app.patch('/api/onyx/platform/tenants/:id/submissions/:submissionId', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       score: z.number().min(0).optional(),
       feedback: z.string().max(4000).nullish(),
@@ -317,12 +319,12 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.get('/api/onyx/platform/tenants/:id/assignments/:assignmentId/submissions', async (req) => {
-    requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxPlatform.assignmentSubmissions(idOf(req), subIdOf(req, 'assignmentId')));
   });
 
   app.patch('/api/onyx/platform/tenants/:id/courses/:courseId', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       title: z.string().min(1).max(255).optional(),
       code: z.string().min(1).max(50).optional(),
@@ -334,7 +336,7 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.patch('/api/onyx/platform/tenants/:id/assignments/:assignmentId', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       title: z.string().min(1).max(255).optional(),
       due_at: z.string().nullish(),
@@ -346,7 +348,7 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.patch('/api/onyx/platform/tenants/:id/exams/:examId', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       title: z.string().min(1).max(255).optional(),
       starts_at: z.string().nullish(),
@@ -360,7 +362,7 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.patch('/api/onyx/platform/tenants/:id/assessments/:assessmentId', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       title: z.string().min(1).max(255).optional(),
       opens_at: z.string().nullish(),
@@ -374,12 +376,12 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.get('/api/onyx/platform/admins', async (req) => {
-    requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxPlatform.admins());
   });
 
   app.post('/api/onyx/platform/admins', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       email: z.string().email(),
       name: z.string().min(1).max(255).optional(),
@@ -391,12 +393,12 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.delete('/api/onyx/platform/admins/:id', async (req) => {
-    const claims = requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxPlatform.revoke(idOf(req), claims.user_id), 'Revoked.');
   });
 
   app.get('/api/onyx/platform/audit', async (req) => {
-    requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const q = req.query as { limit?: string; action?: string; entity_type?: string };
     return ok(await ctx.onyxPlatform.auditLog({
       limit: q.limit ? Number(q.limit) : undefined,
@@ -406,7 +408,28 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
   });
 
   app.get('/api/onyx/platform/audit/filters', async (req) => {
-    requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxPlatform.auditFilterOptions());
+  });
+
+  // ---------------------------------------------------------------------
+  // OAuth Server Mode -- visibility, not registration. Third-party apps
+  // self-register against GoTrue's own /oauth/clients/register directly
+  // (Dynamic Client Registration); this is a platform admin's window into
+  // what has registered, and the ability to revoke one. See
+  // docs/ADR-011-supabase-auth-migration.md and
+  // docs/runbooks/supabase-auth-setup.md.
+  // ---------------------------------------------------------------------
+
+  app.get('/api/onyx/platform/oauth-clients', async (req) => {
+    await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    return ok(await ctx.onyxOAuthClients.list());
+  });
+
+  app.delete('/api/onyx/platform/oauth-clients/:clientId', async (req) => {
+    await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    const { clientId } = req.params as { clientId: string };
+    await ctx.onyxOAuthClients.revoke(clientId);
+    return ok({}, 'Revoked.');
   });
 }

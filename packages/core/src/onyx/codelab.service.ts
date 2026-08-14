@@ -105,7 +105,7 @@ export class CodeLabService {
 
   // ---- LAB-04: authoring the bank ----
 
-  async createProblem(tenantId: number, createdBy: number, input: {
+  async createProblem(tenantId: number, createdBy: string, input: {
     title: string; slug?: string; statement?: string | null;
     difficulty?: Difficulty; topic?: string | null; tags?: string[];
     languages?: Language[]; starter_code?: Record<string, string>;
@@ -333,7 +333,7 @@ export class CodeLabService {
    * and expected output, hints appear only once revealed, and the worked
    * solution appears only when the configured rule is met.
    */
-  async problem(tenantId: number, problemId: number, userId: number, role: Role) {
+  async problem(tenantId: number, problemId: number, userId: string, role: Role) {
     const problem = await this.#problem(tenantId, problemId);
     const staff = role === 'admin' || role === 'faculty';
     // An unpublished problem does not exist as far as a learner is concerned.
@@ -377,7 +377,7 @@ export class CodeLabService {
    * One at a time, in order: "progressive" has to mean something, and a
    * response containing all of them would make the penalty theatre.
    */
-  async revealHint(tenantId: number, problemId: number, userId: number) {
+  async revealHint(tenantId: number, problemId: number, userId: string) {
     await this.problem(tenantId, problemId, userId, 'student');
     const hints = await this.#hints(tenantId, problemId);
     if (!hints.length) throw new HttpError(404, 'This problem has no hints.');
@@ -404,7 +404,7 @@ export class CodeLabService {
    * `run` grades against the visible cases only, which is what the Run button
    * means; `submit` grades against everything.
    */
-  async submit(tenantId: number, problemId: number, userId: number, input: {
+  async submit(tenantId: number, problemId: number, userId: string, input: {
     language: Language; source: string; mode?: 'run' | 'submit';
   }) {
     const problem = await this.#problem(tenantId, problemId);
@@ -534,7 +534,7 @@ export class CodeLabService {
     }).eq('tenant_id', tenantId).eq('id', submissionId);
   }
 
-  async submissions(tenantId: number, problemId: number, userId: number) {
+  async submissions(tenantId: number, problemId: number, userId: string) {
     // Same reason as attempts(): an id that is not this institution's is a 404,
     // not an empty list.
     await this.#problem(tenantId, problemId);
@@ -550,10 +550,10 @@ export class CodeLabService {
    *
    * A learner may read only their own, and hidden cases arrive stripped.
    */
-  async submissionDetail(tenantId: number, submissionId: number, userId: number, role: Role) {
+  async submissionDetail(tenantId: number, submissionId: number, userId: string, role: Role) {
     const submission = await this.#submission(tenantId, submissionId);
     const staff = role === 'admin' || role === 'faculty';
-    if (!staff && Number(submission.user_id) !== userId) {
+    if (!staff && String(submission.user_id) !== userId) {
       throw new HttpError(403, 'That is not your submission.');
     }
     const { data } = await this.#db.from('onyx_submission_cases')
@@ -628,7 +628,7 @@ export class CodeLabService {
     return data ?? [];
   }
 
-  async #revealed(tenantId: number, problemId: number, userId: number) {
+  async #revealed(tenantId: number, problemId: number, userId: string) {
     const { data } = await this.#db.from('onyx_hint_reveals')
       .select('id, hint_id, user_id')
       .eq('tenant_id', tenantId).eq('problem_id', problemId).eq('user_id', userId);

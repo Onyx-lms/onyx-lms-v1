@@ -105,3 +105,4 @@ export * from './onyx/finance.service.ts';
 export * from './onyx/checkout.service.ts';
 export * from './onyx/guardian.service.ts';
 export * from './onyx/platform.service.ts';
+export * from './onyx/oauth-clients.service.ts';

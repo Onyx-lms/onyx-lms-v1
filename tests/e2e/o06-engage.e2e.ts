@@ -14,7 +14,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, createTenant, withDb, RUN, env } from './harness.ts';
+import { api, createTenant, withDb, RUN, env, onyxLogin } from './harness.ts';
 
 const pw = 'OnyxTest#2026';
 const mail = (who: string) => 'eng.' + who + '.' + RUN + '@onyx.test';
@@ -27,12 +27,6 @@ const w = {
   course: 0, discussion: 0, post: 0, ticket: 0,
 };
 
-const login = async (email: string) => {
-  const r = await api<{ token: string }>('/api/onyx/auth/login', { body: { email, password: pw } });
-  assert.equal(r.ok, true, 'login ' + email + ': ' + r.message);
-  return r.data.token;
-};
-
 test('two institutions, a course, and a learner enrolled in each', async () => {
   for (const [key, t] of [['alpha', A], ['beta', B]] as const) {
     const res = await createTenant({
@@ -42,8 +36,8 @@ test('two institutions, a course, and a learner enrolled in each', async () => {
     assert.equal(res.ok, true, res.message);
     w[key].id = Number(res.data.tenant.id);
   }
-  w.alpha.admin = await login(mail('alpha.admin'));
-  w.beta.admin = await login(mail('beta.admin'));
+  w.alpha.admin = await onyxLogin(mail('alpha.admin'), pw);
+  w.beta.admin = await onyxLogin(mail('beta.admin'), pw);
 
   for (const [who, role] of [['faculty', 'faculty'], ['s1', 'student'], ['s2', 'student']] as const) {
     const r = await api<{ user: { id: number } }>('/api/onyx/members', {
@@ -51,15 +45,15 @@ test('two institutions, a course, and a learner enrolled in each', async () => {
     });
     assert.equal(r.ok, true, who + ': ' + r.message);
   }
-  w.alpha.faculty = await login(mail('faculty'));
-  w.alpha.s1 = await login(mail('s1'));
-  w.alpha.s2 = await login(mail('s2'));
+  w.alpha.faculty = await onyxLogin(mail('faculty'), pw);
+  w.alpha.s1 = await onyxLogin(mail('s1'), pw);
+  w.alpha.s2 = await onyxLogin(mail('s2'), pw);
 
   const bs1 = await api<{ user: { id: number } }>('/api/onyx/members', {
     token: w.beta.admin, body: { name: 'b-s1', email: mail('b.s1'), role: 'student', password: pw },
   });
   assert.equal(bs1.ok, true, bs1.message);
-  w.beta.s1 = await login(mail('b.s1'));
+  w.beta.s1 = await onyxLogin(mail('b.s1'), pw);
 
   const course = await api<{ id: number }>('/api/onyx/courses', {
     token: w.alpha.admin,

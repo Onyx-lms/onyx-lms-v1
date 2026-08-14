@@ -36,8 +36,8 @@ function world(c = clock()) {
       { id: 1, tenant_id: T, code: 'CS101', title: 'Programming', slug: 'p', status: 1 },
     ],
     onyx_enrollments: [
-      { id: 1, tenant_id: T, course_id: 1, user_id: 10, status: 1 },
-      { id: 2, tenant_id: T, course_id: 1, user_id: 11, status: 1 },
+      { id: 1, tenant_id: T, course_id: 1, user_id: 'user-10', status: 1 },
+      { id: 2, tenant_id: T, course_id: 1, user_id: 'user-11', status: 1 },
     ],
     onyx_question_banks: [],
     onyx_questions: [],
@@ -48,7 +48,7 @@ function world(c = clock()) {
     onyx_proctor_events: [],
     onyx_assessment_grades: [],
     onyx_audit_logs: [],
-    onyx_users: [{ id: 20, email: 'exams@onyx.test', name: 'Exams' }],
+    onyx_users: [{ id: 'user-20', email: 'exams@onyx.test', name: 'Exams' }],
   });
   const academics = new AcademicsService(db as never);
   const audit = new AuditService(db as never);
@@ -62,29 +62,29 @@ function world(c = clock()) {
 
 /** A bank with one of each type, and an assessment drawing all five. */
 async function withPaper(w: ReturnType<typeof world>, over: Record<string, unknown> = {}) {
-  const bank = await w.assess.createBank(T, 20, { name: 'Bank' });
+  const bank = await w.assess.createBank(T, 'user-20', { name: 'Bank' });
   const bid = Number(bank.id);
   const q = {
-    single: await w.assess.addQuestion(T, bid, 20, {
+    single: await w.assess.addQuestion(T, bid, 'user-20', {
       type: 'single', prompt: '2 + 2?', points: 2,
       options: [{ id: 'a', text: '3' }, { id: 'b', text: '4' }], answer: 'b',
     }),
-    multiple: await w.assess.addQuestion(T, bid, 20, {
+    multiple: await w.assess.addQuestion(T, bid, 'user-20', {
       type: 'multiple', prompt: 'Primes?', points: 2,
       options: [{ id: 'a', text: '2' }, { id: 'b', text: '4' }, { id: 'c', text: '3' }],
       answer: ['a', 'c'],
     }),
-    truefalse: await w.assess.addQuestion(T, bid, 20, {
+    truefalse: await w.assess.addQuestion(T, bid, 'user-20', {
       type: 'truefalse', prompt: 'Zero is even.', answer: 'true', points: 1,
     }),
-    short: await w.assess.addQuestion(T, bid, 20, {
+    short: await w.assess.addQuestion(T, bid, 'user-20', {
       type: 'short', prompt: 'Capital of France?', answer: ['Paris'], points: 1,
     }),
-    essay: await w.assess.addQuestion(T, bid, 20, {
+    essay: await w.assess.addQuestion(T, bid, 'user-20', {
       type: 'essay', prompt: 'Explain induction.', points: 4,
     }),
   };
-  const assessment = await w.assess.createAssessment(T, 20, {
+  const assessment = await w.assess.createAssessment(T, 'user-20', {
     title: 'Midterm', course_id: 1, duration_minutes: 60, pass_mark: 6,
     sections: [{ id: 's1', title: 'All', bank_id: bid, take: 5 }],
     ...over,
@@ -132,26 +132,26 @@ test('hasKey tells a real answer apart from nothing having been chosen', () => {
 
 test('an MCQ authored with no correct option is allowed, and marked by hand, not auto-graded wrong', async () => {
   const w = world();
-  const bank = await w.assess.createBank(T, 20, { name: 'B' });
+  const bank = await w.assess.createBank(T, 'user-20', { name: 'B' });
   const bid = Number(bank.id);
   // No `answer` at all -- nobody picked a correct option yet.
-  const noKey = await w.assess.addQuestion(T, bid, 20, {
+  const noKey = await w.assess.addQuestion(T, bid, 'user-20', {
     type: 'single', prompt: 'Pending review', points: 5,
     options: [{ id: 'a', text: 'One' }, { id: 'b', text: 'Two' }],
   });
-  const essay = await w.assess.addQuestion(T, bid, 20, {
+  const essay = await w.assess.addQuestion(T, bid, 'user-20', {
     type: 'essay', prompt: 'Explain.', points: 3,
   });
-  const assessment = await w.assess.createAssessment(T, 20, {
+  const assessment = await w.assess.createAssessment(T, 'user-20', {
     title: 'Pending', course_id: 1, duration_minutes: 30,
     sections: [{ id: 's1', title: 'All', bank_id: bid, take: 2 }],
   });
   await w.assess.publishAssessment(T, Number(assessment.id));
 
-  const attempt = await w.assess.start(T, Number(assessment.id), 10);
-  await w.assess.saveAnswer(T, attempt.id, 10,
+  const attempt = await w.assess.start(T, Number(assessment.id), 'user-10');
+  await w.assess.saveAnswer(T, attempt.id, 'user-10',
     { question_id: Number(noKey.id), response: 'a' });
-  const submitted = await w.assess.submit(T, attempt.id, 10);
+  const submitted = await w.assess.submit(T, attempt.id, 'user-10');
   // A response was given to the keyless question, so, same as an essay with
   // an answer in it, the paper is not "finished" -- it is waiting on a person.
   assert.equal(submitted.score, null, 'a keyless MCQ auto-scored instead of waiting for a marker');
@@ -162,7 +162,7 @@ test('an MCQ authored with no correct option is allowed, and marked by hand, not
   assert.equal(seen.auto_points, null, 'a keyless question was scored anyway');
 
   // A marker can now give it real points, same as the essay.
-  const marked = await w.assess.mark(T, attempt.id, 20, {
+  const marked = await w.assess.mark(T, attempt.id, 'user-20', {
     role: 'first',
     marks: [
       { question_id: Number(noKey.id), points: 2 },
@@ -187,32 +187,32 @@ test('the shuffle is deterministic, so a resumed attempt deals the same hand', (
 
 test('a question whose key is not among its options is refused', async () => {
   const w = world();
-  const bank = await w.assess.createBank(T, 20, { name: 'B' });
+  const bank = await w.assess.createBank(T, 'user-20', { name: 'B' });
   const bid = Number(bank.id);
   // Unanswerable, and nobody would find out until it was sat.
-  await assert.rejects(w.assess.addQuestion(T, bid, 20, {
+  await assert.rejects(w.assess.addQuestion(T, bid, 'user-20', {
     type: 'single', prompt: 'x', options: [{ id: 'a', text: '1' }, { id: 'b', text: '2' }],
     answer: 'z',
   }), (e: HttpError) => e.status === 422);
-  await assert.rejects(w.assess.addQuestion(T, bid, 20, {
+  await assert.rejects(w.assess.addQuestion(T, bid, 'user-20', {
     type: 'single', prompt: 'x', options: [{ id: 'a', text: '1' }], answer: 'a',
   }), (e: HttpError) => e.status === 422);
-  await assert.rejects(w.assess.addQuestion(T, bid, 20, {
+  await assert.rejects(w.assess.addQuestion(T, bid, 'user-20', {
     type: 'truefalse', prompt: 'x', answer: 'maybe',
   }), (e: HttpError) => e.status === 422);
-  await assert.rejects(w.assess.addQuestion(T, bid, 20, {
+  await assert.rejects(w.assess.addQuestion(T, bid, 'user-20', {
     type: 'short', prompt: 'x', answer: ['  '],
   }), (e: HttpError) => e.status === 422);
 });
 
 test('a section wanting more questions than its bank holds is refused at authoring', async () => {
   const w = world();
-  const bank = await w.assess.createBank(T, 20, { name: 'B' });
-  await w.assess.addQuestion(T, Number(bank.id), 20, {
+  const bank = await w.assess.createBank(T, 'user-20', { name: 'B' });
+  await w.assess.addQuestion(T, Number(bank.id), 'user-20', {
     type: 'truefalse', prompt: 'x', answer: 'true',
   });
   // Discovered at start otherwise, which is the worst possible moment.
-  await assert.rejects(w.assess.createAssessment(T, 20, {
+  await assert.rejects(w.assess.createAssessment(T, 'user-20', {
     title: 'Too big', sections: [{ id: 's', title: 'All', bank_id: Number(bank.id), take: 5 }],
   }), (e: HttpError) => e.status === 422);
 });
@@ -237,18 +237,18 @@ test('editing a question writes a new version and keeps the old one', async () =
 test('ASS-01a: editing a question does not change a paper already sat', async () => {
   const w = world();
   const { q, assessment } = await withPaper(w);
-  const attempt = await w.assess.start(T, assessment, 10);
+  const attempt = await w.assess.start(T, assessment, 'user-10');
   const sat = attempt.questions.find((x) => x.question_id === Number(q.single.id))!;
   assert.equal(sat.prompt, '2 + 2?');
 
-  await w.assess.saveAnswer(T, attempt.id, 10, { question_id: sat.question_id, response: 'b' });
+  await w.assess.saveAnswer(T, attempt.id, 'user-10', { question_id: sat.question_id, response: 'b' });
 
   // The key changes AFTER the answer was given.
   await w.assess.editQuestion(T, Number(q.single.id), {
     prompt: 'Something else entirely', answer: 'a',
   });
 
-  await w.assess.submit(T, attempt.id, 10);
+  await w.assess.submit(T, attempt.id, 'user-10');
   const marker = await w.assess.attemptForMarker(T, attempt.id);
   const marked = marker.questions.find((x) => x.question_id === Number(q.single.id))!;
   // The acceptance criterion, stated three ways.
@@ -264,8 +264,8 @@ test('ASS-01a: editing a question does not change a paper already sat', async ()
 test('an attempt is dealt once and resumes identically', async () => {
   const w = world();
   const { assessment } = await withPaper(w);
-  const first = await w.assess.start(T, assessment, 10);
-  const again = await w.assess.start(T, assessment, 10);
+  const first = await w.assess.start(T, assessment, 'user-10');
+  const again = await w.assess.start(T, assessment, 'user-10');
   assert.equal(again.id, first.id, 'starting again created a second attempt');
   assert.deepEqual(
     again.questions.map((q) => q.question_id),
@@ -276,7 +276,7 @@ test('an attempt is dealt once and resumes identically', async () => {
 test('the answer key is never on the candidate view', async () => {
   const w = world();
   const { assessment } = await withPaper(w);
-  const attempt = await w.assess.start(T, assessment, 10);
+  const attempt = await w.assess.start(T, assessment, 'user-10');
   const wire = JSON.stringify(attempt);
   assert.equal(wire.includes('Paris'), false, 'an expected answer reached the candidate');
   for (const q of attempt.questions) {
@@ -289,24 +289,24 @@ test('ASS-01b: a client clock cannot extend an attempt', async () => {
   const c = clock();
   const w = world(c);
   const { assessment } = await withPaper(w);
-  const attempt = await w.assess.start(T, assessment, 10);
+  const attempt = await w.assess.start(T, assessment, 'user-10');
   assert.equal(attempt.seconds_remaining, 3600);
 
   // Whatever the browser believes, the remaining time comes from here.
   c.advance(59 * 60_000);
-  const late = await w.assess.attemptForCandidate(T, attempt.id, 10);
+  const late = await w.assess.attemptForCandidate(T, attempt.id, 'user-10');
   assert.equal(late.seconds_remaining, 60);
 
   c.advance(2 * 60_000);
-  const expired = await w.assess.attemptForCandidate(T, attempt.id, 10);
+  const expired = await w.assess.attemptForCandidate(T, attempt.id, 'user-10');
   assert.equal(expired.seconds_remaining, 0);
 
   // And a save past the deadline is refused, not merely discouraged.
-  await assert.rejects(w.assess.saveAnswer(T, attempt.id, 10, {
+  await assert.rejects(w.assess.saveAnswer(T, attempt.id, 'user-10', {
     question_id: attempt.questions[0]!.question_id, response: 'b',
   }), (e: HttpError) => e.status === 422);
 
-  const after = await w.assess.attemptForCandidate(T, attempt.id, 10);
+  const after = await w.assess.attemptForCandidate(T, attempt.id, 'user-10');
   assert.equal(after.status, 'expired', 'an overdue attempt was left in progress');
 });
 
@@ -317,7 +317,7 @@ test('a window that closes early ends the attempt early', async () => {
   const { assessment } = await withPaper(w, {
     closes_at: new Date(START + 10 * 60_000).toISOString(),
   });
-  const attempt = await w.assess.start(T, assessment, 10);
+  const attempt = await w.assess.start(T, assessment, 'user-10');
   assert.equal(attempt.seconds_remaining, 600,
     'a candidate starting late could have sat past the close');
 });
@@ -325,30 +325,30 @@ test('a window that closes early ends the attempt early', async () => {
 test('answers autosave, resume, and belong to one candidate', async () => {
   const w = world();
   const { assessment } = await withPaper(w);
-  const attempt = await w.assess.start(T, assessment, 10);
+  const attempt = await w.assess.start(T, assessment, 'user-10');
   const q = attempt.questions[0]!;
 
-  await w.assess.saveAnswer(T, attempt.id, 10, { question_id: q.question_id, response: 'b' });
-  const resumed = await w.assess.attemptForCandidate(T, attempt.id, 10);
+  await w.assess.saveAnswer(T, attempt.id, 'user-10', { question_id: q.question_id, response: 'b' });
+  const resumed = await w.assess.attemptForCandidate(T, attempt.id, 'user-10');
   assert.equal(resumed.questions.find((x) => x.question_id === q.question_id)!.response, 'b');
 
   // Not on this paper.
-  await assert.rejects(w.assess.saveAnswer(T, attempt.id, 10, {
+  await assert.rejects(w.assess.saveAnswer(T, attempt.id, 'user-10', {
     question_id: 999_999, response: 'x',
   }), (e: HttpError) => e.status === 422);
   // Not this candidate.
-  await assert.rejects(w.assess.saveAnswer(T, attempt.id, 11, {
+  await assert.rejects(w.assess.saveAnswer(T, attempt.id, 'user-11', {
     question_id: q.question_id, response: 'x',
   }), (e: HttpError) => e.status === 403);
-  await assert.rejects(w.assess.attemptForCandidate(T, attempt.id, 11),
+  await assert.rejects(w.assess.attemptForCandidate(T, attempt.id, 'user-11'),
     (e: HttpError) => e.status === 403);
 });
 
 test('a proctored assessment will not start without consent', async () => {
   const w = world();
   const { assessment } = await withPaper(w, { proctoring: true });
-  await assert.rejects(w.assess.start(T, assessment, 10), (e: HttpError) => e.status === 422);
-  const consented = await w.assess.start(T, assessment, 10, { consent: true });
+  await assert.rejects(w.assess.start(T, assessment, 'user-10'), (e: HttpError) => e.status === 422);
+  const consented = await w.assess.start(T, assessment, 'user-10', { consent: true });
   assert.ok(consented.id);
 });
 
@@ -356,30 +356,30 @@ test('attempts are capped, and a window is honoured', async () => {
   const c = clock();
   const w = world(c);
   const { assessment } = await withPaper(w);
-  const first = await w.assess.start(T, assessment, 10);
-  await w.assess.submit(T, first.id, 10);
-  await assert.rejects(w.assess.start(T, assessment, 10), (e: HttpError) => e.status === 422);
+  const first = await w.assess.start(T, assessment, 'user-10');
+  await w.assess.submit(T, first.id, 'user-10');
+  await assert.rejects(w.assess.start(T, assessment, 'user-10'), (e: HttpError) => e.status === 422);
 
   const later = world(c);
   const { assessment: future } = await withPaper(later, {
     opens_at: new Date(c.now() + 3_600_000).toISOString(),
   });
-  await assert.rejects(later.assess.start(T, future, 10), (e: HttpError) => e.status === 422);
+  await assert.rejects(later.assess.start(T, future, 'user-10'), (e: HttpError) => e.status === 422);
 });
 
 test('submitting auto-marks the objective questions and leaves the essay', async () => {
   const w = world();
   const { q, assessment } = await withPaper(w);
-  const attempt = await w.assess.start(T, assessment, 10);
+  const attempt = await w.assess.start(T, assessment, 'user-10');
   const id = (key: keyof typeof q) => Number(q[key].id);
 
-  await w.assess.saveAnswer(T, attempt.id, 10, { question_id: id('single'), response: 'b' });
-  await w.assess.saveAnswer(T, attempt.id, 10, { question_id: id('multiple'), response: ['a', 'c'] });
-  await w.assess.saveAnswer(T, attempt.id, 10, { question_id: id('truefalse'), response: 'true' });
-  await w.assess.saveAnswer(T, attempt.id, 10, { question_id: id('short'), response: 'paris' });
-  await w.assess.saveAnswer(T, attempt.id, 10, { question_id: id('essay'), response: 'Because...' });
+  await w.assess.saveAnswer(T, attempt.id, 'user-10', { question_id: id('single'), response: 'b' });
+  await w.assess.saveAnswer(T, attempt.id, 'user-10', { question_id: id('multiple'), response: ['a', 'c'] });
+  await w.assess.saveAnswer(T, attempt.id, 'user-10', { question_id: id('truefalse'), response: 'true' });
+  await w.assess.saveAnswer(T, attempt.id, 'user-10', { question_id: id('short'), response: 'paris' });
+  await w.assess.saveAnswer(T, attempt.id, 'user-10', { question_id: id('essay'), response: 'Because...' });
 
-  const submitted = await w.assess.submit(T, attempt.id, 10);
+  const submitted = await w.assess.submit(T, attempt.id, 'user-10');
   const marker = await w.assess.attemptForMarker(T, attempt.id);
   assert.equal(Number(marker.auto_score), 6, '2 + 2 + 1 + 1');
   assert.equal(marker.max_score, 10);
@@ -389,19 +389,19 @@ test('submitting auto-marks the objective questions and leaves the essay', async
 
 test('a paper with nothing subjective is finished on submission', async () => {
   const w = world();
-  const bank = await w.assess.createBank(T, 20, { name: 'Objective only' });
-  await w.assess.addQuestion(T, Number(bank.id), 20, {
+  const bank = await w.assess.createBank(T, 'user-20', { name: 'Objective only' });
+  await w.assess.addQuestion(T, Number(bank.id), 'user-20', {
     type: 'truefalse', prompt: 'Zero is even.', answer: 'true', points: 1,
   });
-  const assessment = await w.assess.createAssessment(T, 20, {
+  const assessment = await w.assess.createAssessment(T, 'user-20', {
     title: 'Quick', sections: [{ id: 's', title: 'All', bank_id: Number(bank.id), take: 1 }],
   });
   await w.assess.publishAssessment(T, Number(assessment.id));
 
-  const attempt = await w.assess.start(T, Number(assessment.id), 10);
-  await w.assess.saveAnswer(T, attempt.id, 10,
+  const attempt = await w.assess.start(T, Number(assessment.id), 'user-10');
+  await w.assess.saveAnswer(T, attempt.id, 'user-10',
     { question_id: attempt.questions[0]!.question_id, response: 'true' });
-  await w.assess.submit(T, attempt.id, 10);
+  await w.assess.submit(T, attempt.id, 'user-10');
 
   const rows = w.db.tables.onyx_assessment_attempts as Record<string, unknown>[];
   assert.equal(Number(rows[0]!.score), 1, 'a fully objective paper should be final on submit');
@@ -410,8 +410,8 @@ test('a paper with nothing subjective is finished on submission', async () => {
 test('an unanswered question is marked zero, not left unmarked', async () => {
   const w = world();
   const { assessment } = await withPaper(w);
-  const attempt = await w.assess.start(T, assessment, 10);
-  await w.assess.submit(T, attempt.id, 10);
+  const attempt = await w.assess.start(T, assessment, 'user-10');
+  await w.assess.submit(T, attempt.id, 'user-10');
 
   const answers = w.db.tables.onyx_assessment_answers as Record<string, unknown>[];
   // Four objective questions, all zero. A missing row is indistinguishable
@@ -426,7 +426,7 @@ test('an unanswered question is marked zero, not left unmarked', async () => {
 test('ASS-03a: anonymous marking hides who the paper belongs to', async () => {
   const w = world();
   const { assessment } = await withPaper(w);
-  for (const user of [10, 11]) {
+  for (const user of ['user-10', 'user-11']) {
     const a = await w.assess.start(T, assessment, user);
     await w.assess.submit(T, a.id, user);
   }
@@ -445,22 +445,22 @@ test('ASS-03a: anonymous marking hides who the paper belongs to', async () => {
 test('marking can override an objective question, but not above the maximum', async () => {
   const w = world();
   const { q, assessment } = await withPaper(w);
-  const attempt = await w.assess.start(T, assessment, 10);
-  await w.assess.submit(T, attempt.id, 10);
+  const attempt = await w.assess.start(T, assessment, 'user-10');
+  await w.assess.submit(T, attempt.id, 'user-10');
 
   // A marker can now override an auto-graded question -- a bad key, or
   // partial credit the key can't express -- the same as any other question.
-  await w.assess.mark(T, attempt.id, 20, {
+  await w.assess.mark(T, attempt.id, 'user-20', {
     marks: [{ question_id: Number(q.single.id), points: 1 }],
   });
   const answers = await w.assess.attemptForMarker(T, attempt.id);
   const single = answers.questions.find((a) => a.question_id === Number(q.single.id));
   assert.equal(single?.manual_points, 1, 'the override was recorded');
 
-  await assert.rejects(w.assess.mark(T, attempt.id, 20, {
+  await assert.rejects(w.assess.mark(T, attempt.id, 'user-20', {
     marks: [{ question_id: Number(q.essay.id), points: 99 }],
   }), (e: HttpError) => e.status === 422);
-  await assert.rejects(w.assess.mark(T, attempt.id, 20, {
+  await assert.rejects(w.assess.mark(T, attempt.id, 'user-20', {
     marks: [{ question_id: 999_999, points: 1 }],
   }), (e: HttpError) => e.status === 422);
 });
@@ -468,21 +468,21 @@ test('marking can override an objective question, but not above the maximum', as
 test('moderation beats a second mark, which beats the first', async () => {
   const w = world();
   const { q, assessment } = await withPaper(w);
-  const attempt = await w.assess.start(T, assessment, 10);
-  await w.assess.saveAnswer(T, attempt.id, 10,
+  const attempt = await w.assess.start(T, assessment, 'user-10');
+  await w.assess.saveAnswer(T, attempt.id, 'user-10',
     { question_id: Number(q.single.id), response: 'b' });
-  await w.assess.submit(T, attempt.id, 10);
+  await w.assess.submit(T, attempt.id, 'user-10');
   const essay = Number(q.essay.id);
 
-  await w.assess.mark(T, attempt.id, 20, { role: 'first', marks: [{ question_id: essay, points: 1 }] });
+  await w.assess.mark(T, attempt.id, 'user-20', { role: 'first', marks: [{ question_id: essay, points: 1 }] });
   let rows = w.db.tables.onyx_assessment_attempts as Record<string, unknown>[];
   assert.equal(Number(rows[0]!.score), 3, 'auto 2 + first mark 1');
 
-  await w.assess.mark(T, attempt.id, 21, { role: 'second', marks: [{ question_id: essay, points: 3 }] });
+  await w.assess.mark(T, attempt.id, 'user-21', { role: 'second', marks: [{ question_id: essay, points: 3 }] });
   rows = w.db.tables.onyx_assessment_attempts as Record<string, unknown>[];
   assert.equal(Number(rows[0]!.score), 5, 'the second mark should win over the first');
 
-  await w.assess.mark(T, attempt.id, 22, {
+  await w.assess.mark(T, attempt.id, 'user-22', {
     role: 'moderation', marks: [{ question_id: essay, points: 4 }],
   });
   rows = w.db.tables.onyx_assessment_attempts as Record<string, unknown>[];
@@ -497,37 +497,37 @@ test('moderation beats a second mark, which beats the first', async () => {
 test('ASS-03b: results are invisible until published, and moderation is enforced', async () => {
   const w = world();
   const { q, assessment } = await withPaper(w, { moderation_required: true });
-  const attempt = await w.assess.start(T, assessment, 10);
-  await w.assess.saveAnswer(T, attempt.id, 10,
+  const attempt = await w.assess.start(T, assessment, 'user-10');
+  await w.assess.saveAnswer(T, attempt.id, 'user-10',
     { question_id: Number(q.single.id), response: 'b' });
-  await w.assess.submit(T, attempt.id, 10);
-  await w.assess.mark(T, attempt.id, 20, {
+  await w.assess.submit(T, attempt.id, 'user-10');
+  await w.assess.mark(T, attempt.id, 'user-20', {
     role: 'first', marks: [{ question_id: Number(q.essay.id), points: 4 }],
   });
 
   // Marked, but the candidate is told nothing.
-  const before = await w.assess.attemptForCandidate(T, attempt.id, 10);
+  const before = await w.assess.attemptForCandidate(T, attempt.id, 'user-10');
   assert.equal(before.score, null, 'a mark leaked before it was released');
-  assert.equal((await w.assess.myAttempts(T, 10))[0]!.score, null);
+  assert.equal((await w.assess.myAttempts(T, 'user-10'))[0]!.score, null);
 
   // A second opinion that can be skipped is not a moderation workflow.
   await assert.rejects(w.assess.publishResults(T, assessment), (e: HttpError) => e.status === 422);
 
-  await w.assess.mark(T, attempt.id, 22, {
+  await w.assess.mark(T, attempt.id, 'user-22', {
     role: 'moderation', marks: [{ question_id: Number(q.essay.id), points: 4 }],
   });
   const published = await w.assess.publishResults(T, assessment);
   assert.equal(published.published, 1);
 
-  const after = await w.assess.attemptForCandidate(T, attempt.id, 10);
+  const after = await w.assess.attemptForCandidate(T, attempt.id, 'user-10');
   assert.equal(Number(after.score), 6);
   assert.equal(after.pass_mark, 6);
-  const mine = (await w.assess.myAttempts(T, 10))[0]!;
+  const mine = (await w.assess.myAttempts(T, 'user-10'))[0]!;
   assert.equal(Number(mine.score), 6);
   assert.equal(mine.passed, true);
 
   // And re-marking a published paper is an appeal, not an edit.
-  await assert.rejects(w.assess.mark(T, attempt.id, 20, {
+  await assert.rejects(w.assess.mark(T, attempt.id, 'user-20', {
     marks: [{ question_id: Number(q.essay.id), points: 0 }],
   }), (e: HttpError) => e.status === 422);
 });
@@ -536,7 +536,7 @@ test('an assessment in another institution is not found', async () => {
   const w = world();
   const { assessment } = await withPaper(w);
   await assert.rejects(w.assess.assessment(OTHER, assessment), (e: HttpError) => e.status === 404);
-  await assert.rejects(w.assess.start(OTHER, assessment, 10), (e: HttpError) => e.status === 404);
+  await assert.rejects(w.assess.start(OTHER, assessment, 'user-10'), (e: HttpError) => e.status === 404);
 });
 
 // ---------------------------------------------------------------------------
@@ -547,10 +547,10 @@ test('ASS-02a: every monitored event is recorded against the server clock', asyn
   const c = clock();
   const w = world(c);
   const { assessment } = await withPaper(w, { proctoring: true });
-  const attempt = await w.assess.start(T, assessment, 10, { consent: true });
+  const attempt = await w.assess.start(T, assessment, 'user-10', { consent: true });
 
   c.advance(90_000);
-  await w.proctor.record(T, attempt.id, 10, {
+  await w.proctor.record(T, attempt.id, 'user-10', {
     kind: 'tab_blur',
     // A client claiming a wildly different time is itself a signal.
     client_at: new Date(c.now() + 600_000).toISOString(),
@@ -566,28 +566,28 @@ test('ASS-02a: every monitored event is recorded against the server clock', asyn
 test('an unknown event kind, another candidate, or a finished attempt are refused', async () => {
   const w = world();
   const { assessment } = await withPaper(w, { proctoring: true });
-  const attempt = await w.assess.start(T, assessment, 10, { consent: true });
+  const attempt = await w.assess.start(T, assessment, 'user-10', { consent: true });
 
-  await assert.rejects(w.proctor.record(T, attempt.id, 10, { kind: 'telepathy' }),
+  await assert.rejects(w.proctor.record(T, attempt.id, 'user-10', { kind: 'telepathy' }),
     (e: HttpError) => e.status === 422);
-  await assert.rejects(w.proctor.record(T, attempt.id, 11, { kind: 'paste' }),
+  await assert.rejects(w.proctor.record(T, attempt.id, 'user-11', { kind: 'paste' }),
     (e: HttpError) => e.status === 403);
 
-  await w.assess.submit(T, attempt.id, 10);
+  await w.assess.submit(T, attempt.id, 'user-10');
   // Accepting these would let a candidate pad their own log after the fact.
-  await assert.rejects(w.proctor.record(T, attempt.id, 10, { kind: 'paste' }),
+  await assert.rejects(w.proctor.record(T, attempt.id, 'user-10', { kind: 'paste' }),
     (e: HttpError) => e.status === 422);
 });
 
 test('flags are scored, and dismissing one lowers the score', async () => {
   const w = world();
   const { assessment } = await withPaper(w, { proctoring: true });
-  const attempt = await w.assess.start(T, assessment, 10, { consent: true });
+  const attempt = await w.assess.start(T, assessment, 'user-10', { consent: true });
 
   // 1 + 2 + 3 = 6, over the review threshold.
-  await w.proctor.record(T, attempt.id, 10, { kind: 'tab_blur' });
-  await w.proctor.record(T, attempt.id, 10, { kind: 'paste' });
-  await w.proctor.record(T, attempt.id, 10, { kind: 'multiple_faces' });
+  await w.proctor.record(T, attempt.id, 'user-10', { kind: 'tab_blur' });
+  await w.proctor.record(T, attempt.id, 'user-10', { kind: 'paste' });
+  await w.proctor.record(T, attempt.id, 'user-10', { kind: 'multiple_faces' });
 
   let timeline = await w.proctor.timeline(T, attempt.id);
   assert.equal(timeline.integrity_flags, 6);
@@ -595,13 +595,13 @@ test('flags are scored, and dismissing one lowers the score', async () => {
   assert.ok(6 >= REVIEW_THRESHOLD);
 
   // An informational event is recorded but does not accuse anybody.
-  await w.proctor.record(T, attempt.id, 10, { kind: 'tab_focus' });
+  await w.proctor.record(T, attempt.id, 'user-10', { kind: 'tab_focus' });
   timeline = await w.proctor.timeline(T, attempt.id);
   assert.equal(timeline.integrity_flags, 6);
   assert.equal(EVENT_WEIGHTS.tab_focus, 0);
 
   const paste = timeline.events.find((e) => e.kind === 'paste')!;
-  await w.proctor.review(T, paste.id, { tenant_id: T, user_id: 20 },
+  await w.proctor.review(T, paste.id, { tenant_id: T, user_id: 'user-20' },
     { decision: 'dismissed', note: 'pasted their own draft' });
 
   timeline = await w.proctor.timeline(T, attempt.id);
@@ -612,16 +612,16 @@ test('flags are scored, and dismissing one lowers the score', async () => {
 test('ASS-02b: an invigilator decision is audited and is not overwritten by arithmetic', async () => {
   const w = world();
   const { assessment } = await withPaper(w, { proctoring: true });
-  const attempt = await w.assess.start(T, assessment, 10, { consent: true });
-  await w.proctor.record(T, attempt.id, 10, { kind: 'multiple_faces' });
+  const attempt = await w.assess.start(T, assessment, 'user-10', { consent: true });
+  await w.proctor.record(T, attempt.id, 'user-10', { kind: 'multiple_faces' });
 
-  await w.proctor.settle(T, attempt.id, { tenant_id: T, user_id: 20 },
+  await w.proctor.settle(T, attempt.id, { tenant_id: T, user_id: 'user-20' },
     { decision: 'cleared', note: 'their sibling walked past' });
   let timeline = await w.proctor.timeline(T, attempt.id);
   assert.equal(timeline.integrity_status, 'cleared');
 
   // More events afterwards must not silently undo a person's decision.
-  await w.proctor.record(T, attempt.id, 10, { kind: 'paste' });
+  await w.proctor.record(T, attempt.id, 'user-10', { kind: 'paste' });
   timeline = await w.proctor.timeline(T, attempt.id);
   assert.equal(timeline.integrity_status, 'cleared',
     'a human decision was overwritten by the flag score');
@@ -633,13 +633,13 @@ test('ASS-02b: an invigilator decision is audited and is not overwritten by arit
 test('a decision that is neither dismiss nor uphold is refused', async () => {
   const w = world();
   const { assessment } = await withPaper(w, { proctoring: true });
-  const attempt = await w.assess.start(T, assessment, 10, { consent: true });
-  await w.proctor.record(T, attempt.id, 10, { kind: 'paste' });
+  const attempt = await w.assess.start(T, assessment, 'user-10', { consent: true });
+  await w.proctor.record(T, attempt.id, 'user-10', { kind: 'paste' });
   const [event] = (await w.proctor.timeline(T, attempt.id)).events;
 
-  await assert.rejects(w.proctor.review(T, event!.id, { tenant_id: T, user_id: 20 },
+  await assert.rejects(w.proctor.review(T, event!.id, { tenant_id: T, user_id: 'user-20' },
     { decision: 'maybe' as never }), (e: HttpError) => e.status === 422);
-  await assert.rejects(w.proctor.settle(T, attempt.id, { tenant_id: T, user_id: 20 },
+  await assert.rejects(w.proctor.settle(T, attempt.id, { tenant_id: T, user_id: 'user-20' },
     { decision: 'probably' as never }), (e: HttpError) => e.status === 422);
 });
 
@@ -668,14 +668,14 @@ test('ASS-04a: the discrimination index matches a hand calculation', () => {
 
 test('ASS-04a: item statistics match a hand calculation on a seeded cohort', async () => {
   const w = world();
-  const bank = await w.assess.createBank(T, 20, { name: 'Stats' });
-  const easy = await w.assess.addQuestion(T, Number(bank.id), 20, {
+  const bank = await w.assess.createBank(T, 'user-20', { name: 'Stats' });
+  const easy = await w.assess.addQuestion(T, Number(bank.id), 'user-20', {
     type: 'truefalse', prompt: 'Everyone gets this.', answer: 'true', points: 1,
   });
-  const split = await w.assess.addQuestion(T, Number(bank.id), 20, {
+  const split = await w.assess.addQuestion(T, Number(bank.id), 'user-20', {
     type: 'truefalse', prompt: 'Half get this.', answer: 'true', points: 1,
   });
-  const assessment = await w.assess.createAssessment(T, 20, {
+  const assessment = await w.assess.createAssessment(T, 'user-20', {
     title: 'Stats', shuffle_questions: false,
     sections: [{ id: 's', title: 'All', bank_id: Number(bank.id), take: 2 }],
   });
@@ -683,10 +683,10 @@ test('ASS-04a: item statistics match a hand calculation on a seeded cohort', asy
   await w.assess.publishAssessment(T, aid);
 
   // Four candidates. All get `easy` right; the first two also get `split`.
-  w.db.tables.onyx_enrollments = [10, 11, 12, 13].map((user_id, i) => ({
+  w.db.tables.onyx_enrollments = ['user-10', 'user-11', 'user-12', 'user-13'].map((user_id, i) => ({
     id: i + 1, tenant_id: T, course_id: 1, user_id, status: 1,
   }));
-  for (const [i, user] of [10, 11, 12, 13].entries()) {
+  for (const [i, user] of ['user-10', 'user-11', 'user-12', 'user-13'].entries()) {
     const a = await w.assess.start(T, aid, user);
     await w.assess.saveAnswer(T, a.id, user,
       { question_id: Number(easy.id), response: 'true' });
@@ -724,12 +724,12 @@ test('ASS-04a: item statistics match a hand calculation on a seeded cohort', asy
 test('ASS-04b: the CSV quotes what needs quoting and names candidates', async () => {
   const w = world();
   const { assessment } = await withPaper(w);
-  const attempt = await w.assess.start(T, assessment, 10);
-  await w.assess.submit(T, attempt.id, 10);
-  await w.assess.mark(T, attempt.id, 20, { marks: [] } as never).catch(() => {});
+  const attempt = await w.assess.start(T, assessment, 'user-10');
+  await w.assess.submit(T, attempt.id, 'user-10');
+  await w.assess.mark(T, attempt.id, 'user-20', { marks: [] } as never).catch(() => {});
 
   const csv = await w.analytics.exportCsv(T, assessment, {
-    names: new Map([[10, { name: 'Doe, Jane "JD"', email: 'jane@onyx.test' }]]),
+    names: new Map([['user-10', { name: 'Doe, Jane "JD"', email: 'jane@onyx.test' }]]),
   });
   const lines = csv.split('\r\n').filter(Boolean);
   assert.equal(lines[0], 'attempt_id,user_id,name,email,score,max_score,percent,passed,integrity_flags,integrity_status');

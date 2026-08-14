@@ -65,8 +65,8 @@ export class GuardianService {
    * that would let anyone with an account claim a child and then wait to see
    * whether the learner noticed the request.
    */
-  async link(tenantId: number, actor: { userId: number; role: Role }, input: {
-    guardian_user_id: number; student_user_id: number; relationship?: string;
+  async link(tenantId: number, actor: { userId: string; role: Role }, input: {
+    guardian_user_id: string; student_user_id: string; relationship?: string;
   }) {
     const staff = actor.role === 'admin' || actor.role === 'faculty';
     const isTheLearner = actor.userId === input.student_user_id;
@@ -121,9 +121,9 @@ export class GuardianService {
   }
 
   /** The learner accepting a link staff proposed. Only they can do this. */
-  async accept(tenantId: number, linkId: number, actor: { userId: number }) {
+  async accept(tenantId: number, linkId: number, actor: { userId: string }) {
     const link = await this.#link(tenantId, linkId);
-    if (Number(link.student_user_id) !== actor.userId) {
+    if (String(link.student_user_id) !== actor.userId) {
       throw new HttpError(403, 'Only the learner can accept a guardian link.');
     }
     const { data } = await this.#db.from('onyx_guardians').update({
@@ -140,10 +140,10 @@ export class GuardianService {
    * lecturer deciding what a learner's parent may see is not a judgement the
    * course relationship carries.
    */
-  async setConsent(tenantId: number, linkId: number, actor: { userId: number; role: Role },
+  async setConsent(tenantId: number, linkId: number, actor: { userId: string; role: Role },
     scope: ConsentScope, allowed: boolean) {
     const link = await this.#link(tenantId, linkId);
-    const isTheLearner = Number(link.student_user_id) === actor.userId;
+    const isTheLearner = String(link.student_user_id) === actor.userId;
     if (!isTheLearner && actor.role !== 'admin') {
       throw new HttpError(403, 'Only the learner can change what is shared.');
     }
@@ -161,9 +161,9 @@ export class GuardianService {
     return data;
   }
 
-  async unlink(tenantId: number, linkId: number, actor: { userId: number; role: Role }) {
+  async unlink(tenantId: number, linkId: number, actor: { userId: string; role: Role }) {
     const link = await this.#link(tenantId, linkId);
-    const isTheLearner = Number(link.student_user_id) === actor.userId;
+    const isTheLearner = String(link.student_user_id) === actor.userId;
     if (!isTheLearner && actor.role !== 'admin') {
       throw new HttpError(403, 'Only the learner can remove a guardian.');
     }
@@ -172,7 +172,7 @@ export class GuardianService {
   }
 
   /** The links a learner has, so they can see who is watching and change it. */
-  async linksForStudent(tenantId: number, studentId: number, actor: { userId: number; role: Role }) {
+  async linksForStudent(tenantId: number, studentId: string, actor: { userId: string; role: Role }) {
     if (actor.userId !== studentId && actor.role !== 'admin') {
       throw new HttpError(403, 'Those are not your guardians.');
     }
@@ -182,7 +182,7 @@ export class GuardianService {
   }
 
   /** The children a guardian is linked to. Verified links only. */
-  async children(tenantId: number, guardianId: number) {
+  async children(tenantId: number, guardianId: string) {
     const { data } = await this.#db.from('onyx_guardians').select(GUARDIAN_COLUMNS)
       .eq('tenant_id', tenantId).eq('guardian_user_id', guardianId)
       .not('verified_at', 'is', null);
@@ -194,12 +194,12 @@ export class GuardianService {
   ): Promise<(T & { name: string | null; email: string | null })[]> {
     if (!rows.length) return [];
     const { data } = await this.#db.from('onyx_users').select('id, name, email')
-      .in('id', rows.map((r) => Number(r[field])));
-    const byId = new Map((data ?? []).map((u) => [Number(u.id), u]));
+      .in('id', rows.map((r) => String(r[field])));
+    const byId = new Map((data ?? []).map((u) => [String(u.id), u]));
     return rows.map((r) => ({
       ...r,
-      name: (byId.get(Number(r[field]))?.name ?? null) as string | null,
-      email: (byId.get(Number(r[field]))?.email ?? null) as string | null,
+      name: (byId.get(String(r[field]))?.name ?? null) as string | null,
+      email: (byId.get(String(r[field]))?.email ?? null) as string | null,
     }));
   }
 
@@ -219,7 +219,7 @@ export class GuardianService {
    * The 404 for "no link at all" is deliberate too. Answering 403 would tell a
    * stranger that the learner exists.
    */
-  async #consented(tenantId: number, guardianId: number, studentId: number,
+  async #consented(tenantId: number, guardianId: string, studentId: string,
     scope: ConsentScope) {
     const { data } = await this.#db.from('onyx_guardians').select(GUARDIAN_COLUMNS)
       .eq('tenant_id', tenantId)
@@ -236,7 +236,7 @@ export class GuardianService {
     return data;
   }
 
-  async attendanceFor(tenantId: number, guardianId: number, studentId: number) {
+  async attendanceFor(tenantId: number, guardianId: string, studentId: string) {
     await this.#consented(tenantId, guardianId, studentId, 'attendance');
 
     const { data: records } = await this.#db.from('onyx_attendance_records')
@@ -269,7 +269,7 @@ export class GuardianService {
    * submissions (see the family page's `NEVER` list), only what a course is
    * called and what it was scored.
    */
-  async resultsFor(tenantId: number, guardianId: number, studentId: number) {
+  async resultsFor(tenantId: number, guardianId: string, studentId: string) {
     await this.#consented(tenantId, guardianId, studentId, 'results');
 
     // Published exam marks only, through the examinations service -- a
@@ -335,7 +335,7 @@ export class GuardianService {
     return { exams, assessments, courses };
   }
 
-  async feesFor(tenantId: number, guardianId: number, studentId: number) {
+  async feesFor(tenantId: number, guardianId: string, studentId: string) {
     await this.#consented(tenantId, guardianId, studentId, 'fees');
 
     const { data } = await this.#db.from('onyx_invoices')
@@ -359,11 +359,11 @@ export class GuardianService {
    * page can say "not shared" instead of quietly showing nothing and leaving a
    * parent to guess whether their child has no marks or has not shared them.
    */
-  async overview(tenantId: number, guardianId: number) {
+  async overview(tenantId: number, guardianId: string) {
     const links = await this.children(tenantId, guardianId);
     const out = [];
     for (const link of links) {
-      const studentId = Number(link.student_user_id);
+      const studentId = String(link.student_user_id);
       const shares = {
         attendance: Boolean(link.can_view_attendance),
         results: Boolean(link.can_view_results),

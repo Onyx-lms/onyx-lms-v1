@@ -23,7 +23,7 @@ export default async function OnyxDiscussionPage({ params }: { params: Promise<{
     onyxApi<DiscussionDetail>('/api/onyx/discussions/' + id),
   ]);
 
-  const mine = thread.author_id === me.user_id;
+  const mine = String(thread.author_id) === me.user_id;
   const staff = me.role === 'admin' || me.role === 'faculty';
 
   return (

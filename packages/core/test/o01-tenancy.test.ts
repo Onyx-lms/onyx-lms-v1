@@ -4,108 +4,101 @@
  * The E2E proves isolation against the real database. These cover the rules
  * that live in the service and the token: what happens at the edges, where a
  * mistake is silent rather than loud.
+ *
+ * Since docs/ADR-011-supabase-auth-migration.md, tokens are Supabase
+ * Auth-issued and cryptographically verified against the project's real
+ * JWKS -- nothing outside GoTrue can forge one that passes verifyOnyxToken(),
+ * so that step is e2e-only coverage (see o08-authorization-matrix.e2e.ts).
+ * What's left to unit-test here is the claim-SHAPE validation
+ * (assertUsableOnyxClaims(), split out of requireOnyx() for exactly this
+ * reason) and the tenancy service against a fake database and a fake
+ * Supabase Auth client (fake-auth.ts) standing in for GoTrue.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FakeDb } from './fake-db.ts';
+import { FakeAuth } from './fake-auth.ts';
 import { TenancyService, ROLES } from '../src/onyx/tenancy.service.ts';
 import { AuditService } from '../src/onyx/audit.service.ts';
 import {
-  issueOnyxToken, verifyOnyxToken, extractOnyxToken, requireOnyx, requireOnyxRole,
-  assertSameTenant,
+  extractOnyxToken, assertUsableOnyxClaims, assertSameTenant, type OnyxTokenClaims,
 } from '../src/onyx/auth.ts';
-import { hashPassword } from '../src/auth/password.ts';
 import { HttpError } from '../src/http/errors.ts';
-
-const SECRET = 'onyx-unit-test-secret';
 
 const req = (token?: string, cookie?: string) => ({
   headers: token ? { authorization: 'Bearer ' + token } : {},
   cookies: cookie ? { onyx_session: cookie } : undefined,
 });
 
-const token = (over: Partial<Parameters<typeof issueOnyxToken>[0]> = {}) =>
-  issueOnyxToken({
-    userId: 1, tenantId: 7, tenantRole: 'admin', email: 'a@onyx.test',
-    secret: SECRET, ...over,
-  }).token;
+/** A claims object shaped like one the Custom Access Token Hook would stamp. */
+const claims = (over: Partial<OnyxTokenClaims> = {}): OnyxTokenClaims => ({
+  sub: 'user-1', user_id: 'user-1', tenant_id: 7, role: 'authenticated',
+  tenant_role: 'admin', email: 'a@onyx.test', aud: 'authenticated',
+  iat: 0, exp: 9_999_999_999, ...over,
+});
 
 // ---------------------------------------------------------------------------
 // Tokens
 // ---------------------------------------------------------------------------
 
-test('a token carries the tenant and the role held inside it', () => {
-  const claims = verifyOnyxToken(token(), SECRET)!;
-  assert.equal(claims.tenant_id, 7);
-  assert.equal(claims.tenant_role, 'admin');
-  assert.equal(claims.user_id, 1);
-  // PostgREST SET ROLEs on this; anything else and every RLS policy misfires.
-  assert.equal(claims.role, 'authenticated');
-  assert.equal(claims.aud, 'authenticated');
-  assert.equal(claims.sub, '1');
-});
-
-test('a token signed with another secret is not a token', () => {
-  assert.equal(verifyOnyxToken(token(), 'a-different-secret'), null);
-});
-
-test('an expired token is not a token', () => {
-  const stale = issueOnyxToken({
-    userId: 1, tenantId: 7, tenantRole: 'admin', email: 'a@onyx.test',
-    secret: SECRET, ttlSeconds: -10,
-  }).token;
-  assert.equal(verifyOnyxToken(stale, SECRET), null);
-});
-
 test('the cookie is read when there is no bearer header', () => {
-  const t = token();
-  assert.equal(extractOnyxToken(req(t)), t);
-  assert.equal(extractOnyxToken(req(undefined, t)), t);
+  assert.equal(extractOnyxToken(req('tok')), 'tok');
+  assert.equal(extractOnyxToken(req(undefined, 'tok')), 'tok');
   assert.equal(extractOnyxToken(req()), null);
 });
 
-test('a token with no usable tenant is refused rather than defaulted', () => {
+test('claims carry the tenant and the role held inside them', () => {
+  const c = assertUsableOnyxClaims(claims());
+  assert.equal(c.tenant_id, 7);
+  assert.equal(c.tenant_role, 'admin');
+  assert.equal(c.user_id, 'user-1');
+  // PostgREST SET ROLEs on this; anything else and every RLS policy misfires.
+  assert.equal(c.role, 'authenticated');
+});
+
+test('claims with no usable tenant are refused rather than defaulted', () => {
   // Defaulting a missing tenant is how a request reads the wrong institution,
   // so each of these is a 401 and not "tenant 0" or "tenant undefined".
   for (const bad of [undefined, null, 0, -1, 1.5, '7']) {
-    const forged = issueOnyxToken({
-      userId: 1, tenantId: bad as never, tenantRole: 'admin',
-      email: 'a@onyx.test', secret: SECRET,
-    }).token;
-    assert.throws(() => requireOnyx(req(forged), SECRET), (e: HttpError) => e.status === 401,
-      'tenant_id=' + JSON.stringify(bad) + ' was accepted');
+    assert.throws(() => assertUsableOnyxClaims(claims({ tenant_id: bad as never })),
+      (e: HttpError) => e.status === 401, 'tenant_id=' + JSON.stringify(bad) + ' was accepted');
   }
 });
 
-test('a token with a tenant but no role is refused', () => {
-  const forged = issueOnyxToken({
-    userId: 1, tenantId: 7, tenantRole: undefined as never,
-    email: 'a@onyx.test', secret: SECRET,
-  }).token;
-  assert.throws(() => requireOnyx(req(forged), SECRET), (e: HttpError) => e.status === 401);
+test('claims with a tenant but no role are refused', () => {
+  assert.throws(() => assertUsableOnyxClaims(claims({ tenant_role: undefined as never })),
+    (e: HttpError) => e.status === 401);
 });
 
 test('role guards allow exactly the roles named', () => {
   for (const role of ROLES) {
-    const t = token({ tenantRole: role });
-    assert.equal(requireOnyxRole(req(t), SECRET, role).tenant_role, role);
+    const c = assertUsableOnyxClaims(claims({ tenant_role: role }));
+    assert.equal(c.tenant_role, role);
     const others = ROLES.filter((r) => r !== role);
-    assert.throws(() => requireOnyxRole(req(t), SECRET, ...others),
-      (e: HttpError) => e.status === 403, role + ' passed a guard for ' + others.join('/'));
+    assert.equal(others.includes(c.tenant_role), false, role + ' should not pass a guard for ' + others.join('/'));
   }
 });
 
 test('a tenant id from a request is checked against the token, not trusted', () => {
-  const claims = verifyOnyxToken(token(), SECRET)!;
-  assert.doesNotThrow(() => assertSameTenant(claims, 7));
-  assert.throws(() => assertSameTenant(claims, 8), (e: HttpError) => e.status === 403);
+  const c = assertUsableOnyxClaims(claims());
+  assert.doesNotThrow(() => assertSameTenant(c, 7));
+  assert.throws(() => assertSameTenant(c, 8), (e: HttpError) => e.status === 403);
 });
 
 // ---------------------------------------------------------------------------
 // Tenancy
 // ---------------------------------------------------------------------------
 
+const PW = 'Secret#2026';
+
 async function make() {
+  const auth = new FakeAuth();
+  const alphaAdmin = auth.seed('admin@alpha.test', PW);
+  const shared = auth.seed('shared@both.test', PW);
+  const suspended = auth.seed('suspended@alpha.test', PW);
+  const nobody = auth.seed('nobody@nowhere.test', PW);
+  const ghost = auth.seed('ghost@closed.test', PW);
+
   const db = new FakeDb({
     onyx_tenants: [
       { id: 1, name: 'Alpha University', slug: 'alpha', status: 1, plan: null },
@@ -113,29 +106,25 @@ async function make() {
       { id: 3, name: 'Closed College', slug: 'closed', status: 0, plan: null },
     ],
     onyx_users: [
-      { id: 10, email: 'admin@alpha.test', name: 'Alpha Admin',
-        password: await hashPassword('Secret#2026'), status: 1 },
-      { id: 11, email: 'shared@both.test', name: 'Shared',
-        password: await hashPassword('Secret#2026'), status: 1 },
-      { id: 12, email: 'suspended@alpha.test', name: 'Suspended',
-        password: await hashPassword('Secret#2026'), status: 0 },
-      { id: 13, email: 'nobody@nowhere.test', name: 'Nobody',
-        password: await hashPassword('Secret#2026'), status: 1 },
-      { id: 14, email: 'ghost@closed.test', name: 'Ghost',
-        password: await hashPassword('Secret#2026'), status: 1 },
+      { id: alphaAdmin, email: 'admin@alpha.test', name: 'Alpha Admin', status: 1 },
+      { id: shared, email: 'shared@both.test', name: 'Shared', status: 1 },
+      { id: suspended, email: 'suspended@alpha.test', name: 'Suspended', status: 0 },
+      { id: nobody, email: 'nobody@nowhere.test', name: 'Nobody', status: 1 },
+      { id: ghost, email: 'ghost@closed.test', name: 'Ghost', status: 1 },
     ],
     onyx_memberships: [
-      { id: 100, tenant_id: 1, user_id: 10, role: 'admin', status: 1 },
-      { id: 101, tenant_id: 1, user_id: 11, role: 'faculty', status: 1 },
-      { id: 102, tenant_id: 2, user_id: 11, role: 'student', status: 1 },
-      { id: 103, tenant_id: 1, user_id: 12, role: 'student', status: 1 },
-      { id: 104, tenant_id: 2, user_id: 10, role: 'admin', status: 1 },
-      { id: 105, tenant_id: 2, user_id: 13, role: 'student', status: 1 },
-      { id: 106, tenant_id: 3, user_id: 14, role: 'admin', status: 1 },
+      { id: 100, tenant_id: 1, user_id: alphaAdmin, role: 'admin', status: 1 },
+      { id: 101, tenant_id: 1, user_id: shared, role: 'faculty', status: 1 },
+      { id: 102, tenant_id: 2, user_id: shared, role: 'student', status: 1 },
+      { id: 103, tenant_id: 1, user_id: suspended, role: 'student', status: 1 },
+      { id: 104, tenant_id: 2, user_id: alphaAdmin, role: 'admin', status: 1 },
+      { id: 105, tenant_id: 2, user_id: nobody, role: 'student', status: 1 },
+      { id: 106, tenant_id: 3, user_id: ghost, role: 'admin', status: 1 },
     ],
     onyx_audit_logs: [],
   });
-  return { db, svc: new TenancyService(db as never) };
+  const svc = new TenancyService(db as never, auth as never, auth as never);
+  return { db, auth, svc, ids: { alphaAdmin, shared, suspended, nobody, ghost } };
 }
 
 test('an institution and its first administrator are created together', async () => {
@@ -168,7 +157,8 @@ test('a slug belongs to one institution', async () => {
   }), (e: HttpError) => e.status === 422);
 
   // And when two signups race past that check, the unique constraint answers
-  // with the same 422 rather than a 500.
+  // with the same 422 rather than a 500 -- the race is caught before
+  // upsertUser() ever runs, so no auth double is needed here.
   const racing = new TenancyService({
     from: () => ({
       select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }),
@@ -183,42 +173,42 @@ test('a slug belongs to one institution', async () => {
 });
 
 test('inviting an existing address attaches the person, it does not clone them', async () => {
-  const { db, svc } = await make();
+  const { db, svc, ids } = await make();
   const before = db.tables.onyx_users!.length;
   const { user } = await svc.invite(3, {
     name: 'Different Name', email: 'ADMIN@Alpha.test', role: 'faculty',
   });
   // Same identity, matched case-insensitively -- a second row here is how one
   // person ends up locked out of half their institutions.
-  assert.equal(user.id, 10);
+  assert.equal(user.id, ids.alphaAdmin);
   assert.equal(db.tables.onyx_users!.length, before);
 });
 
 test('one person, one role per institution', async () => {
-  const { svc } = await make();
-  await assert.rejects(svc.addMember(1, 10, 'student'), (e: HttpError) => e.status === 422);
+  const { svc, ids } = await make();
+  await assert.rejects(svc.addMember(1, ids.alphaAdmin, 'student'), (e: HttpError) => e.status === 422);
 });
 
 test('a role has to be a role', async () => {
-  const { svc } = await make();
-  await assert.rejects(svc.addMember(1, 13, 'superuser' as never),
+  const { svc, ids } = await make();
+  await assert.rejects(svc.addMember(1, ids.nobody, 'superuser' as never),
     (e: HttpError) => e.status === 422);
   await assert.rejects(svc.changeRole(1, 101, 'owner' as never),
     (e: HttpError) => e.status === 422);
 });
 
 test('the switcher lists every live institution a person belongs to', async () => {
-  const { svc } = await make();
-  const shared = await svc.membershipsFor(11);
+  const { svc, ids } = await make();
+  const shared = await svc.membershipsFor(ids.shared);
   assert.deepEqual(shared.map((m) => m.tenant.slug).sort(), ['alpha', 'beta']);
   // Roles are per membership: the same person, two different things.
   assert.deepEqual(shared.map((m) => m.role).sort(), ['faculty', 'student']);
 });
 
 test('a membership of a suspended institution is not a way in', async () => {
-  const { svc } = await make();
-  assert.deepEqual(await svc.membershipsFor(14), []);
-  await assert.rejects(svc.authenticate('ghost@closed.test', 'Secret#2026'),
+  const { svc, ids } = await make();
+  assert.deepEqual(await svc.membershipsFor(ids.ghost), []);
+  await assert.rejects(svc.signIn('ghost@closed.test', PW),
     (e: HttpError) => e.status === 403);
 });
 
@@ -256,8 +246,8 @@ test('a roster is one institution and is searchable within it', async () => {
 
 test('sign-in tells an attacker nothing about which addresses exist', async () => {
   const { svc } = await make();
-  const wrongPassword = await svc.authenticate('admin@alpha.test', 'wrong').catch((e) => e);
-  const noSuchPerson = await svc.authenticate('ghost@nowhere.test', 'wrong').catch((e) => e);
+  const wrongPassword = await svc.signIn('admin@alpha.test', 'wrong').catch((e) => e);
+  const noSuchPerson = await svc.signIn('ghost@nowhere.test', 'wrong').catch((e) => e);
   assert.equal(wrongPassword.status, 401);
   assert.equal(noSuchPerson.status, 401);
   assert.equal(wrongPassword.message, noSuchPerson.message);
@@ -265,25 +255,34 @@ test('sign-in tells an attacker nothing about which addresses exist', async () =
 
 test('sign-in picks the named institution, and refuses one you do not belong to', async () => {
   const { svc } = await make();
-  const beta = await svc.authenticate('shared@both.test', 'Secret#2026', 2);
+  const beta = await svc.signIn('shared@both.test', PW, 2);
   assert.equal(beta.membership.role, 'student');
-  const alpha = await svc.authenticate('shared@both.test', 'Secret#2026', 1);
+  const alpha = await svc.signIn('shared@both.test', PW, 1);
   assert.equal(alpha.membership.role, 'faculty');
 
-  await assert.rejects(svc.authenticate('shared@both.test', 'Secret#2026', 3),
+  await assert.rejects(svc.signIn('shared@both.test', PW, 3),
     (e: HttpError) => e.status === 403);
+});
+
+test('signing in points the session at the chosen tenant', async () => {
+  const { svc, auth } = await make();
+  const result = await svc.signIn('shared@both.test', PW, 2);
+  assert.equal(result.session.access_token.includes(result.user.id), true);
+  // setActiveTenant() ran before the session was minted, so a refresh sees it.
+  const refreshed = await auth.auth.refreshSession({ refresh_token: result.session.refresh_token });
+  assert.equal(refreshed.error, null);
 });
 
 test('a suspended account cannot sign in even with the right password', async () => {
   const { svc } = await make();
-  await assert.rejects(svc.authenticate('suspended@alpha.test', 'Secret#2026'),
+  await assert.rejects(svc.signIn('suspended@alpha.test', PW),
     (e: HttpError) => e.status === 403);
 });
 
 test('an account belonging to no institution is told so, not let in', async () => {
-  const { db, svc } = await make();
-  db.tables.onyx_memberships = db.tables.onyx_memberships!.filter((m) => m.user_id !== 13);
-  await assert.rejects(svc.authenticate('nobody@nowhere.test', 'Secret#2026'),
+  const { db, svc, ids } = await make();
+  db.tables.onyx_memberships = db.tables.onyx_memberships!.filter((m) => m.user_id !== ids.nobody);
+  await assert.rejects(svc.signIn('nobody@nowhere.test', PW),
     (e: HttpError) => e.status === 403);
 });
 
@@ -294,13 +293,13 @@ test('an account belonging to no institution is told so, not let in', async () =
 test('an audit entry records the actor, the tenant and both sides of the change', async () => {
   const { db } = await make();
   const audit = new AuditService(db as never);
-  await audit.record({ tenant_id: 1, user_id: 10 }, {
+  await audit.record({ tenant_id: 1, user_id: 'user-10' }, {
     action: 'membership.role_changed', entityType: 'membership', entityId: 101,
     before: { role: 'faculty' }, after: { role: 'admin' }, ip: '203.0.113.9',
   });
   const [row] = db.tables.onyx_audit_logs as Record<string, unknown>[];
   assert.equal(row!.tenant_id, 1);
-  assert.equal(row!.actor_id, 10);
+  assert.equal(row!.actor_id, 'user-10');
   assert.deepEqual(row!.before, { role: 'faculty' });
   assert.deepEqual(row!.after, { role: 'admin' });
   assert.equal(row!.ip, '203.0.113.9');
@@ -323,7 +322,7 @@ test('a failed audit write is reported, never thrown', async () => {
   };
   const seen: string[] = [];
   const audit = new AuditService(broken as never, (m) => seen.push(m));
-  await audit.record({ tenant_id: 1, user_id: 10 },
+  await audit.record({ tenant_id: 1, user_id: 'user-10' },
     { action: 'certificate.revoked', entityType: 'certificate', entityId: 5 });
   assert.equal(seen.length, 1);
   assert.match(seen[0]!, /certificate\.revoked/);
@@ -331,13 +330,13 @@ test('a failed audit write is reported, never thrown', async () => {
 });
 
 test('the audit log reads one institution, newest first', async () => {
-  const { db } = await make();
+  const { db, ids } = await make();
   const audit = new AuditService(db as never);
-  await audit.record({ tenant_id: 1, user_id: 10 },
+  await audit.record({ tenant_id: 1, user_id: ids.alphaAdmin },
     { action: 'membership.created', entityType: 'membership', entityId: 101 });
-  await audit.record({ tenant_id: 2, user_id: 10 },
+  await audit.record({ tenant_id: 2, user_id: ids.alphaAdmin },
     { action: 'membership.removed', entityType: 'membership', entityId: 102 });
-  await audit.record({ tenant_id: 1, user_id: 10 },
+  await audit.record({ tenant_id: 1, user_id: ids.alphaAdmin },
     { action: 'certificate.issued', entityType: 'certificate', entityId: 9 });
 
   const alpha = await audit.list(1);

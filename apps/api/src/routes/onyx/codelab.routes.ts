@@ -39,7 +39,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
   // -------------------------------------------------------------------------
 
   app.get('/api/onyx/problems', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const q = req.query as {
       difficulty?: Difficulty; topic?: string; course_id?: string; search?: string;
     };
@@ -52,7 +52,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
   });
 
   app.post('/api/onyx/problems', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     const body = validate(z.object({
       title: z.string().min(1).max(255),
       slug: z.string().max(255).optional(),
@@ -87,7 +87,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
    * below is deliberately not.
    */
   app.patch('/api/onyx/problems/:id', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     const body = validate(z.object({
       title: z.string().min(1).max(255).optional(),
       statement: z.string().max(100_000).nullish(),
@@ -117,7 +117,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
    * why this is a deliberate, separate action rather than automatic.
    */
   app.post('/api/onyx/problems/:id/unpublish', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     return ok(await ctx.onyxCodeLab.unpublishProblem(claims.tenant_id, idOf(req)), 'Unpublished.');
   });
 
@@ -127,7 +127,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
    * silently.
    */
   app.put('/api/onyx/problems/:id/tests', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     const body = validate(z.object({
       tests: z.array(z.object({
         name: z.string().max(255).optional(),
@@ -142,7 +142,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
   });
 
   app.put('/api/onyx/problems/:id/hints', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     const body = validate(z.object({
       hints: z.array(z.object({
         body: z.string().min(1).max(10_000),
@@ -154,19 +154,19 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
   });
 
   app.post('/api/onyx/problems/:id/publish', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     return ok(await ctx.onyxCodeLab.publishProblem(claims.tenant_id, idOf(req)), 'Published.');
   });
 
   app.get('/api/onyx/problems/:id', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxCodeLab.problem(
       claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role));
   });
 
   /** One hint at a time, in order. The response carries only the one revealed. */
   app.post('/api/onyx/problems/:id/hint', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxCodeLab.revealHint(claims.tenant_id, idOf(req), claims.user_id));
   });
 
@@ -182,7 +182,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
    * never waits on a sandbox.
    */
   app.post('/api/onyx/problems/:id/submit', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       language: LanguageSchema,
       source: z.string().min(1).max(200_000),
@@ -199,19 +199,19 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
   });
 
   app.get('/api/onyx/submissions/code/:id', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxCodeLab.submissionDetail(
       claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role));
   });
 
   app.get('/api/onyx/problems/:id/submissions', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxCodeLab.submissions(claims.tenant_id, idOf(req), claims.user_id));
   });
 
   /** Faculty view: everyone's attempts at one problem. */
   app.get('/api/onyx/problems/:id/attempts', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     return ok(await ctx.onyxCodeLab.attempts(claims.tenant_id, idOf(req)));
   });
 
@@ -223,7 +223,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
    * sleeping and hoping.
    */
   app.post('/api/onyx/queue/drain', async (req) => {
-    requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
     const body = validate(z.object({
       concurrency: z.number().int().min(1).max(32).optional(),
     }), req.body ?? {});
@@ -237,7 +237,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
    * a product for institutions "jobs" means the ones people apply for.
    */
   app.get('/api/onyx/queue', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
     return ok(await ctx.onyxQueue.stats(claims.tenant_id));
   });
 
@@ -246,7 +246,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
   // -------------------------------------------------------------------------
 
   app.get('/api/onyx/workspaces', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxWorkspaces.list(claims.tenant_id, claims.user_id));
   });
 
@@ -257,7 +257,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
    * institution's. Neither creates a workspace here.
    */
   app.get('/api/onyx/workspaces/all', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     if (claims.tenant_role === 'admin') {
       return ok(await ctx.onyxWorkspaces.listAll(claims.tenant_id));
     }
@@ -266,7 +266,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
   });
 
   app.post('/api/onyx/workspaces', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       title: z.string().min(1).max(255),
       language: z.string().max(50).optional(),
@@ -282,7 +282,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
   });
 
   app.get('/api/onyx/workspaces/:id', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxWorkspaces.open(
       claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role));
   });
@@ -293,7 +293,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
    * WorkspaceService.run for why: one owner, one file, one Judge0 call.
    */
   app.post('/api/onyx/workspaces/:id/run', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       path: z.string().max(500).optional(),
       stdin: z.string().max(65_536).optional(),
@@ -303,7 +303,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
   });
 
   app.put('/api/onyx/workspaces/:id/files', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       files: z.array(z.object({
         path: z.string().min(1).max(500),
@@ -315,7 +315,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
   });
 
   app.delete('/api/onyx/workspaces/:id/files', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const q = req.query as { path?: string };
     if (!q.path) throw new HttpError(422, 'Which file?');
     return ok(await ctx.onyxWorkspaces.deleteFile(
@@ -323,7 +323,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
   });
 
   app.post('/api/onyx/workspaces/:id/snapshots', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({ label: z.string().max(255).optional() }), req.body ?? {});
     return ok(await ctx.onyxWorkspaces.snapshot(
       claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role,
@@ -331,14 +331,14 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
   });
 
   app.post('/api/onyx/workspaces/:id/restore/:snapshotId', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxWorkspaces.restore(
       claims.tenant_id, idOf(req), idOf(req, 'snapshotId'),
       claims.user_id, claims.tenant_role), 'Restored.');
   });
 
   app.post('/api/onyx/workspaces/:id/comments', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       body: z.string().min(1).max(20_000),
       file_path: z.string().max(500).nullish(),
@@ -350,7 +350,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
   });
 
   app.post('/api/onyx/workspaces/:id/comments/:commentId/resolve', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxWorkspaces.resolveComment(
       claims.tenant_id, idOf(req), idOf(req, 'commentId'),
       claims.user_id, claims.tenant_role), 'Resolved.');
@@ -358,7 +358,7 @@ export function registerOnyxCodeLabRoutes(app: FastifyInstance, ctx: AppContext)
 
   /** Mentor view: every workspace attached to a course they teach. */
   app.get('/api/onyx/courses/:id/workspaces', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     return ok(await ctx.onyxWorkspaces.forCourse(
       claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role));
   });

@@ -12,7 +12,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import {
   validate, ok, HttpError,
-  requireOnyx, requireOnyxRole, requirePlatformAdmin, issueOnyxToken, ROLES,
+  requireOnyx, requireOnyxRole, requirePlatformAdmin, ROLES,
 } from '@onyx/core';
 import type { Role } from '@onyx/types';
 import type { AppContext } from '../../context.ts';
@@ -37,17 +37,14 @@ export function registerOnyxTenancyRoutes(app: FastifyInstance, ctx: AppContext)
       tenant_id: z.number().int().positive().optional(),
     }), req.body);
 
-    const result = await ctx.onyxTenancy.authenticate(body.email, body.password, body.tenant_id);
-    const { token, expiresAt } = issueOnyxToken({
-      userId: result.user.id,
-      tenantId: Number(result.membership.tenant_id),
-      tenantRole: result.membership.role as Role,
-      email: result.user.email,
-      secret: ctx.jwtSecret,
-    });
+    // Supabase Auth mints the session now -- see tenancy.service.ts's
+    // signIn() for why this is a sign-in/point-at-a-tenant/refresh sequence
+    // rather than one call (docs/ADR-011-supabase-auth-migration.md).
+    const result = await ctx.onyxTenancy.signIn(body.email, body.password, body.tenant_id);
     return ok({
-      token,
-      expires_at: expiresAt,
+      token: result.session.access_token,
+      refresh_token: result.session.refresh_token,
+      expires_at: result.session.expires_at,
       user: result.user,
       tenant: result.membership.tenant,
       role: result.membership.role,
@@ -58,28 +55,38 @@ export function registerOnyxTenancyRoutes(app: FastifyInstance, ctx: AppContext)
     });
   });
 
-  /** F-06 -- move to another institution this person already belongs to. */
+  /**
+   * F-06 -- move to another institution this person already belongs to.
+   *
+   * Needs the caller's refresh token now, not just their access token --
+   * nothing on the API can mint a token unilaterally the way
+   * issueOnyxToken() used to; only GoTrue can, in exchange for a refresh
+   * token. See tenancy.service.ts's switchTenant().
+   */
   app.post('/api/onyx/auth/switch', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
-    const body = validate(z.object({ tenant_id: z.number().int().positive() }), req.body);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
+    const body = validate(z.object({
+      tenant_id: z.number().int().positive(),
+      refresh_token: z.string().min(1),
+    }), req.body);
 
     const memberships = await ctx.onyxTenancy.membershipsFor(claims.user_id);
     const target = memberships.find((m) => Number(m.tenant_id) === body.tenant_id);
     // Switching is only ever between institutions they already belong to.
     if (!target) throw new HttpError(403, 'You do not belong to that institution.');
 
-    const { token, expiresAt } = issueOnyxToken({
-      userId: claims.user_id,
-      tenantId: body.tenant_id,
-      tenantRole: target.role as Role,
-      email: claims.email,
-      secret: ctx.jwtSecret,
+    const session = await ctx.onyxTenancy.switchTenant(claims.user_id, body.tenant_id, body.refresh_token);
+    return ok({
+      token: session.access_token,
+      refresh_token: session.refresh_token,
+      expires_at: session.expires_at,
+      tenant: target.tenant,
+      role: target.role,
     });
-    return ok({ token, expires_at: expiresAt, tenant: target.tenant, role: target.role });
   });
 
   app.get('/api/onyx/me', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const [memberships, name, tenant] = await Promise.all([
       ctx.onyxTenancy.membershipsFor(claims.user_id),
       ctx.onyxTenancy.userName(claims.user_id),
@@ -103,7 +110,7 @@ export function registerOnyxTenancyRoutes(app: FastifyInstance, ctx: AppContext)
    * membership, just aimed at everyone holding that role at once.
    */
   app.patch('/api/onyx/tenant/settings', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
     const body = validate(z.object({
       faculty_can_schedule_exams: z.boolean(),
     }), req.body);
@@ -146,7 +153,7 @@ export function registerOnyxTenancyRoutes(app: FastifyInstance, ctx: AppContext)
    * the service-role connection. Nothing needs an open HTTP route.
    */
   app.post('/api/onyx/tenants', async (req) => {
-    requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       name: z.string().min(1).max(255),
       slug: z.string().max(255).optional(),
@@ -174,7 +181,7 @@ export function registerOnyxTenancyRoutes(app: FastifyInstance, ctx: AppContext)
     // invigilation and marking institution-wide and needs the same "who is
     // this" name lookup admin/faculty already had -- without it, Invigilate
     // could only ever show a candidate's raw id to that role.
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty', 'exams');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty', 'exams');
     const q = req.query as { role?: Role; search?: string };
     return ok(await ctx.onyxTenancy.members(claims.tenant_id, {
       role: q.role, search: q.search,
@@ -182,7 +189,7 @@ export function registerOnyxTenancyRoutes(app: FastifyInstance, ctx: AppContext)
   });
 
   app.post('/api/onyx/members', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
     const body = validate(z.object({
       name: z.string().min(1).max(255),
       email: z.string().email(),
@@ -201,7 +208,7 @@ export function registerOnyxTenancyRoutes(app: FastifyInstance, ctx: AppContext)
     // and somebody having to tell the person out of band that it had.
     const tenant = await ctx.onyxTenancy.tenant(claims.tenant_id);
     await ctx.onyxNotify.notify(claims.tenant_id, {
-      userId: Number(result.user.id),
+      userId: result.user.id,
       kind: 'membership.invited',
       title: 'You have been added to ' + (tenant?.name ?? 'an institution'),
       body: 'You joined as ' + body.role + '. Sign in to see what is waiting for you.',
@@ -218,7 +225,7 @@ export function registerOnyxTenancyRoutes(app: FastifyInstance, ctx: AppContext)
    * for any existing caller; everything else is additive.
    */
   app.patch('/api/onyx/members/:id', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
     const body = validate(z.object({
       name: z.string().min(1).max(255).optional(),
       email: z.string().email().optional(),
@@ -253,7 +260,7 @@ export function registerOnyxTenancyRoutes(app: FastifyInstance, ctx: AppContext)
   });
 
   app.delete('/api/onyx/members/:id', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
     const removed = await ctx.onyxTenancy.removeMember(claims.tenant_id, idOf(req));
     await ctx.onyxAudit.record(claims, {
       action: 'membership.removed', entityType: 'membership', entityId: idOf(req),
@@ -265,7 +272,7 @@ export function registerOnyxTenancyRoutes(app: FastifyInstance, ctx: AppContext)
   // ---- F-05: the audit log ----
 
   app.get('/api/onyx/audit', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
     const q = req.query as { action?: string; entity_type?: string; limit?: string };
     // Always this tenant's log. audit_logs has RLS with no select policy, so
     // this service-role path is the only way to read it at all.

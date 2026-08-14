@@ -8,7 +8,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, createTenant, webPage, withDb, WEB, RUN } from './harness.ts';
+import { api, createTenant, webPage, withDb, WEB, RUN, onyxWebLogin } from './harness.ts';
 
 /** The rendered document, without the RSC payload. See o01-web.e2e.ts. */
 const dom = (html: string) => html.replace(/<script[\s\S]*?<\/script>/g, '');
@@ -37,21 +37,9 @@ const T = { name: 'Web Learn College ' + RUN, slug: 'web-learn-' + RUN };
 const w = {
   tenant: 0,
   cookies: {} as Record<string, string>,
-  ids: {} as Record<string, number>,
+  ids: {} as Record<string, string>,
   course: 0, lesson: 0, lockedLesson: 0, assignment: 0, submission: 0, session: 0,
 };
-
-async function signIn(email: string): Promise<string> {
-  const res = await fetch(WEB + '/api/onyx/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password: pw }),
-  });
-  const cookie = (res.headers.getSetCookie?.() ?? [])
-    .find((c) => c.startsWith('onyx_tenant_session='));
-  if (!cookie) throw new Error('sign-in set no cookie for ' + email);
-  return cookie.split(';')[0]!;
-}
 
 /** Through the web proxy, so the cookie-per-product routing is exercised too. */
 async function viaWeb<T = any>(path: string, cookie: string, init: {
@@ -76,16 +64,16 @@ test('a college with a course, a cohort and some work', async () => {
   });
   assert.equal(created.ok, true, created.message);
   w.tenant = Number(created.data.tenant.id);
-  w.cookies.admin = await signIn(mail('admin'));
+  w.cookies.admin = await onyxWebLogin(mail('admin'), pw);
 
   for (const [who, role] of [['faculty', 'faculty'], ['student', 'student'],
     ['other', 'student']] as const) {
-    const r = await viaWeb<{ user: { id: number } }>('members', w.cookies.admin, {
+    const r = await viaWeb<{ user: { id: string } }>('members', w.cookies.admin, {
       body: { name: who, email: mail(who), role, password: pw },
     });
     assert.equal(r.ok, true, 'invite ' + who + ': ' + r.message);
-    w.ids[who] = Number(r.data.user.id);
-    w.cookies[who] = await signIn(mail(who));
+    w.ids[who] = r.data.user.id;
+    w.cookies[who] = await onyxWebLogin(mail(who), pw);
   }
 
   const course = await viaWeb<{ id: number }>('courses', w.cookies.admin, {
@@ -272,6 +260,10 @@ test('cleanup leaves nothing behind', async () => {
     await c.query('DELETE FROM public."onyx_users" WHERE email LIKE $1',
       ['lw.%.' + RUN + '@onyx.test']);
   });
+  // 403, not 401: credentials live in Supabase Auth now (ADR-011), separate
+  // from the onyx_users profile row this deletes, so signInWithPassword
+  // still succeeds and the rejection comes from the missing profile, one
+  // step later. Access is equally denied either way.
   const gone = await api('/api/onyx/auth/login', { body: { email: mail('admin'), password: pw } });
-  assert.equal(gone.status, 401);
+  assert.equal(gone.status, 403);
 });

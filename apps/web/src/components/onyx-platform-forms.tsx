@@ -1931,6 +1931,54 @@ export function FeeStructureStatusButtons({ tenantId, structureId, status }: {
  * locked out of the console. Same inline "Revoke {name}? Yes/No" pattern as
  * RemoveMemberButton now.
  */
+/**
+ * OAuth Server Mode -- a registered third-party client can no longer request
+ * delegated access to this project's users. Sibling to RevokeAdminButton,
+ * same inline confirm rather than a full Modal (see that component's own
+ * shape for why: this is a small, single-consequence action on a list row,
+ * not a destructive action worth a full-screen interruption).
+ */
+export function RevokeOAuthClientButton({ clientId, name }: { clientId: string; name: string }) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  if (!confirming) {
+    return (
+      <button type="button" onClick={() => setConfirming(true)}
+        className="rounded-lg border border-red-600 px-3 py-1.5 text-xs text-red-700">
+        Revoke
+      </button>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="max-w-[14rem] truncate text-[12px] text-muted">
+        Revoke {name}&rsquo;s registration?
+      </span>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => start(async () => {
+          setError(null);
+          const res = await post('onyx/platform/oauth-clients/' + clientId, undefined, 'DELETE');
+          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+          router.refresh();
+        })}
+        className="text-[12.5px] font-bold text-red-700 hover:underline disabled:opacity-50"
+      >
+        {pending ? 'Revoking…' : 'Yes'}
+      </button>
+      <button type="button" onClick={() => setConfirming(false)}
+        className="text-[12.5px] text-muted hover:underline">
+        No
+      </button>
+      {error ? <span role="alert" className="text-[12px] text-red-700">{error}</span> : null}
+    </div>
+  );
+}
+
 export function RevokeAdminButton({ id, name }: { id: number; name: string }) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);

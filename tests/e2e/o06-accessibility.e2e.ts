@@ -16,7 +16,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, createTenant, webPage, WEB, RUN } from './harness.ts';
+import { api, createTenant, webPage, WEB, RUN, onyxWebLogin } from './harness.ts';
 
 const dom = (html: string) => html.replace(/<script[\s\S]*?<\/script>/g, '');
 
@@ -24,19 +24,7 @@ const pw = 'OnyxTest#2026';
 const mail = (who: string) => 'a11y.' + who + '.' + RUN + '@onyx.test';
 const T = { name: 'Access College ' + RUN, slug: 'a11y-' + RUN };
 
-const w = { cookies: {} as Record<string, string>, ids: {} as Record<string, number> };
-
-async function signIn(email: string): Promise<string> {
-  const res = await fetch(WEB + '/api/onyx/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password: pw }),
-  });
-  const cookie = (res.headers.getSetCookie?.() ?? [])
-    .find((c) => c.startsWith('onyx_tenant_session='));
-  if (!cookie) throw new Error('sign-in set no cookie for ' + email);
-  return cookie.split(';')[0]!;
-}
+const w = { cookies: {} as Record<string, string>, ids: {} as Record<string, string> };
 
 test('a college and a learner to look at the pages with', async () => {
   const created = await createTenant({
@@ -44,16 +32,16 @@ test('a college and a learner to look at the pages with', async () => {
     admin: { name: 'Admin', email: mail('admin'), password: pw },
   });
   assert.equal(created.ok, true, created.message);
-  w.cookies.admin = await signIn(mail('admin'));
+  w.cookies.admin = await onyxWebLogin(mail('admin'), pw);
 
-  const student = await api<{ user: { id: number } }>('/api/onyx/members', {
+  const student = await api<{ user: { id: string } }>('/api/onyx/members', {
     token: (await api<{ token: string }>('/api/onyx/auth/login',
       { body: { email: mail('admin'), password: pw } })).data.token,
     body: { name: 'student', email: mail('student'), role: 'student', password: pw },
   });
   assert.equal(student.ok, true, student.message);
-  w.ids.student = Number(student.data.user.id);
-  w.cookies.student = await signIn(mail('student'));
+  w.ids.student = student.data.user.id;
+  w.cookies.student = await onyxWebLogin(mail('student'), pw);
 });
 
 test('2.4.1 every page offers a way past the repeated navigation', async () => {

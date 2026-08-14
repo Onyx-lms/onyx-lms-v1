@@ -17,7 +17,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, createTenant, withDb, RUN } from './harness.ts';
+import { api, createTenant, withDb, RUN, onyxLogin } from './harness.ts';
 
 const pw = 'OnyxTest#2026';
 const mail = (who: string) => 'sb.' + who + '.' + RUN + '@onyx.test';
@@ -27,14 +27,8 @@ const SANDBOX = process.env.ONYX_JUDGE0_URL ?? 'http://127.0.0.1:2358';
 
 const w = {
   admin: '', faculty: '', student: '',
-  ids: {} as Record<string, number>,
+  ids: {} as Record<string, string>,
   course: 0, problem: 0,
-};
-
-const login = async (email: string) => {
-  const r = await api<{ token: string }>('/api/onyx/auth/login', { body: { email, password: pw } });
-  assert.equal(r.ok, true, 'login ' + email + ': ' + r.message);
-  return r.data.token;
 };
 
 /** Queues a submission and follows it until the worker has finished with it. */
@@ -66,17 +60,17 @@ test('a college with a published problem', async () => {
     admin: { name: 'Admin', email: mail('admin'), password: pw },
   });
   assert.equal(created.ok, true, created.message);
-  w.admin = await login(mail('admin'));
+  w.admin = await onyxLogin(mail('admin'), pw);
 
   for (const [who, role] of [['faculty', 'faculty'], ['student', 'student']] as const) {
-    const r = await api<{ user: { id: number } }>('/api/onyx/members', {
+    const r = await api<{ user: { id: string } }>('/api/onyx/members', {
       token: w.admin, body: { name: who, email: mail(who), role, password: pw },
     });
     assert.equal(r.ok, true, r.message);
-    w.ids[who] = Number(r.data.user.id);
+    w.ids[who] = r.data.user.id;
   }
-  w.faculty = await login(mail('faculty'));
-  w.student = await login(mail('student'));
+  w.faculty = await onyxLogin(mail('faculty'), pw);
+  w.student = await onyxLogin(mail('student'), pw);
 
   const course = await api<{ id: number }>('/api/onyx/courses', {
     token: w.admin, body: { code: 'SB101', title: 'Sandbox Course' },

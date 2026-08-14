@@ -9,19 +9,31 @@ import { redirect } from 'next/navigation';
  * so `OnyxClaims` -- which requires one -- cannot represent it, and should
  * not be made to: a type that can express both "in institution 12" and
  * "above every institution" is a type where confusing the two compiles.
+ *
+ * Holds both the access and refresh token as JSON, same as onyx-session.ts
+ * and for the same reason (docs/ADR-011-supabase-auth-migration.md) -- the
+ * refresh token is unused today (there is no platform equivalent of tenant
+ * switching), kept only for parity and in case a future platform-console
+ * feature needs it.
  */
 export const PLATFORM_COOKIE = 'onyx_platform_session';
 
 export interface PlatformClaims {
-  user_id: number;
+  user_id: string;
   email: string;
   platform: true;
   exp: number;
 }
 
+export interface PlatformSessionCookie {
+  token: string;
+  refresh_token: string;
+  expires_at: number;
+}
+
 const API = process.env.API_URL ?? 'http://127.0.0.1:4000';
 
-function decode(token: string): PlatformClaims | null {
+function decodeClaims(token: string): PlatformClaims | null {
   try {
     const claims = JSON.parse(
       Buffer.from(token.split('.')[1] ?? '', 'base64url').toString()) as PlatformClaims;
@@ -33,13 +45,24 @@ function decode(token: string): PlatformClaims | null {
   }
 }
 
+async function readCookie(): Promise<PlatformSessionCookie | null> {
+  const raw = (await cookies()).get(PLATFORM_COOKIE)?.value;
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as PlatformSessionCookie;
+    return parsed.token ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getPlatformToken(): Promise<string | null> {
-  return (await cookies()).get(PLATFORM_COOKIE)?.value ?? null;
+  return (await readCookie())?.token ?? null;
 }
 
 export async function getPlatformSession(): Promise<PlatformClaims | null> {
   const token = await getPlatformToken();
-  return token ? decode(token) : null;
+  return token ? decodeClaims(token) : null;
 }
 
 export async function requirePlatformSession(): Promise<PlatformClaims> {

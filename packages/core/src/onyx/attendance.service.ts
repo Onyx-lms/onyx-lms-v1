@@ -56,7 +56,7 @@ export class AttendanceService {
 
   // ---- LRN-03a: sessions ----
 
-  async createSession(tenantId: number, courseId: number, createdBy: number, input: {
+  async createSession(tenantId: number, courseId: number, createdBy: string, input: {
     title: string; scheduled_at: string; duration_minutes?: number; qr_window_seconds?: number;
   }) {
     await this.#academics.course(tenantId, courseId);
@@ -116,12 +116,12 @@ export class AttendanceService {
       this.#academics.roster(tenantId, Number(session.course_id)),
       this.records(tenantId, sessionId),
     ]);
-    const byUser = new Map(records.map((r) => [Number(r.user_id), r]));
+    const byUser = new Map(records.map((r) => [String(r.user_id), r]));
     return {
       session,
       roster: enrolled.map((e) => ({
-        user_id: Number(e.user_id),
-        record: byUser.get(Number(e.user_id)) ?? null,
+        user_id: String(e.user_id),
+        record: byUser.get(String(e.user_id)) ?? null,
       })),
     };
   }
@@ -139,8 +139,8 @@ export class AttendanceService {
    * a person -- and a half-marked roster is indistinguishable from a room where
    * half the class was absent.
    */
-  async mark(tenantId: number, sessionId: number, markedBy: number, entries: {
-    user_id: number; status: AttendanceStatus; note?: string | null;
+  async mark(tenantId: number, sessionId: number, markedBy: string, entries: {
+    user_id: string; status: AttendanceStatus; note?: string | null;
   }[]) {
     const session = await this.session(tenantId, sessionId);
     for (const e of entries) {
@@ -151,18 +151,18 @@ export class AttendanceService {
 
     const enrolled = new Set(
       (await this.#academics.roster(tenantId, Number(session.course_id)))
-        .map((e) => Number(e.user_id)));
-    const stray = entries.find((e) => !enrolled.has(Number(e.user_id)));
+        .map((e) => String(e.user_id)));
+    const stray = entries.find((e) => !enrolled.has(String(e.user_id)));
     if (stray) throw new HttpError(422, 'Someone in that list is not enrolled in this course.');
 
     const existing = new Map(
-      (await this.records(tenantId, sessionId)).map((r) => [Number(r.user_id), r]));
+      (await this.records(tenantId, sessionId)).map((r) => [String(r.user_id), r]));
     const at = new Date(this.#now()).toISOString();
     let created = 0;
     let amended = 0;
 
     for (const e of entries) {
-      const prior = existing.get(Number(e.user_id));
+      const prior = existing.get(String(e.user_id));
       if (prior) {
         await this.#db.from('onyx_attendance_records').update({
           status: e.status, note: e.note ?? null, method: 'manual',
@@ -215,7 +215,7 @@ export class AttendanceService {
    * `userId` comes from the caller's token. There is no parameter for it, so
    * "a learner cannot mark another learner" is structural rather than checked.
    */
-  async checkIn(tenantId: number, sessionId: number, userId: number, code: string) {
+  async checkIn(tenantId: number, sessionId: number, userId: string, code: string) {
     // The window this code is judged against is fixed by when the request
     // ARRIVED, not by when the three lookups below happen to finish. Deriving
     // it afterwards charged the learner for the server's own latency: against a
@@ -247,7 +247,7 @@ export class AttendanceService {
     }
 
     const existing = (await this.records(tenantId, sessionId))
-      .find((r) => Number(r.user_id) === userId);
+      .find((r) => String(r.user_id) === userId);
     if (existing) {
       // A code is shared by the whole room for its window, so replay protection
       // is per learner: they are already marked, and a second scan changes
@@ -300,8 +300,8 @@ export class AttendanceService {
     const records = data ?? [];
 
     const learners = roster.map((e) => {
-      const userId = Number(e.user_id);
-      const mine = records.filter((r) => Number(r.user_id) === userId);
+      const userId = String(e.user_id);
+      const mine = records.filter((r) => String(r.user_id) === userId);
       const excused = mine.filter((r) => r.status === 'excused').length;
       const attended = mine.filter((r) => ATTENDED.includes(r.status as AttendanceStatus)).length;
       const counted = sessions.length - excused;
@@ -341,7 +341,7 @@ export class AttendanceService {
    * the average and a headcount travel across, never another learner's own
    * figure -- nothing here is more exposed than a class average already is.
    */
-  async learnerSummary(tenantId: number, userId: number, threshold = 75) {
+  async learnerSummary(tenantId: number, userId: string, threshold = 75) {
     const enrollments = await this.#academics.enrollmentsFor(tenantId, userId);
     const out = [];
     for (const e of enrollments) {
@@ -377,7 +377,7 @@ export class AttendanceService {
         session_id: Number(s.id),
         session: s.title,
         scheduled_at: s.scheduled_at,
-        user_id: Number(e.user_id),
+        user_id: String(e.user_id),
         // An unmarked session is an absence, consistently with the percentages.
         status: record?.status ?? 'absent',
         method: record?.method ?? null,
@@ -394,7 +394,7 @@ export class AttendanceService {
    * place that does already loads the roster for other reasons.
    */
   async exportCsv(tenantId: number, courseId: number, opts: {
-    names?: Map<number, { name: string; email: string }>;
+    names?: Map<string, { name: string; email: string }>;
   } = {}): Promise<string> {
     const rows = await this.exportRows(tenantId, courseId);
     const header = ['session_id', 'session', 'scheduled_at', 'user_id', 'name', 'email', 'status', 'method'];

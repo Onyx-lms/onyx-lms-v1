@@ -142,10 +142,10 @@ export class AcademicsService {
   }
 
   /** Batch membership is what makes bulk enrolment possible at all. */
-  async addToBatch(tenantId: number, batchId: number, userIds: number[]) {
+  async addToBatch(tenantId: number, batchId: number, userIds: string[]) {
     await this.batch(tenantId, batchId);
     const members = await this.batchMembers(tenantId, batchId);
-    const existing = new Set(members.map((m) => Number(m.user_id)));
+    const existing = new Set(members.map((m) => String(m.user_id)));
     const fresh = [...new Set(userIds)].filter((id) => !existing.has(id));
     if (!fresh.length) return { added: 0 };
 
@@ -201,16 +201,16 @@ export class AcademicsService {
       const c = Number(e.course_id);
       enrolCount.set(c, (enrolCount.get(c) ?? 0) + 1);
     }
-    const facultyIds = [...new Set((facQ.data ?? []).map((f) => Number(f.user_id)))];
+    const facultyIds = [...new Set((facQ.data ?? []).map((f) => String(f.user_id)))];
     const { data: facultyUsers } = facultyIds.length
       ? await this.#db.from('onyx_users').select('id, name').in('id', facultyIds)
       : { data: [] };
-    const nameOf = new Map((facultyUsers ?? []).map((u) => [Number(u.id), String(u.name)]));
-    const facultyByCourse = new Map<number, { user_id: number; name: string }[]>();
+    const nameOf = new Map((facultyUsers ?? []).map((u) => [String(u.id), String(u.name)]));
+    const facultyByCourse = new Map<number, { user_id: string; name: string }[]>();
     for (const f of facQ.data ?? []) {
       const c = Number(f.course_id);
       const list = facultyByCourse.get(c) ?? [];
-      list.push({ user_id: Number(f.user_id), name: nameOf.get(Number(f.user_id)) ?? 'Unknown' });
+      list.push({ user_id: String(f.user_id), name: nameOf.get(String(f.user_id)) ?? 'Unknown' });
       facultyByCourse.set(c, list);
     }
 
@@ -235,7 +235,7 @@ export class AcademicsService {
     return data;
   }
 
-  async createCourse(tenantId: number, createdBy: number, input: OnyxCourseInput) {
+  async createCourse(tenantId: number, createdBy: string, input: OnyxCourseInput) {
     const slug = slugify(input.slug ?? input.title);
     if (!slug) throw new HttpError(422, 'That title does not make a usable address.');
     await this.#assertStructureBelongs(tenantId, input.program_id, input.semester_id);
@@ -290,10 +290,10 @@ export class AcademicsService {
    * checked here rather than left to the unique constraint, so a course
    * already at two gets a real reason rather than a silent no-op.
    */
-  async assignFaculty(tenantId: number, courseId: number, userId: number) {
+  async assignFaculty(tenantId: number, courseId: number, userId: string) {
     await this.course(tenantId, courseId);
     const current = await this.faculty(tenantId, courseId);
-    if (current.some((f) => Number(f.user_id) === userId)) return { assigned: false };
+    if (current.some((f) => String(f.user_id) === userId)) return { assigned: false };
     if (current.length >= 2) {
       throw new HttpError(422,
         'This course already has two faculty. Remove one before assigning another.');
@@ -308,7 +308,7 @@ export class AcademicsService {
 
   /** The other half of assignFaculty() -- a course stuck at two wrong people
    * needs a way back to one before a correct third can be assigned. */
-  async removeFaculty(tenantId: number, courseId: number, userId: number) {
+  async removeFaculty(tenantId: number, courseId: number, userId: string) {
     await this.course(tenantId, courseId);
     await this.#db.from('onyx_course_faculty')
       .delete().eq('tenant_id', tenantId).eq('course_id', courseId).eq('user_id', userId);
@@ -329,11 +329,11 @@ export class AcademicsService {
    * on courses they teach -- otherwise "faculty" would be a tenant-wide key to
    * every roster, grade and attendance record.
    */
-  async assertCanTeach(tenantId: number, courseId: number, userId: number, role: Role) {
+  async assertCanTeach(tenantId: number, courseId: number, userId: string, role: Role) {
     const course = await this.course(tenantId, courseId);
     if (role === 'admin') return course;
     const teaches = await this.faculty(tenantId, courseId);
-    if (!teaches.some((f) => Number(f.user_id) === userId)) {
+    if (!teaches.some((f) => String(f.user_id) === userId)) {
       throw new HttpError(403, 'You do not teach this course.');
     }
     return course;
@@ -341,7 +341,7 @@ export class AcademicsService {
 
   // ---- enrolment ----
 
-  async enrollment(tenantId: number, courseId: number, userId: number) {
+  async enrollment(tenantId: number, courseId: number, userId: string) {
     const { data } = await this.#db.from('onyx_enrollments')
       .select(ENROLLMENT_COLUMNS)
       .eq('tenant_id', tenantId).eq('course_id', courseId).eq('user_id', userId)
@@ -350,7 +350,7 @@ export class AcademicsService {
   }
 
   /** The gate in front of every piece of course content. */
-  async assertEnrolled(tenantId: number, courseId: number, userId: number) {
+  async assertEnrolled(tenantId: number, courseId: number, userId: string) {
     const enrolled = await this.enrollment(tenantId, courseId, userId);
     if (!enrolled || enrolled.status !== 1) {
       throw new HttpError(403, 'You are not enrolled in this course.');
@@ -358,7 +358,7 @@ export class AcademicsService {
     return enrolled;
   }
 
-  async enrollmentsFor(tenantId: number, userId: number) {
+  async enrollmentsFor(tenantId: number, userId: string) {
     const { data } = await this.#db.from('onyx_enrollments')
       .select(ENROLLMENT_COLUMNS)
       .eq('tenant_id', tenantId).eq('user_id', userId).eq('status', 1);
@@ -366,7 +366,7 @@ export class AcademicsService {
   }
 
   /** The reverse of `faculty()` -- every course id this person teaches. */
-  async teachingFor(tenantId: number, userId: number): Promise<number[]> {
+  async teachingFor(tenantId: number, userId: string): Promise<number[]> {
     const { data } = await this.#db.from('onyx_course_faculty')
       .select('course_id').eq('tenant_id', tenantId).eq('user_id', userId);
     return [...new Set((data ?? []).map((r) => Number(r.course_id)))];
@@ -381,8 +381,8 @@ export class AcademicsService {
   }
 
   /** Administrator-driven enrolment. */
-  async enroll(tenantId: number, courseId: number, userId: number, opts: {
-    enrolledBy?: number | null; batchId?: number | null;
+  async enroll(tenantId: number, courseId: number, userId: string, opts: {
+    enrolledBy?: string | null; batchId?: number | null;
   } = {}) {
     const course = await this.course(tenantId, courseId);
     const existing = await this.enrollment(tenantId, courseId, userId);
@@ -408,7 +408,7 @@ export class AcademicsService {
   }
 
   /** Self-service enrolment, which only some courses allow. */
-  async selfEnroll(tenantId: number, courseId: number, userId: number) {
+  async selfEnroll(tenantId: number, courseId: number, userId: string) {
     const course = await this.course(tenantId, courseId);
     if (course.status !== 1) throw new HttpError(403, 'This course is not open.');
     if (!course.self_enroll) {
@@ -421,7 +421,7 @@ export class AcademicsService {
    * Bulk enrolment by batch -- the everyday case. An institution enrols a
    * cohort, not a person, and doing it one at a time is where mistakes live.
    */
-  async enrollBatch(tenantId: number, courseId: number, batchId: number, enrolledBy: number) {
+  async enrollBatch(tenantId: number, courseId: number, batchId: number, enrolledBy: string) {
     await this.course(tenantId, courseId);
     const members = await this.batchMembers(tenantId, batchId);
     if (!members.length) return { enrolled: 0, already: 0 };
@@ -431,9 +431,9 @@ export class AcademicsService {
     // constraint and fail the whole batch -- so they are restored instead.
     const { data: existing } = await this.#db.from('onyx_enrollments')
       .select(ENROLLMENT_COLUMNS).eq('tenant_id', tenantId).eq('course_id', courseId);
-    const byUser = new Map((existing ?? []).map((e) => [Number(e.user_id), e]));
+    const byUser = new Map((existing ?? []).map((e) => [String(e.user_id), e]));
 
-    const wanted = [...new Set(members.map((m) => Number(m.user_id)))];
+    const wanted = [...new Set(members.map((m) => String(m.user_id)))];
     const fresh = wanted.filter((id) => !byUser.has(id));
     const revived = wanted.filter((id) => byUser.get(id)?.status === 0);
 
@@ -457,7 +457,7 @@ export class AcademicsService {
     };
   }
 
-  async withdraw(tenantId: number, courseId: number, userId: number) {
+  async withdraw(tenantId: number, courseId: number, userId: string) {
     const existing = await this.enrollment(tenantId, courseId, userId);
     if (!existing || existing.status !== 1) throw new HttpError(404, 'They are not enrolled.');
     // Withdrawn, not deleted: their attendance and submissions still happened,

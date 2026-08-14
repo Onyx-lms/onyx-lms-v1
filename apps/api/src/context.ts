@@ -35,7 +35,7 @@ import {
   TutorCatalogService, TutorScheduleService, TutorBookingService,
   RevenueService, PayoutService,
   SettingsAdminService, PlatformAdminService, CampaignService,
-  TenancyService, AuditService, onyxServiceClient,
+  TenancyService, AuditService, onyxServiceClient, OAuthClientsService,
   BlogService, BlogEngagementService, KnowledgeBaseService, TestimonialService,
   RateLimiter, serviceClient, anonClient, type Db,
 } from '@onyx/core';
@@ -118,6 +118,7 @@ export interface AppContext {
   onyxCheckout: OnyxCheckoutService;
   onyxGuardians: GuardianService;
   onyxPlatform: PlatformService;
+  onyxOAuthClients: OAuthClientsService;
   /** One pass of the Code Lab worker. Also driven by an interval in server.ts. */
   onyxRunWorker: (opts?: CodeLabWorkerOptions) =>
     Promise<{ done: number; retried: number; failed: number }>;
@@ -270,6 +271,7 @@ export function createContext(): AppContext {
     }),
     onyxGuardians: new GuardianService(onyxDb, onyxAudit, onyxExams),
     onyxPlatform: new PlatformService(onyxDb),
+    onyxOAuthClients: new OAuthClientsService(),
     onyxRunWorker: (opts) => runCodeLabWorker(onyxQueue, onyxCodeLab, {
       ...opts, onError: (m) => console.error('[onyx] ' + m),
     }),

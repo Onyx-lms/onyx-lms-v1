@@ -1,10 +1,19 @@
 /**
  * F-03 / F-04 -- Onyx access tokens and guards.
  *
- * Same signing arrangement as the port (ADR-001): HS256 with the Supabase JWT
- * secret, `role` fixed at 'authenticated' so PostgREST performs the right SET
- * ROLE, and the application's own claims alongside it. `auth.uid()` is never
- * used anywhere -- it casts `sub` to uuid and these ids are bigint.
+ * Supabase Auth (GoTrue) issues and signs these now (see
+ * docs/ADR-011-supabase-auth-migration.md) -- this file only verifies them
+ * and reads the claims, exactly as it always did, just against the
+ * project's real JWKS instead of a shared HS256 secret this code minted
+ * itself. `role` stays fixed at 'authenticated' so PostgREST performs the
+ * right SET ROLE; `tenant_id`/`tenant_role`/`platform` are stamped on at
+ * mint time by the Custom Access Token Hook
+ * (supabase/onyx/migrations/0015_auth_claims_hook.sql), not by this file.
+ *
+ * `sub`/`user_id` are now real auth.users uuids, not the bigint ids this
+ * project signed for itself before the migration -- `auth.uid()` is safe to
+ * use in RLS for the first time, and 0014's cutover is what makes every
+ * onyx_-table policy that reads a person's id compare uuid to uuid.
  *
  * What is new here is `tenant_id`. It is the whole basis of isolation:
  * onyx.current_tenant_id() reads it inside every RLS policy, so a token without
@@ -12,14 +21,31 @@
  * Because that is load-bearing, a token missing the claim is refused outright
  * rather than treated as "no tenant yet".
  */
-import jwt from 'jsonwebtoken';
+import { jwtVerify, createRemoteJWKSet, type JWTVerifyGetKey } from 'jose';
 import type { Role } from '@onyx/types';
 import { unauthorized, forbidden } from '../http/errors.ts';
 import type { RequestLike } from '../auth/guards.ts';
 
+function required(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error('Missing required env var ' + name + ' (see .env.example)');
+  return v;
+}
+
+let _jwks: JWTVerifyGetKey | null = null;
+
+/** The project's real signing keys (confirmed ES256 -- see the auth migration ADR), fetched once and cached. */
+function jwks(): JWTVerifyGetKey {
+  if (!_jwks) {
+    _jwks = createRemoteJWKSet(new URL(required('SUPABASE_URL') + '/auth/v1/.well-known/jwks.json'));
+  }
+  return _jwks;
+}
+
 export interface OnyxTokenClaims {
   sub: string;
-  user_id: number;
+  /** A real auth.users uuid since the migration -- was a bigint before it. */
+  user_id: string;
   tenant_id: number;
   role: 'authenticated';
   /** The role WITHIN this tenant. Held on the membership, not on the user. */
@@ -30,35 +56,22 @@ export interface OnyxTokenClaims {
   exp: number;
 }
 
-export interface IssueOnyxToken {
-  userId: number;
-  tenantId: number;
-  tenantRole: Role;
-  email: string;
-  secret: string;
-  ttlSeconds?: number;
-}
-
-export function issueOnyxToken(input: IssueOnyxToken): { token: string; expiresAt: number } {
-  const ttl = input.ttlSeconds ?? Number(process.env.ACCESS_TOKEN_TTL ?? 3600);
-  const now = Math.floor(Date.now() / 1000);
-  const claims: OnyxTokenClaims = {
-    sub: String(input.userId),
-    user_id: input.userId,
-    tenant_id: input.tenantId,
-    role: 'authenticated',
-    tenant_role: input.tenantRole,
-    email: input.email,
-    aud: 'authenticated',
-    iat: now,
-    exp: now + ttl,
-  };
-  return { token: jwt.sign(claims, input.secret, { algorithm: 'HS256' }), expiresAt: claims.exp };
-}
-
-export function verifyOnyxToken(token: string, secret: string): OnyxTokenClaims | null {
+/**
+ * Verifies a Supabase Auth-issued access token against the project's JWKS.
+ *
+ * Cryptographic verification is inherently async (jose calls into the
+ * platform's WebCrypto, which has no synchronous form) -- unlike the old
+ * jsonwebtoken-based verifyOnyxToken(), and unlike it, there is no `secret`
+ * parameter: the signing keys come from the project itself, not a value
+ * this code ever held.
+ */
+export async function verifyOnyxToken(token: string): Promise<OnyxTokenClaims | null> {
   try {
-    return jwt.verify(token, secret, { algorithms: ['HS256'] }) as OnyxTokenClaims;
+    const { payload } = await jwtVerify(token, jwks(), {
+      issuer: required('SUPABASE_URL') + '/auth/v1',
+      audience: 'authenticated',
+    });
+    return payload as unknown as OnyxTokenClaims;
   } catch {
     return null;
   }
@@ -72,23 +85,40 @@ export function extractOnyxToken(req: RequestLike): string | null {
 }
 
 /**
- * Every Onyx request runs inside exactly one tenant. A token that does not name
- * one cannot be scoped, so it is rejected rather than defaulted -- defaulting is
- * how a request ends up reading the wrong institution.
+ * The claim-shape checks requireOnyx() applies once a token has already
+ * verified cryptographically -- split out as its own pure function so it
+ * can be unit-tested against a hand-built claims object. Nothing outside
+ * GoTrue can produce a token that actually passes verifyOnyxToken(), so
+ * that step itself is e2e-only coverage; this is the part a unit test can
+ * reach.
  */
-export function requireOnyx(req: RequestLike, secret: string): OnyxTokenClaims {
-  const token = extractOnyxToken(req);
-  if (!token) throw unauthorized();
-  const claims = verifyOnyxToken(token, secret);
-  if (!claims) throw unauthorized();
+export function assertUsableOnyxClaims(claims: OnyxTokenClaims): OnyxTokenClaims {
   if (!Number.isInteger(claims.tenant_id) || claims.tenant_id <= 0) throw unauthorized();
   if (!claims.tenant_role) throw unauthorized();
   return claims;
 }
 
+/**
+ * Every Onyx request runs inside exactly one tenant. A token that does not name
+ * one cannot be scoped, so it is rejected rather than defaulted -- defaulting is
+ * how a request ends up reading the wrong institution.
+ *
+ * `secret` is kept as a parameter only so the ~250 existing call sites
+ * (`requireOnyx(req, ctx.jwtSecret)`) did not all need editing when this
+ * became JWKS-verified -- it is unused. New code should not pass one.
+ */
+export async function requireOnyx(req: RequestLike, secret?: string): Promise<OnyxTokenClaims> {
+  void secret;
+  const token = extractOnyxToken(req);
+  if (!token) throw unauthorized();
+  const claims = await verifyOnyxToken(token);
+  if (!claims) throw unauthorized();
+  return assertUsableOnyxClaims(claims);
+}
+
 /** F-04 -- role check, resolved per tenant because that is where roles live. */
-export function requireOnyxRole(req: RequestLike, secret: string, ...allowed: Role[]): OnyxTokenClaims {
-  const claims = requireOnyx(req, secret);
+export async function requireOnyxRole(req: RequestLike, secret: string | undefined, ...allowed: Role[]): Promise<OnyxTokenClaims> {
+  const claims = await requireOnyx(req, secret);
   if (!allowed.includes(claims.tenant_role)) throw forbidden();
   return claims;
 }
@@ -113,10 +143,13 @@ export function assertSameTenant(claims: OnyxTokenClaims, tenantId: number): voi
  * outright (see its own comment), so a platform token is structurally unable
  * to pass as a tenant token, and there is no shared "requireEither" path
  * where a bug could blur the line between them.
+ *
+ * The `platform: true` claim is stamped on by the same Custom Access Token
+ * Hook that stamps tenant_id/tenant_role -- see auth.ts's module comment.
  */
 export interface PlatformTokenClaims {
   sub: string;
-  user_id: number;
+  user_id: string;
   platform: true;
   email: string;
   aud: 'authenticated';
@@ -124,36 +157,16 @@ export interface PlatformTokenClaims {
   exp: number;
 }
 
-export function issuePlatformToken(input: {
-  userId: number; email: string; secret: string; ttlSeconds?: number;
-}): { token: string; expiresAt: number } {
-  const ttl = input.ttlSeconds ?? Number(process.env.ACCESS_TOKEN_TTL ?? 3600);
-  const now = Math.floor(Date.now() / 1000);
-  const claims: PlatformTokenClaims = {
-    sub: String(input.userId),
-    user_id: input.userId,
-    platform: true,
-    email: input.email,
-    aud: 'authenticated',
-    iat: now,
-    exp: now + ttl,
-  };
-  return { token: jwt.sign(claims, input.secret, { algorithm: 'HS256' }), expiresAt: claims.exp };
-}
-
 /** The platform equivalent of requireOnyx(). Accepts only a platform token. */
-export function requirePlatformAdmin(req: RequestLike, secret: string): PlatformTokenClaims {
+export async function requirePlatformAdmin(req: RequestLike, secret?: string): Promise<PlatformTokenClaims> {
+  void secret;
   const header = req.headers['authorization'];
   const raw = Array.isArray(header) ? header[0] : header;
   const token = (raw && raw.toLowerCase().startsWith('bearer ') ? raw.slice(7).trim() : null)
     ?? req.cookies?.['onyx_platform_session'] ?? null;
   if (!token) throw unauthorized();
-  let claims: PlatformTokenClaims;
-  try {
-    claims = jwt.verify(token, secret, { algorithms: ['HS256'] }) as PlatformTokenClaims;
-  } catch {
-    throw unauthorized();
-  }
+  const claims = await verifyOnyxToken(token) as unknown as PlatformTokenClaims | null;
+  if (!claims) throw unauthorized();
   // Belt and braces: a tenant token forged or replayed here is rejected on
   // shape even though in practice a JWT signed for one purpose never
   // decodes to a plausible claims object for the other.

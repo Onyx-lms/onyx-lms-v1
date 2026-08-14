@@ -43,8 +43,8 @@ const StatusSchema = z.enum(APPLICATION_STATUSES as unknown as [ApplicationStatu
 const OutcomeSchema = z.enum(ROUND_OUTCOMES as unknown as [RoundOutcome, ...RoundOutcome[]]);
 
 export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext): void {
-  const viewerOf = (req: FastifyRequest) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+  const viewerOf = async (req: FastifyRequest) => {
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return { claims, viewer: { role: claims.tenant_role, userId: claims.user_id } };
   };
 
@@ -70,9 +70,9 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.post('/api/onyx/certificates', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...ISSUERS);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...ISSUERS);
     const body = validate(z.object({
-      user_id: z.number().int().positive(),
+      user_id: z.string().uuid(),
       title: z.string().min(1).max(255),
       kind: z.enum(['course', 'assessment', 'contest', 'program']).optional(),
       course_id: z.number().int().positive().nullish(),
@@ -94,7 +94,7 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.post('/api/onyx/certificates/:id/revoke', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...ISSUERS);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...ISSUERS);
     const body = validate(z.object({ reason: z.string().min(1).max(500) }), req.body);
     const revoked = await ctx.onyxCareer.revokeCertificate(claims.tenant_id, idOf(req), body.reason);
     await ctx.onyxAudit.record(claims, {
@@ -112,11 +112,11 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
    * standing between the API and a screen.
    */
   app.get('/api/onyx/certificates', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...ISSUERS);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...ISSUERS);
     const q = req.query as { user_id?: string };
-    const userId = q.user_id ? Number(q.user_id) : undefined;
+    const userId = q.user_id || undefined;
     return ok(await ctx.onyxCareer.issuedCertificates(claims.tenant_id,
-      Number.isFinite(userId) && userId ? { userId } : {}));
+      userId ? { userId } : {}));
   });
 
   /**
@@ -127,7 +127,7 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
    * check it, not to a copy of it.
    */
   app.get('/api/onyx/certificates/:id/document.pdf', async (req, reply) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const { file, filename } = await ctx.onyxCareer.certificatePdf(
       claims.tenant_id, idOf(req), {
         viewer: { userId: claims.user_id, role: claims.tenant_role },
@@ -140,7 +140,7 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.get('/api/onyx/my/certificates', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxCareer.certificates(claims.tenant_id, claims.user_id));
   });
 
@@ -149,12 +149,12 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
   // -------------------------------------------------------------------------
 
   app.get('/api/onyx/skills', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxCareer.skills(claims.tenant_id));
   });
 
   app.post('/api/onyx/skills', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'placement', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'placement', 'faculty');
     const body = validate(z.object({
       name: z.string().min(1).max(255),
       category: z.string().max(100).nullish(),
@@ -163,9 +163,9 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.post('/api/onyx/skills/award', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'placement', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'placement', 'faculty');
     const body = validate(z.object({
-      user_id: z.number().int().positive(),
+      user_id: z.string().uuid(),
       skill_id: z.number().int().positive(),
       source_type: z.enum(['course', 'assessment', 'problem', 'workspace', 'certificate', 'contest']),
       source_id: z.number().int().positive().nullish(),
@@ -179,13 +179,14 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
 
   /** The learner's own passport and score, with the whole breakdown. */
   app.get('/api/onyx/my/profile', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     return ok(await ctx.onyxCareer.profile(claims.tenant_id, claims.user_id, viewer));
   });
 
   app.get('/api/onyx/profiles/:id', async (req) => {
-    const { claims, viewer } = viewerOf(req);
-    return ok(await ctx.onyxCareer.profile(claims.tenant_id, idOf(req), viewer));
+    const { claims, viewer } = await viewerOf(req);
+    const userId = (req.params as { id: string }).id;
+    return ok(await ctx.onyxCareer.profile(claims.tenant_id, userId, viewer));
   });
 
   // -------------------------------------------------------------------------
@@ -193,19 +194,19 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
   // -------------------------------------------------------------------------
 
   app.get('/api/onyx/employers', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...PLACEMENT);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...PLACEMENT);
     return ok(await ctx.onyxPlacement.employers(claims.tenant_id));
   });
 
   app.patch('/api/onyx/employers/:id', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...PLACEMENT);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...PLACEMENT);
     const body = validate(z.object({
       name: z.string().min(1).max(255).optional(),
       website: z.string().max(255).nullish(),
       about: z.string().max(10_000).nullish(),
       contact_name: z.string().max(255).nullish(),
       contact_email: z.string().email().nullish(),
-      user_id: z.number().int().positive().nullish(),
+      user_id: z.string().uuid().nullish(),
     }), req.body);
     return ok(await ctx.onyxPlacement.updateEmployer(claims.tenant_id, idOf(req), body), 'Updated.');
   });
@@ -218,7 +219,7 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
    * get it without being handed the roster of every other company too.
    */
   app.get('/api/onyx/employers/mine', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     if (viewer.role !== 'employer') {
       throw new HttpError(403, 'Only an employer contact has one of these.');
     }
@@ -228,14 +229,14 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.post('/api/onyx/employers', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...PLACEMENT);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...PLACEMENT);
     const body = validate(z.object({
       name: z.string().min(1).max(255),
       website: z.string().max(255).nullish(),
       about: z.string().max(10_000).nullish(),
       contact_name: z.string().max(255).nullish(),
       contact_email: z.string().email().nullish(),
-      user_id: z.number().int().positive().nullish(),
+      user_id: z.string().uuid().nullish(),
     }), req.body);
 
     // An employer contact signs in as a member with the `employer` role. Tying
@@ -270,12 +271,12 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.get('/api/onyx/jobs', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     return ok(await ctx.onyxPlacement.jobs(claims.tenant_id, viewer));
   });
 
   app.post('/api/onyx/jobs', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     if (viewer.role !== 'employer' && !(PLACEMENT as readonly string[]).includes(viewer.role)) {
       throw new HttpError(403, 'This action is unauthorized.');
     }
@@ -298,7 +299,7 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.get('/api/onyx/jobs/:id', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     const job = await ctx.onyxPlacement.job(claims.tenant_id, idOf(req));
     const staff = (PLACEMENT as readonly string[]).includes(viewer.role);
     if (job.status !== 'open' && !staff) {
@@ -314,39 +315,39 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.post('/api/onyx/jobs/:id/publish', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     return ok(await ctx.onyxPlacement.publishJob(claims.tenant_id, idOf(req), viewer), 'Published.');
   });
 
   app.post('/api/onyx/jobs/:id/close', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     return ok(await ctx.onyxPlacement.closeJob(claims.tenant_id, idOf(req), viewer), 'Closed.');
   });
 
   app.get('/api/onyx/jobs/:id/eligibility', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxPlacement.eligibility(claims.tenant_id, idOf(req), claims.user_id));
   });
 
   app.post('/api/onyx/jobs/:id/apply', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({ note: z.string().max(5000).nullish() }), req.body ?? {});
     return ok(await ctx.onyxPlacement.apply(
       claims.tenant_id, idOf(req), claims.user_id, body.note), 'Applied.');
   });
 
   app.get('/api/onyx/jobs/:id/applicants', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     return ok(await ctx.onyxPlacement.applicants(claims.tenant_id, idOf(req), viewer));
   });
 
   app.get('/api/onyx/my/applications', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxPlacement.myApplications(claims.tenant_id, claims.user_id));
   });
 
   app.patch('/api/onyx/applications/:id', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     const body = validate(z.object({
       status: StatusSchema,
       note: z.string().max(5000).nullish(),
@@ -356,18 +357,18 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.post('/api/onyx/applications/:id/withdraw', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxPlacement.withdraw(claims.tenant_id, idOf(req), claims.user_id),
       'Withdrawn.');
   });
 
   app.get('/api/onyx/drives', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     return ok(await ctx.onyxPlacement.drives(claims.tenant_id, viewer));
   });
 
   app.post('/api/onyx/drives', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...PLACEMENT);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...PLACEMENT);
     const body = validate(z.object({
       employer_id: z.number().int().positive(),
       title: z.string().min(1).max(255),
@@ -384,10 +385,10 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.post('/api/onyx/rounds/:id/results', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...PLACEMENT);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...PLACEMENT);
     const body = validate(z.object({
       entries: z.array(z.object({
-        user_id: z.number().int().positive(),
+        user_id: z.string().uuid(),
         outcome: OutcomeSchema,
         note: z.string().max(500).nullish(),
       })).min(1).max(2000),
@@ -398,7 +399,7 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
 
   /** CAR-04c: the reconciliation between rounds and offers. */
   app.get('/api/onyx/drives/:id/summary', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...PLACEMENT);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...PLACEMENT);
     return ok(await ctx.onyxPlacement.driveSummary(claims.tenant_id, idOf(req)));
   });
 
@@ -407,12 +408,12 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
   // -------------------------------------------------------------------------
 
   app.get('/api/onyx/contests', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxContests.contests(claims.tenant_id, claims.tenant_role));
   });
 
   app.post('/api/onyx/contests', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty', 'placement');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty', 'placement');
     const body = validate(z.object({
       title: z.string().min(1).max(255),
       description: z.string().max(50_000).nullish(),
@@ -431,7 +432,7 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.get('/api/onyx/contests/:id', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const contest = await ctx.onyxContests.contest(claims.tenant_id, idOf(req));
     const staff = ['admin', 'faculty', 'placement'].includes(claims.tenant_role);
     if (contest.status === 'draft' && !staff) throw new HttpError(404, 'Contest not found.');
@@ -443,25 +444,25 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.post('/api/onyx/contests/:id/publish', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty', 'placement');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty', 'placement');
     return ok(await ctx.onyxContests.publish(claims.tenant_id, idOf(req)), 'Published.');
   });
 
   app.post('/api/onyx/contests/:id/teams', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({ name: z.string().min(1).max(255) }), req.body);
     return ok(await ctx.onyxContests.createTeam(
       claims.tenant_id, idOf(req), claims.user_id, body.name), 'Team created.');
   });
 
   app.post('/api/onyx/teams/:id/join', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxContests.joinTeam(claims.tenant_id, idOf(req), claims.user_id),
       'Joined.');
   });
 
   app.post('/api/onyx/contests/:id/submit', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       problem_id: z.number().int().positive(),
       submission_id: z.number().int().positive(),
@@ -471,7 +472,7 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.get('/api/onyx/contests/:id/leaderboard', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxContests.leaderboard(claims.tenant_id, idOf(req),
       { role: claims.tenant_role }));
   });
@@ -481,21 +482,21 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
   // -------------------------------------------------------------------------
 
   app.get('/api/onyx/my/interviews', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxContests.myInterviews(claims.tenant_id, claims.user_id));
   });
 
   app.get('/api/onyx/interviews/mine', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret,
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret,
       'admin', 'faculty', 'placement', 'employer');
     return ok(await ctx.onyxContests.interviewsFor(claims.tenant_id, claims.user_id));
   });
 
   app.post('/api/onyx/interviews', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'placement', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'placement', 'faculty');
     const body = validate(z.object({
-      user_id: z.number().int().positive(),
-      interviewer_id: z.number().int().positive().nullish(),
+      user_id: z.string().uuid(),
+      interviewer_id: z.string().uuid().nullish(),
       title: z.string().min(1).max(255),
       scheduled_at: z.string().min(1),
       duration_minutes: z.number().int().min(5).max(480).optional(),
@@ -505,12 +506,13 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.get('/api/onyx/interviews/:id', async (req) => {
-    const { claims, viewer } = viewerOf(req);
-    return ok(await ctx.onyxContests.interview(claims.tenant_id, idOf(req), viewer));
+    const { claims, viewer } = await viewerOf(req);
+    return ok(await ctx.onyxContests.interview(claims.tenant_id, idOf(req),
+      { role: viewer.role, userId: viewer.userId }));
   });
 
   app.post('/api/onyx/interviews/:id/feedback', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     const body = validate(z.object({
       feedback: z.array(z.object({
         criterion: z.string().min(1).max(255),
@@ -524,13 +526,13 @@ export function registerOnyxCareerRoutes(app: FastifyInstance, ctx: AppContext):
       recording_path: z.string().max(500).nullish(),
       recording_consented: z.boolean().optional(),
     }), req.body);
-    return ok(await ctx.onyxContests.recordFeedback(claims.tenant_id, idOf(req), viewer, body),
-      'Feedback saved.');
+    return ok(await ctx.onyxContests.recordFeedback(claims.tenant_id, idOf(req),
+      { role: viewer.role, userId: viewer.userId }, body), 'Feedback saved.');
   });
 
   app.post('/api/onyx/interviews/:id/release', async (req) => {
-    const { claims, viewer } = viewerOf(req);
-    return ok(await ctx.onyxContests.releaseFeedback(claims.tenant_id, idOf(req), viewer),
-      'Released to the learner.');
+    const { claims, viewer } = await viewerOf(req);
+    return ok(await ctx.onyxContests.releaseFeedback(claims.tenant_id, idOf(req),
+      { role: viewer.role, userId: viewer.userId }), 'Released to the learner.');
   });
 }

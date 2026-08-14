@@ -29,7 +29,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, createTenant, RUN } from './harness.ts';
+import { api, createTenant, RUN, onyxLogin } from './harness.ts';
 
 const pw = 'OnyxTest#2026';
 const mail = (who: string) => 'sec02.' + who + '.' + RUN + '@onyx.test';
@@ -41,12 +41,6 @@ type MatrixRole = typeof ROLES[number];
 
 const token: Record<MatrixRole, string> = {
   student: '', faculty: '', exams: '', placement: '', employer: '', guardian: '', admin: '',
-};
-
-const login = async (email: string) => {
-  const r = await api<{ token: string }>('/api/onyx/auth/login', { body: { email, password: pw } });
-  assert.equal(r.ok, true, 'login ' + email + ': ' + r.message);
-  return r.data.token;
 };
 
 /**
@@ -152,7 +146,7 @@ test('an institution with one of every role in it', async () => {
     admin: { name: 'Matrix Admin', email: mail('admin'), password: pw },
   });
   assert.equal(res.ok, true, res.message);
-  token.admin = await login(mail('admin'));
+  token.admin = await onyxLogin(mail('admin'), pw);
 
   for (const role of ROLES) {
     if (role === 'admin') continue;
@@ -161,7 +155,7 @@ test('an institution with one of every role in it', async () => {
       body: { name: role, email: mail(role), role, password: pw },
     });
     assert.equal(added.ok, true, 'add ' + role + ': ' + added.message);
-    token[role] = await login(mail(role));
+    token[role] = await onyxLogin(mail(role), pw);
   }
 });
 

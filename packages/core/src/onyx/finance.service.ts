@@ -85,7 +85,7 @@ export class FinanceService {
     return data ?? [];
   }
 
-  async createStructure(tenantId: number, actor: { userId: number; role: Role }, input: {
+  async createStructure(tenantId: number, actor: { userId: string; role: Role }, input: {
     name: string; program_id?: number | null; semester_id?: number | null;
     instalments?: number; currency?: string;
     lines: { head_id: number; amount_minor: number }[];
@@ -171,7 +171,7 @@ export class FinanceService {
     return data ?? [];
   }
 
-  async publishStructure(tenantId: number, id: number, actor: { userId: number; role: Role }) {
+  async publishStructure(tenantId: number, id: number, actor: { userId: string; role: Role }) {
     if (!canManageFees(actor.role)) throw new HttpError(403, 'Only an administrator can publish fees.');
     const structure = await this.structure(tenantId, id);
     if (!structure.lines.length) throw new HttpError(422, 'That structure has no lines.');
@@ -194,8 +194,8 @@ export class FinanceService {
    * instalments always sum back to the total -- three-way splits of an odd
    * number are where a rupee usually goes missing.
    */
-  async issueInvoice(tenantId: number, actor: { userId: number; role: Role }, input: {
-    user_id: number; structure_id: number; instalment_no?: number; due_at?: string | null;
+  async issueInvoice(tenantId: number, actor: { userId: string; role: Role }, input: {
+    user_id: string; structure_id: number; instalment_no?: number; due_at?: string | null;
   }) {
     if (!canManageFees(actor.role)) throw new HttpError(403, 'Only an administrator can raise an invoice.');
     const structure = await this.structure(tenantId, input.structure_id);
@@ -267,11 +267,11 @@ export class FinanceService {
     return invoice;
   }
 
-  async invoice(tenantId: number, id: number, viewer: { userId: number; role: Role }) {
+  async invoice(tenantId: number, id: number, viewer: { userId: string; role: Role }) {
     const { data } = await this.#db.from('onyx_invoices').select(INVOICE_COLUMNS)
       .eq('tenant_id', tenantId).eq('id', id).maybeSingle();
     if (!data) throw new HttpError(404, 'No such invoice.');
-    if (Number(data.user_id) !== viewer.userId && !canManageFees(viewer.role)) {
+    if (String(data.user_id) !== viewer.userId && !canManageFees(viewer.role)) {
       throw new HttpError(403, 'That invoice is not yours.');
     }
 
@@ -285,7 +285,7 @@ export class FinanceService {
     return { ...data, lines: lines ?? [], payments: payments ?? [] };
   }
 
-  async invoicesFor(tenantId: number, userId: number, viewer: { userId: number; role: Role }) {
+  async invoicesFor(tenantId: number, userId: string, viewer: { userId: string; role: Role }) {
     if (userId !== viewer.userId && !canManageFees(viewer.role)) {
       throw new HttpError(403, 'Those are not your invoices.');
     }
@@ -390,7 +390,7 @@ export class FinanceService {
     const { data: payment, error } = await this.#db.from('onyx_payments').insert({
       tenant_id: tenantId,
       invoice_id: input.invoice_id,
-      user_id: Number(invoice.user_id),
+      user_id: String(invoice.user_id),
       gateway: input.gateway,
       reference,
       amount_minor: input.amount_minor,
@@ -415,7 +415,7 @@ export class FinanceService {
     if (status === 'captured') {
       await this.#applyToInvoice(tenantId, input.invoice_id);
       await this.#audit.record(
-        { tenant_id: tenantId, user_id: Number(invoice.user_id) },
+        { tenant_id: tenantId, user_id: String(invoice.user_id) },
         { action: 'payment.recorded', entityType: 'invoice', entityId: input.invoice_id,
           after: { reference, amount_minor: input.amount_minor, gateway: input.gateway } });
     }
@@ -460,11 +460,11 @@ export class FinanceService {
       .order('due_at', { ascending: true, nullsFirst: false });
 
     const rows = data ?? [];
-    const names = new Map<number, string>();
+    const names = new Map<string, string>();
     if (rows.length) {
       const { data: people } = await this.#db.from('onyx_users').select('id, name')
-        .in('id', rows.map((r) => Number(r.user_id)));
-      for (const p of people ?? []) names.set(Number(p.id), String(p.name));
+        .in('id', rows.map((r) => String(r.user_id)));
+      for (const p of people ?? []) names.set(String(p.id), String(p.name));
     }
     const now = this.#now();
 
@@ -472,7 +472,7 @@ export class FinanceService {
       total_minor: rows.reduce((s, r) => s + (Number(r.total_minor) - Number(r.paid_minor)), 0),
       invoices: rows.map((r) => ({
         ...r,
-        name: names.get(Number(r.user_id)) ?? null,
+        name: names.get(String(r.user_id)) ?? null,
         balance_minor: Number(r.total_minor) - Number(r.paid_minor),
         overdue: Boolean(r.due_at && Date.parse(String(r.due_at)) < now),
       })),

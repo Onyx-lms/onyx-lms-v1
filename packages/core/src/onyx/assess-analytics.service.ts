@@ -119,7 +119,7 @@ export class AssessAnalyticsService {
       },
       candidates: attempts.map((a) => ({
         attempt_id: Number(a.id),
-        user_id: Number(a.user_id),
+        user_id: String(a.user_id),
         score: Number(a.score ?? 0),
         max_score: Number(a.max_score),
         percent: Number(a.max_score) > 0
@@ -243,7 +243,7 @@ export class AssessAnalyticsService {
    * rather than a query per candidate.
    */
   async exportCsv(tenantId: number, assessmentId: number, opts: {
-    names?: Map<number, { name: string; email: string }>;
+    names?: Map<string, { name: string; email: string }>;
   } = {}): Promise<string> {
     const report = await this.results(tenantId, assessmentId);
     const header = [
@@ -272,7 +272,7 @@ export class AssessAnalyticsService {
    * spreadsheet with a header.
    */
   async exportPdf(tenantId: number, assessmentId: number, opts: {
-    names?: Map<number, { name: string; email: string }>;
+    names?: Map<string, { name: string; email: string }>;
     issuer?: string | null;
     issuedAt?: number;
   } = {}): Promise<Buffer> {

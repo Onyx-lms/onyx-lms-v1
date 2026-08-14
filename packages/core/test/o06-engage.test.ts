@@ -29,20 +29,20 @@ function world(c = clock()) {
   const db = new FakeDb({
     onyx_tenants: [{ id: T, name: 'Engage University', slug: 'engage', status: 1 }],
     onyx_users: [
-      { id: 10, name: 'Ada', email: 'ada@onyx.test' },
-      { id: 11, name: 'Grace', email: 'grace@onyx.test' },
-      { id: 20, name: 'Faculty', email: 'faculty@onyx.test' },
+      { id: 'user-10', name: 'Ada', email: 'ada@onyx.test' },
+      { id: 'user-11', name: 'Grace', email: 'grace@onyx.test' },
+      { id: 'user-20', name: 'Faculty', email: 'faculty@onyx.test' },
     ],
     onyx_memberships: [
-      { id: 1, tenant_id: T, user_id: 10, role: 'student', status: 1 },
-      { id: 2, tenant_id: T, user_id: 11, role: 'student', status: 1 },
-      { id: 3, tenant_id: T, user_id: 20, role: 'faculty', status: 1 },
+      { id: 1, tenant_id: T, user_id: 'user-10', role: 'student', status: 1 },
+      { id: 2, tenant_id: T, user_id: 'user-11', role: 'student', status: 1 },
+      { id: 3, tenant_id: T, user_id: 'user-20', role: 'faculty', status: 1 },
     ],
     onyx_programs: [{ id: 1, tenant_id: T, name: 'CS', code: 'CS' }],
     onyx_courses: [
       { id: 1, tenant_id: T, code: 'CS101', title: 'Programming', slug: 'p', status: 1 },
     ],
-    onyx_enrollments: [{ id: 1, tenant_id: T, course_id: 1, user_id: 10, status: 1 }],
+    onyx_enrollments: [{ id: 1, tenant_id: T, course_id: 1, user_id: 'user-10', status: 1 }],
     onyx_lessons: [], onyx_lesson_progress: [],
     onyx_assignments: [], onyx_assignment_submissions: [],
     onyx_attendance_sessions: [], onyx_attendance_records: [],
@@ -58,9 +58,9 @@ function world(c = clock()) {
   return { db, academics, engage, support, c };
 }
 
-const student = { userId: 10, role: 'student' as const };
-const other = { userId: 11, role: 'student' as const };
-const faculty = { userId: 20, role: 'faculty' as const };
+const student = { userId: 'user-10', role: 'student' as const };
+const other = { userId: 'user-11', role: 'student' as const };
+const faculty = { userId: 'user-20', role: 'faculty' as const };
 
 // ---------------------------------------------------------------------------
 // LRN-05: progress and nudges
@@ -68,7 +68,7 @@ const faculty = { userId: 20, role: 'faculty' as const };
 
 test('LRN-05 an enrolled learner with no activity is nudged toward the catalogue only if unenrolled, otherwise to continue', async () => {
   const { engage } = world();
-  const summary = await engage.summary(T, 10);
+  const summary = await engage.summary(T, 'user-10');
   assert.equal(summary.courses.enrolled, 1);
   // Nothing completed yet -- the streak nudge fires, not the enrol nudge.
   assert.ok(summary.nudges.some((n) => n.kind === 'streak'));
@@ -76,7 +76,7 @@ test('LRN-05 an enrolled learner with no activity is nudged toward the catalogue
 
 test('LRN-05 a learner enrolled in nothing is told to enrol, and nothing else', async () => {
   const { engage } = world();
-  const summary = await engage.summary(T, 11); // not enrolled anywhere
+  const summary = await engage.summary(T, 'user-11'); // not enrolled anywhere
   assert.equal(summary.nudges.length, 1);
   assert.equal(summary.nudges[0]?.kind, 'enrol');
 });
@@ -87,7 +87,7 @@ test('LRN-05 an overdue assignment produces a high-urgency nudge naming it', asy
     id: 1, tenant_id: T, course_id: 1, title: 'Essay', status: 'published',
     due_at: new Date(c.now() - DAY).toISOString(),
   }];
-  const summary = await engage.summary(T, 10);
+  const summary = await engage.summary(T, 'user-10');
   const nudge = summary.nudges.find((n) => n.kind === 'assignment-overdue');
   assert.ok(nudge, 'expected an overdue nudge');
   assert.equal(nudge!.urgency, 'high');
@@ -100,16 +100,16 @@ test('LRN-05 the nudge changes when the signal changes -- nothing is cached', as
     id: 1, tenant_id: T, course_id: 1, title: 'Essay', status: 'published',
     due_at: new Date(c.now() - DAY).toISOString(),
   }];
-  const before = await engage.summary(T, 10);
+  const before = await engage.summary(T, 'user-10');
   assert.ok(before.nudges.some((n) => n.kind === 'assignment-overdue'));
 
   // Submitting is the signal. Re-reading the summary must reflect it without
   // anything being invalidated on purpose -- there is nothing to invalidate.
   db.tables.onyx_assignment_submissions = [{
-    id: 1, tenant_id: T, assignment_id: 1, user_id: 10,
+    id: 1, tenant_id: T, assignment_id: 1, user_id: 'user-10',
     submitted_at: new Date(c.now()).toISOString(),
   }];
-  const after = await engage.summary(T, 10);
+  const after = await engage.summary(T, 'user-10');
   assert.equal(after.nudges.some((n) => n.kind === 'assignment-overdue'), false);
 });
 
@@ -117,9 +117,9 @@ test('LRN-05 a streak counts today or yesterday, never requires both', async () 
   const { db, engage, c } = world();
   // Active yesterday, nothing today yet -- still an unbroken streak.
   db.tables.onyx_lesson_progress = [
-    { id: 1, tenant_id: T, user_id: 10, lesson_id: 1, completed_at: new Date(c.now() - DAY).toISOString() },
+    { id: 1, tenant_id: T, user_id: 'user-10', lesson_id: 1, completed_at: new Date(c.now() - DAY).toISOString() },
   ];
-  const summary = await engage.summary(T, 10);
+  const summary = await engage.summary(T, 'user-10');
   assert.equal(summary.streak.current, 1);
   assert.equal(summary.streak.active_today, false);
 });
@@ -127,9 +127,9 @@ test('LRN-05 a streak counts today or yesterday, never requires both', async () 
 test('LRN-05 a gap of one day breaks the streak', async () => {
   const { db, engage, c } = world();
   db.tables.onyx_lesson_progress = [
-    { id: 1, tenant_id: T, user_id: 10, lesson_id: 1, completed_at: new Date(c.now() - 3 * DAY).toISOString() },
+    { id: 1, tenant_id: T, user_id: 'user-10', lesson_id: 1, completed_at: new Date(c.now() - 3 * DAY).toISOString() },
   ];
-  const summary = await engage.summary(T, 10);
+  const summary = await engage.summary(T, 'user-10');
   assert.equal(summary.streak.current, 0);
   assert.equal(summary.streak.longest, 1);
 });
@@ -139,8 +139,8 @@ test('LRN-05 low attendance produces a warning nudge with no href to click', asy
   db.tables.onyx_attendance_sessions = [1, 2, 3, 4].map((n) => (
     { id: n, tenant_id: T, course_id: 1 }));
   db.tables.onyx_attendance_records = [1, 2, 3, 4].map((n) => (
-    { id: n, tenant_id: T, session_id: n, user_id: 10, status: n <= 2 ? 'present' : 'absent' }));
-  const summary = await engage.summary(T, 10);
+    { id: n, tenant_id: T, session_id: n, user_id: 'user-10', status: n <= 2 ? 'present' : 'absent' }));
+  const summary = await engage.summary(T, 'user-10');
   const nudge = summary.nudges.find((n) => n.kind === 'attendance-low');
   assert.ok(nudge, 'expected an attendance nudge at 50%');
   assert.equal(nudge!.href, null);
@@ -173,9 +173,9 @@ test('LRN-06a a vote is a person, not a counter -- voting twice removes it', asy
   const q = await engage.ask(T, 1, student, { title: 'A question', body: 'b' });
   const reply = await engage.reply(T, Number(q.id), faculty, { body: 'answer' });
 
-  const first = await engage.vote(T, Number(reply.id), 10, 'student');
+  const first = await engage.vote(T, Number(reply.id), 'user-10', 'student');
   assert.deepEqual(first, { votes: 1, voted: true });
-  const second = await engage.vote(T, Number(reply.id), 10, 'student');
+  const second = await engage.vote(T, Number(reply.id), 'user-10', 'student');
   assert.deepEqual(second, { votes: 0, voted: false });
 });
 
@@ -216,7 +216,7 @@ test('LRN-06a a closed thread refuses new replies', async () => {
 test('LRN-06b escalating stamps the SLA for the priority, and the thread keeps its replies', async () => {
   const { engage, support } = world();
   const q = await engage.ask(T, 1, student, { title: 'Still stuck', body: 'b' });
-  const ticket = await support.escalate(T, Number(q.id), 10);
+  const ticket = await support.escalate(T, Number(q.id), 'user-10');
   assert.equal(ticket.priority, 'high');
   assert.equal(ticket.sla_minutes, SLA_MINUTES.high);
 
@@ -227,9 +227,9 @@ test('LRN-06b escalating stamps the SLA for the priority, and the thread keeps i
 test('LRN-06b escalating the same thread twice is refused, not duplicated', async () => {
   const { engage, support } = world();
   const q = await engage.ask(T, 1, student, { title: 'A question', body: 'b' });
-  await support.escalate(T, Number(q.id), 10);
+  await support.escalate(T, Number(q.id), 'user-10');
   await assert.rejects(
-    () => support.escalate(T, Number(q.id), 10),
+    () => support.escalate(T, Number(q.id), 'user-10'),
     (e: unknown) => e instanceof HttpError && e.status === 409);
 });
 
@@ -239,15 +239,15 @@ test('LRN-06b an escalated question cannot be re-escalated once already answered
   const reply = await engage.reply(T, Number(q.id), faculty, { body: 'a' });
   await engage.resolve(T, Number(q.id), Number(reply.id), student);
   await assert.rejects(
-    () => support.escalate(T, Number(q.id), 10),
+    () => support.escalate(T, Number(q.id), 'user-10'),
     (e: unknown) => e instanceof HttpError && e.status === 409);
 });
 
 test('LRN-06b the unowned queue lists tickets with no owner first, by how close to breach', async () => {
   const { support, c } = world();
-  const a = await support.raise(T, 10, { subject: 'Ticket A', body: 'b', priority: 'low' });
+  const a = await support.raise(T, 'user-10', { subject: 'Ticket A', body: 'b', priority: 'low' });
   c.advance(1000);
-  const b = await support.raise(T, 11, { subject: 'Ticket B', body: 'b', priority: 'urgent' });
+  const b = await support.raise(T, 'user-11', { subject: 'Ticket B', body: 'b', priority: 'urgent' });
   const queue = await support.queue(T, faculty, {});
   assert.equal(queue[0]!.id, Number(b.id), 'the more urgent unowned ticket sorts first');
   assert.ok(queue.every((t) => t.owner_id === null));
@@ -256,27 +256,27 @@ test('LRN-06b the unowned queue lists tickets with no owner first, by how close 
 
 test('LRN-06b claiming a ticket names an owner, and a learner cannot claim one', async () => {
   const { support } = world();
-  const ticket = await support.raise(T, 10, { subject: 'A question', body: 'b' });
+  const ticket = await support.raise(T, 'user-10', { subject: 'A question', body: 'b' });
   await assert.rejects(
     () => support.claim(T, Number(ticket.id), student),
     (e: unknown) => e instanceof HttpError && e.status === 403);
 
   const claimed = await support.claim(T, Number(ticket.id), faculty);
-  assert.equal(claimed!.owner_id, 20);
+  assert.equal(claimed!.owner_id, 'user-20');
   assert.equal(claimed!.status, 'assigned');
 });
 
 test('LRN-06b a ticket cannot be assigned to a learner -- only a mentor may own one', async () => {
   const { support } = world();
-  const ticket = await support.raise(T, 10, { subject: 'A question', body: 'b' });
+  const ticket = await support.raise(T, 'user-10', { subject: 'A question', body: 'b' });
   await assert.rejects(
-    () => support.assign(T, Number(ticket.id), 11, faculty),
+    () => support.assign(T, Number(ticket.id), 'user-11', faculty),
     (e: unknown) => e instanceof HttpError && e.status === 422);
 });
 
 test('LRN-06b reopening does not reset the SLA clock', async () => {
   const { support, c } = world();
-  const ticket = await support.raise(T, 10, { subject: 'Urgent Q', body: 'b', priority: 'urgent' });
+  const ticket = await support.raise(T, 'user-10', { subject: 'Urgent Q', body: 'b', priority: 'urgent' });
   const createdAt = ticket.created_at;
   await support.resolve(T, Number(ticket.id), student);
   c.advance(10 * 60_000);
@@ -287,7 +287,7 @@ test('LRN-06b reopening does not reset the SLA clock', async () => {
 
 test('LRN-06b breaches lists only what has passed its due_at and is still open', async () => {
   const { support, c } = world();
-  const urgent = await support.raise(T, 10, { subject: 'Urgent ticket', body: 'b', priority: 'urgent' });
+  const urgent = await support.raise(T, 'user-10', { subject: 'Urgent ticket', body: 'b', priority: 'urgent' });
   c.advance(SLA_MINUTES.urgent * 60_000 + 60_000); // past the two-hour SLA
   const { breached, unowned } = await support.breaches(T, faculty);
   assert.equal(breached.length, 1);
@@ -304,8 +304,8 @@ test('LRN-06b a learner cannot see the mentor breach report', async () => {
 
 test('LRN-06b a learner asking for their tickets never sees another learner\'s', async () => {
   const { support } = world();
-  await support.raise(T, 10, { subject: 'My ticket', body: 'b' });
-  await support.raise(T, 11, { subject: 'Not mine ticket', body: 'b' });
+  await support.raise(T, 'user-10', { subject: 'My ticket', body: 'b' });
+  await support.raise(T, 'user-11', { subject: 'Not mine ticket', body: 'b' });
   const mine = await support.queue(T, student, {});
   assert.equal(mine.length, 1);
   assert.equal(mine[0]!.subject, 'My ticket');

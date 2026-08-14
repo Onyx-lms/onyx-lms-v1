@@ -53,3 +53,42 @@ export function onyxTenantClient(accessToken: string): OnyxDb {
     },
   ).schema(ONYX_SCHEMA);
 }
+
+let _authAdmin: SupabaseClient | null = null;
+
+/**
+ * Supabase Auth's Admin API -- creating/updating auth.users rows,
+ * server-side only (see docs/ADR-011-supabase-auth-migration.md).
+ *
+ * `onyxServiceClient()` above cannot be reused for this: `.schema()` narrows
+ * a SupabaseClient down to the Postgrest surface, which drops `.auth`
+ * entirely. This is the same service-role client, deliberately kept at its
+ * un-narrowed type instead.
+ */
+export function onyxAuthAdmin(): SupabaseClient {
+  if (!_authAdmin) {
+    _authAdmin = createClient(required('SUPABASE_URL'), required('SUPABASE_SERVICE_ROLE_KEY'), {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  }
+  return _authAdmin;
+}
+
+let _authClient: SupabaseClient | null = null;
+
+/**
+ * A plain (anon-key) Supabase Auth client for password sign-in/refresh.
+ *
+ * The API server is a trusted intermediary here, not a privileged one --
+ * this authenticates exactly the way a browser calling Supabase directly
+ * would, which is why it is the anon key rather than the service-role key
+ * `onyxAuthAdmin()` above uses for account provisioning.
+ */
+export function onyxAuthClient(): SupabaseClient {
+  if (!_authClient) {
+    _authClient = createClient(required('SUPABASE_URL'), required('SUPABASE_ANON_KEY'), {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  }
+  return _authClient;
+}

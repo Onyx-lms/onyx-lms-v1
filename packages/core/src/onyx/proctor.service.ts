@@ -60,7 +60,7 @@ export const REVIEW_THRESHOLD = 5;
 /** The part of NotifyService this needs. Narrow, so a test can pass a fake. */
 export interface ProctorNotifier {
   notify(tenantId: number, input: {
-    userId: number; kind: 'assessment.integrity_review';
+    userId: string; kind: 'assessment.integrity_review';
     title: string; body?: string | null; link?: string | null;
   }): Promise<unknown>;
 }
@@ -97,11 +97,11 @@ export class ProctorService {
    * server's time rather than instead of it: a divergence between the two is
    * itself worth seeing.
    */
-  async record(tenantId: number, attemptId: number, userId: number, input: {
+  async record(tenantId: number, attemptId: number, userId: string, input: {
     kind: string; detail?: unknown; client_at?: string | null; media_path?: string | null;
   }) {
     const attempt = await this.#attempt(tenantId, attemptId);
-    if (Number(attempt.user_id) !== userId) throw new HttpError(403, 'That is not your attempt.');
+    if (String(attempt.user_id) !== userId) throw new HttpError(403, 'That is not your attempt.');
     if (!EVENT_KINDS.includes(input.kind)) throw new HttpError(422, 'That is not an event kind.');
     // Events after the paper is in are noise, and accepting them would let a
     // candidate pad their own log.
@@ -255,7 +255,7 @@ export class ProctorService {
    * and because "who cleared this" is the first question asked when a result is
    * challenged.
    */
-  async review(tenantId: number, eventId: number, claims: { tenant_id: number; user_id: number }, input: {
+  async review(tenantId: number, eventId: number, claims: { tenant_id: number; user_id: string }, input: {
     decision: 'dismissed' | 'upheld'; note?: string | null;
   }) {
     if (!['dismissed', 'upheld'].includes(input.decision)) {
@@ -282,7 +282,7 @@ export class ProctorService {
   }
 
   /** Closes off an attempt's integrity case one way or the other. */
-  async settle(tenantId: number, attemptId: number, claims: { tenant_id: number; user_id: number }, input: {
+  async settle(tenantId: number, attemptId: number, claims: { tenant_id: number; user_id: string }, input: {
     decision: 'cleared' | 'upheld'; note?: string | null;
   }) {
     if (!['cleared', 'upheld'].includes(input.decision)) {
@@ -362,7 +362,7 @@ export class ProctorService {
       const attemptId = Number(attempt.id);
       for (const s of staff ?? []) {
         await this.#notify.notify(tenantId, {
-          userId: Number(s.user_id),
+          userId: String(s.user_id),
           kind: 'assessment.integrity_review',
           title: 'Attempt ' + attemptId + ' has reached the review threshold',
           body: 'A paper being sat now has an integrity score of ' + score

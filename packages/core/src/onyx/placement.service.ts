@@ -67,10 +67,10 @@ export class PlacementService {
   // CAR-04a -- employers
   // -------------------------------------------------------------------------
 
-  async createEmployer(tenantId: number, createdBy: number, input: {
+  async createEmployer(tenantId: number, createdBy: string, input: {
     name: string; website?: string | null; about?: string | null;
     contact_name?: string | null; contact_email?: string | null;
-    user_id?: number | null;
+    user_id?: string | null;
   }) {
     const { data, error } = await this.#db.from('onyx_employers').insert({
       tenant_id: tenantId,
@@ -112,7 +112,7 @@ export class PlacementService {
   async updateEmployer(tenantId: number, id: number, input: {
     name?: string; website?: string | null; about?: string | null;
     contact_name?: string | null; contact_email?: string | null;
-    user_id?: number | null;
+    user_id?: string | null;
   }) {
     await this.employer(tenantId, id);
     if (input.user_id) {
@@ -145,7 +145,7 @@ export class PlacementService {
   }
 
   /** The employer account a signed-in contact belongs to, if any. */
-  async employerFor(tenantId: number, userId: number) {
+  async employerFor(tenantId: number, userId: string) {
     const { data } = await this.#db.from('onyx_employers')
       .select(EMPLOYER_COLUMNS).eq('tenant_id', tenantId).eq('user_id', userId).maybeSingle();
     return data ?? null;
@@ -159,12 +159,12 @@ export class PlacementService {
    * employer sees only what the institution has shared with them".
    */
   async assertEmployerOwns(tenantId: number, employerId: number, viewer: {
-    role: Role; userId: number;
+    role: Role; userId: string;
   }) {
     const employer = await this.employer(tenantId, employerId);
     if (isPlacementStaff(viewer.role)) return employer;
     if (viewer.role !== 'employer') throw new HttpError(403, 'This is not yours.');
-    if (Number(employer.user_id) !== viewer.userId) {
+    if (String(employer.user_id) !== viewer.userId) {
       // Another employer's record, in the same institution. A 403 rather than a
       // 404 because they legitimately know other employers exist.
       throw new HttpError(403, 'This is not your company.');
@@ -176,7 +176,7 @@ export class PlacementService {
   // CAR-04b -- job posts
   // -------------------------------------------------------------------------
 
-  async createJob(tenantId: number, createdBy: number, viewer: { role: Role; userId: number }, input: {
+  async createJob(tenantId: number, createdBy: string, viewer: { role: Role; userId: string }, input: {
     employer_id: number; title: string; description?: string | null;
     location?: string | null; compensation?: string | null; openings?: number;
     min_readiness?: number | null; min_attendance?: number | null;
@@ -226,7 +226,7 @@ export class PlacementService {
    * their own, drafts included -- and nobody else's, because a rival's pipeline
    * is not something an institution shares.
    */
-  async jobs(tenantId: number, viewer: { role: Role; userId: number }) {
+  async jobs(tenantId: number, viewer: { role: Role; userId: string }) {
     let q = this.#db.from('onyx_jobs_posted').select(JOB_COLUMNS).eq('tenant_id', tenantId);
     if (viewer.role === 'employer') {
       const mine = await this.employerFor(tenantId, viewer.userId);
@@ -239,7 +239,7 @@ export class PlacementService {
     return data ?? [];
   }
 
-  async publishJob(tenantId: number, id: number, viewer: { role: Role; userId: number }) {
+  async publishJob(tenantId: number, id: number, viewer: { role: Role; userId: string }) {
     const job = await this.job(tenantId, id);
     await this.assertEmployerOwns(tenantId, Number(job.employer_id), viewer);
     // Publishing a post is the institution vouching for it, so it is theirs.
@@ -251,7 +251,7 @@ export class PlacementService {
     return { ...job, status: 'open' };
   }
 
-  async closeJob(tenantId: number, id: number, viewer: { role: Role; userId: number }) {
+  async closeJob(tenantId: number, id: number, viewer: { role: Role; userId: string }) {
     const job = await this.job(tenantId, id);
     await this.assertEmployerOwns(tenantId, Number(job.employer_id), viewer);
     await this.#db.from('onyx_jobs_posted')
@@ -266,7 +266,7 @@ export class PlacementService {
    * learner who cannot apply is told exactly what is missing rather than being
    * shown a greyed-out button.
    */
-  async eligibility(tenantId: number, jobId: number, userId: number): Promise<EligibilityResult> {
+  async eligibility(tenantId: number, jobId: number, userId: string): Promise<EligibilityResult> {
     const job = await this.job(tenantId, jobId);
     const checks: EligibilityResult['checks'] = [];
 
@@ -323,7 +323,7 @@ export class PlacementService {
     return { eligible: checks.every((c) => c.met), checks };
   }
 
-  async apply(tenantId: number, jobId: number, userId: number, note?: string | null) {
+  async apply(tenantId: number, jobId: number, userId: string, note?: string | null) {
     const job = await this.job(tenantId, jobId);
     if (job.status !== 'open') throw new HttpError(422, 'This post is not open.');
     if (job.closes_at && this.#now() > Date.parse(job.closes_at)) {
@@ -352,7 +352,7 @@ export class PlacementService {
     return data!;
   }
 
-  async application(tenantId: number, jobId: number, userId: number) {
+  async application(tenantId: number, jobId: number, userId: string) {
     const { data } = await this.#db.from('onyx_job_applications')
       .select(APPLICATION_COLUMNS)
       .eq('tenant_id', tenantId).eq('job_id', jobId).eq('user_id', userId).maybeSingle();
@@ -367,7 +367,7 @@ export class PlacementService {
    * roster endpoint: an employer must not be able to list the institution's
    * people, only the ones who chose to apply to them.
    */
-  async applicants(tenantId: number, jobId: number, viewer: { role: Role; userId: number }) {
+  async applicants(tenantId: number, jobId: number, viewer: { role: Role; userId: string }) {
     const job = await this.job(tenantId, jobId);
     await this.assertEmployerOwns(tenantId, Number(job.employer_id), viewer);
     const { data } = await this.#db.from('onyx_job_applications')
@@ -375,19 +375,19 @@ export class PlacementService {
     const rows = data ?? [];
     if (!rows.length) return [];
 
-    const ids = [...new Set(rows.map((r) => Number(r.user_id)))];
+    const ids = [...new Set(rows.map((r) => String(r.user_id)))];
     const { data: people } = await this.#db.from('onyx_users')
       .select('id, name, email').in('id', ids);
-    const byId = new Map((people ?? []).map((p) => [Number(p.id), p]));
+    const byId = new Map((people ?? []).map((p) => [String(p.id), p]));
     return rows.map((r) => ({
       ...r,
-      candidate: byId.get(Number(r.user_id))
-        ? { name: byId.get(Number(r.user_id))!.name, email: byId.get(Number(r.user_id))!.email }
+      candidate: byId.get(String(r.user_id))
+        ? { name: byId.get(String(r.user_id))!.name, email: byId.get(String(r.user_id))!.email }
         : null,
     }));
   }
 
-  async myApplications(tenantId: number, userId: number) {
+  async myApplications(tenantId: number, userId: string) {
     const { data } = await this.#db.from('onyx_job_applications')
       .select(APPLICATION_COLUMNS)
       .eq('tenant_id', tenantId).eq('user_id', userId).order('id', { ascending: false });
@@ -400,7 +400,7 @@ export class PlacementService {
     return rows.map((r) => ({ ...r, job: byId.get(Number(r.job_id)) ?? null }));
   }
 
-  async decide(tenantId: number, applicationId: number, viewer: { role: Role; userId: number }, input: {
+  async decide(tenantId: number, applicationId: number, viewer: { role: Role; userId: string }, input: {
     status: ApplicationStatus; note?: string | null;
   }) {
     if (!APPLICATION_STATUSES.includes(input.status)) {
@@ -425,11 +425,11 @@ export class PlacementService {
     return { ...data, status: input.status, decided_at: at };
   }
 
-  async withdraw(tenantId: number, applicationId: number, userId: number) {
+  async withdraw(tenantId: number, applicationId: number, userId: string) {
     const { data } = await this.#db.from('onyx_job_applications')
       .select(APPLICATION_COLUMNS).eq('tenant_id', tenantId).eq('id', applicationId).maybeSingle();
     if (!data) throw new HttpError(404, 'Application not found.');
-    if (Number(data.user_id) !== userId) throw new HttpError(403, 'That is not your application.');
+    if (String(data.user_id) !== userId) throw new HttpError(403, 'That is not your application.');
     if (['hired', 'rejected'].includes(String(data.status))) {
       throw new HttpError(422, 'That application is already decided.');
     }
@@ -443,7 +443,7 @@ export class PlacementService {
   // CAR-04c -- drives
   // -------------------------------------------------------------------------
 
-  async createDrive(tenantId: number, createdBy: number, input: {
+  async createDrive(tenantId: number, createdBy: string, input: {
     employer_id: number; title: string; job_id?: number | null;
     scheduled_at?: string | null; venue?: string | null;
     rounds?: { name: string; scheduled_at?: string | null }[];
@@ -472,7 +472,7 @@ export class PlacementService {
     return data!;
   }
 
-  async drives(tenantId: number, viewer: { role: Role; userId: number }) {
+  async drives(tenantId: number, viewer: { role: Role; userId: string }) {
     let q = this.#db.from('onyx_drives').select(DRIVE_COLUMNS).eq('tenant_id', tenantId);
     if (viewer.role === 'employer') {
       const mine = await this.employerFor(tenantId, viewer.userId);
@@ -483,8 +483,8 @@ export class PlacementService {
     return data ?? [];
   }
 
-  async recordRound(tenantId: number, roundId: number, recordedBy: number, entries: {
-    user_id: number; outcome: RoundOutcome; note?: string | null;
+  async recordRound(tenantId: number, roundId: number, recordedBy: string, entries: {
+    user_id: string; outcome: RoundOutcome; note?: string | null;
   }[]) {
     const { data: round } = await this.#db.from('onyx_drive_rounds')
       .select(ROUND_COLUMNS).eq('tenant_id', tenantId).eq('id', roundId).maybeSingle();
@@ -497,7 +497,7 @@ export class PlacementService {
 
     const { data: existing } = await this.#db.from('onyx_drive_results')
       .select(RESULT_COLUMNS).eq('tenant_id', tenantId).eq('round_id', roundId);
-    const byUser = new Map((existing ?? []).map((r) => [Number(r.user_id), r]));
+    const byUser = new Map((existing ?? []).map((r) => [String(r.user_id), r]));
     const at = new Date(this.#now()).toISOString();
     let created = 0;
     let amended = 0;
@@ -558,14 +558,14 @@ export class PlacementService {
     const last = byRound[byRound.length - 1];
     const cleared = last
       ? rows.filter((x) => Number(x.round_id) === last.round_id && x.outcome === 'passed')
-        .map((x) => Number(x.user_id))
+        .map((x) => String(x.user_id))
       : [];
 
     const offered = drive.job_id
       ? ((await this.#db.from('onyx_job_applications')
         .select(APPLICATION_COLUMNS)
         .eq('tenant_id', tenantId).eq('job_id', Number(drive.job_id))
-        .in('status', ['offered', 'hired'])).data ?? []).map((a) => Number(a.user_id))
+        .in('status', ['offered', 'hired'])).data ?? []).map((a) => String(a.user_id))
       : [];
 
     const offeredSet = new Set(offered);

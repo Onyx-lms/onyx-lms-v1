@@ -25,9 +25,21 @@ function cookieFor(path: string[]): string {
   return TOKEN_COOKIE;
 }
 
+/**
+ * The port's cookie is still a bare token string. Onyx's two cookies hold
+ * `{ token, refresh_token, expires_at }` JSON since
+ * docs/ADR-011-supabase-auth-migration.md -- only the access token is
+ * needed here, to forward as the bearer header.
+ */
+function tokenFrom(path: string[], raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  if (path[0] !== 'onyx') return raw;
+  try { return (JSON.parse(raw) as { token?: string }).token; } catch { return undefined; }
+}
+
 async function forward(request: Request, path: string[], method: string) {
   const jar = await cookies();
-  const token = jar.get(cookieFor(path))?.value;
+  const token = tokenFrom(path, jar.get(cookieFor(path))?.value);
   const search = new URL(request.url).search;
   // An empty string is not "no body". Forwarding '' made Fastify parse the
   // request to `''`, and a route doing `req.body ?? {}` kept it -- `??` only

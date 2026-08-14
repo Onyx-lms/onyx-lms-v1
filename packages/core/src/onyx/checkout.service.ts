@@ -75,7 +75,7 @@ const MAX_AGE_SECONDS = 60 * 60 * 2;
 export interface OnyxPaymentIntent {
   tenantId: number;
   invoiceId: number;
-  userId: number;
+  userId: string;
   gateway: string;
   amountMinor: number;
   currency: string;
@@ -232,7 +232,7 @@ export class OnyxCheckoutService {
    * caller: a request that could name its own amount is a request that can pay
    * one rupee against a hundred-thousand-rupee invoice.
    */
-  async begin(tenantId: number, invoiceId: number, viewer: { userId: number; role: Role }, input: {
+  async begin(tenantId: number, invoiceId: number, viewer: { userId: string; role: Role }, input: {
     gateway: string; email?: string | null;
   }) {
     const invoice = await this.#finance.invoice(tenantId, invoiceId, viewer);
@@ -247,7 +247,7 @@ export class OnyxCheckoutService {
     const reference = signIntent({
       tenantId,
       invoiceId,
-      userId: Number(invoice.user_id),
+      userId: String(invoice.user_id),
       gateway: config.identifier,
       amountMinor: outstanding,
       currency: String(invoice.currency),
@@ -260,7 +260,12 @@ export class OnyxCheckoutService {
     const major = outstanding / 100;
     const order: CheckoutOrder = {
       reference,
-      userId: Number(invoice.user_id),
+      // CheckoutOrder is the port's own gateway-facing shape (still
+      // bigint-keyed, out of scope for this migration) -- this is a display
+      // value on the checkout page, not a claim compared against anything,
+      // so a lossy cast here is acceptable in a way it would not be for the
+      // OnyxPaymentIntent.userId above.
+      userId: Number(invoice.user_id) || 0,
       userEmail: input.email ?? '',
       items: [{ course_id: 0, title: 'Invoice ' + invoice.number, price: major }],
       subtotal: major,

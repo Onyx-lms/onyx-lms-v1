@@ -141,7 +141,7 @@ export class AssessService {
   // ASS-01a -- banks and questions
   // -------------------------------------------------------------------------
 
-  async createBank(tenantId: number, createdBy: number, input: {
+  async createBank(tenantId: number, createdBy: string, input: {
     name: string; description?: string | null; course_id?: number | null;
   }) {
     if (input.course_id) await this.#academics.course(tenantId, input.course_id);
@@ -163,7 +163,7 @@ export class AssessService {
     return data ?? [];
   }
 
-  async addQuestion(tenantId: number, bankId: number, createdBy: number, input: {
+  async addQuestion(tenantId: number, bankId: number, createdBy: string, input: {
     type?: OnyxQuestionType; prompt: string;
     options?: { id: string; text: string }[];
     answer?: unknown; explanation?: string | null;
@@ -268,7 +268,7 @@ export class AssessService {
   // ASS-01b -- assessments
   // -------------------------------------------------------------------------
 
-  async createAssessment(tenantId: number, createdBy: number, input: {
+  async createAssessment(tenantId: number, createdBy: string, input: {
     title: string; course_id?: number | null; instructions?: string | null;
     opens_at?: string | null; closes_at?: string | null;
     duration_minutes?: number; attempts_allowed?: number;
@@ -419,7 +419,7 @@ export class AssessService {
    * Resuming is the same call on purpose: a candidate whose tab died presses
    * the same button, and the paper they get back is the one they were sat.
    */
-  async start(tenantId: number, assessmentId: number, userId: number, opts: {
+  async start(tenantId: number, assessmentId: number, userId: string, opts: {
     consent?: boolean;
     /**
      * What the browser says it has running. Checked against require_camera /
@@ -512,9 +512,9 @@ export class AssessService {
    * The attempt as the candidate may see it: the paper, their answers so far,
    * and how long is left according to the server.
    */
-  async attemptForCandidate(tenantId: number, attemptId: number, userId: number) {
+  async attemptForCandidate(tenantId: number, attemptId: number, userId: string) {
     const attempt = await this.#attempt(tenantId, attemptId);
-    if (Number(attempt.user_id) !== userId) throw new HttpError(403, 'That is not your attempt.');
+    if (String(attempt.user_id) !== userId) throw new HttpError(403, 'That is not your attempt.');
 
     const answers = await this.#answers(tenantId, attemptId);
     const byQuestion = new Map(answers.map((a) => [Number(a.question_id), a]));
@@ -562,13 +562,13 @@ export class AssessService {
    * nothing. Refused once the server's clock says the attempt is over, which is
    * the other half of "a client clock change cannot extend an attempt".
    */
-  async saveAnswer(tenantId: number, attemptId: number, userId: number, input: {
+  async saveAnswer(tenantId: number, attemptId: number, userId: string, input: {
     // Optional because clearing an answer is a real thing a candidate does, and
     // `undefined` from a validator that saw no key means exactly that.
     question_id: number; response?: unknown;
   }) {
     const attempt = await this.#attempt(tenantId, attemptId);
-    if (Number(attempt.user_id) !== userId) throw new HttpError(403, 'That is not your attempt.');
+    if (String(attempt.user_id) !== userId) throw new HttpError(403, 'That is not your attempt.');
     if (attempt.status !== 'in_progress') throw new HttpError(422, 'That attempt is finished.');
     if (this.#now() > Date.parse(attempt.expires_at)) {
       await this.#expire(tenantId, attemptId);
@@ -602,9 +602,9 @@ export class AssessService {
   }
 
   /** Hands the paper in and auto-marks everything a machine can. */
-  async submit(tenantId: number, attemptId: number, userId: number) {
+  async submit(tenantId: number, attemptId: number, userId: string) {
     const attempt = await this.#attempt(tenantId, attemptId);
-    if (Number(attempt.user_id) !== userId) throw new HttpError(403, 'That is not your attempt.');
+    if (String(attempt.user_id) !== userId) throw new HttpError(403, 'That is not your attempt.');
     if (attempt.status !== 'in_progress') throw new HttpError(422, 'That attempt is already in.');
     return this.#finalise(tenantId, attemptId, 'submitted');
   }
@@ -729,7 +729,7 @@ export class AssessService {
       .eq('tenant_id', tenantId).eq('assessment_id', assessmentId)
       .neq('status', 'in_progress').not('score', 'is', null);
     return (data ?? []).map((a) => ({
-      user_id: Number(a.user_id), score: Number(a.score), max_score: Number(a.max_score),
+      user_id: String(a.user_id), score: Number(a.score), max_score: Number(a.max_score),
     }));
   }
 
@@ -784,7 +784,7 @@ export class AssessService {
   }
 
   /** Awards marks on the subjective questions of one paper. */
-  async mark(tenantId: number, attemptId: number, markerId: number, input: {
+  async mark(tenantId: number, attemptId: number, markerId: string, input: {
     role?: MarkRole;
     marks: { question_id: number; points: number; comment?: string | null }[];
     comment?: string | null;
@@ -857,7 +857,7 @@ export class AssessService {
    * single-attempt view, repeated here rather than assumed, because this is the
    * screen somebody refreshes waiting for results.
    */
-  async myAttempts(tenantId: number, userId: number) {
+  async myAttempts(tenantId: number, userId: string) {
     const { data } = await this.#db.from('onyx_assessment_attempts')
       .select(ATTEMPT_COLUMNS)
       .eq('tenant_id', tenantId).eq('user_id', userId)
@@ -991,7 +991,7 @@ export class AssessService {
 
   /** Draws the paper. Once, at start, seeded so a resume deals the same hand. */
   async #dealPaper(
-    tenantId: number, assessment: Record<string, unknown>, userId: number, attemptNumber: number,
+    tenantId: number, assessment: Record<string, unknown>, userId: string, attemptNumber: number,
   ): Promise<PaperEntry[]> {
     const sections = (assessment.sections ?? []) as unknown as {
       id: string; title: string; bank_id: number; take: number;
@@ -1080,7 +1080,7 @@ export class AssessService {
       updated_at: at,
     }).eq('id', attemptId);
 
-    return this.attemptForCandidate(tenantId, attemptId, Number(attempt.user_id));
+    return this.attemptForCandidate(tenantId, attemptId, String(attempt.user_id));
   }
 
   /**
@@ -1147,7 +1147,7 @@ export class AssessService {
     return data;
   }
 
-  async #attempts(tenantId: number, assessmentId: number, userId: number) {
+  async #attempts(tenantId: number, assessmentId: number, userId: string) {
     const { data } = await this.#db.from('onyx_assessment_attempts')
       .select(ATTEMPT_COLUMNS)
       .eq('tenant_id', tenantId).eq('assessment_id', assessmentId).eq('user_id', userId)

@@ -59,7 +59,7 @@ export class AuditService {
 
   /** Records an action performed by the holder of these claims. */
   async record(
-    claims: { tenant_id: number; user_id: number | null },
+    claims: { tenant_id: number; user_id: string | null },
     entry: AuditEntry,
   ): Promise<void> {
     const { error } = await this.#db.from('onyx_audit_logs').insert({
@@ -103,11 +103,11 @@ export class AuditService {
       .limit(Math.min(filters.limit ?? 100, 500));
     const rows = data ?? [];
 
-    const ids = [...new Set(rows.map((r) => Number(r.actor_id)).filter(Boolean))];
+    const ids = [...new Set(rows.map((r) => r.actor_id ? String(r.actor_id) : null).filter((v) => v !== null))];
     const { data: actors } = ids.length
       ? await this.#db.from('onyx_users').select('id, name, email').in('id', ids)
       : { data: [] };
     const byId = new Map((actors ?? []).map((u) => [u.id, u]));
-    return rows.map((r) => ({ ...r, actor: byId.get(Number(r.actor_id)) ?? null }));
+    return rows.map((r) => ({ ...r, actor: byId.get(r.actor_id ? String(r.actor_id) : '') ?? null }));
   }
 }

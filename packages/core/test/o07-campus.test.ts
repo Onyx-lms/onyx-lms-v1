@@ -33,24 +33,24 @@ function world(c = clock()) {
   const db = new FakeDb({
     onyx_tenants: [{ id: T, name: 'Campus University', slug: 'campus', status: 1 }],
     onyx_users: [
-      { id: 10, name: 'Ada', email: 'ada@onyx.test' },
-      { id: 11, name: 'Grace', email: 'grace@onyx.test' },
-      { id: 12, name: 'Alan', email: 'alan@onyx.test' },
-      { id: 20, name: 'Faculty', email: 'faculty@onyx.test' },
-      { id: 21, name: 'Second Faculty', email: 'faculty2@onyx.test' },
-      { id: 30, name: 'Exams Office', email: 'exams@onyx.test' },
-      { id: 40, name: 'Admin', email: 'admin@onyx.test' },
-      { id: 50, name: 'Guardian', email: 'guardian@onyx.test' },
+      { id: 'user-10', name: 'Ada', email: 'ada@onyx.test' },
+      { id: 'user-11', name: 'Grace', email: 'grace@onyx.test' },
+      { id: 'user-12', name: 'Alan', email: 'alan@onyx.test' },
+      { id: 'user-20', name: 'Faculty', email: 'faculty@onyx.test' },
+      { id: 'user-21', name: 'Second Faculty', email: 'faculty2@onyx.test' },
+      { id: 'user-30', name: 'Exams Office', email: 'exams@onyx.test' },
+      { id: 'user-40', name: 'Admin', email: 'admin@onyx.test' },
+      { id: 'user-50', name: 'Guardian', email: 'guardian@onyx.test' },
     ],
     onyx_memberships: [
-      { id: 1, tenant_id: T, user_id: 10, role: 'student', status: 1 },
-      { id: 2, tenant_id: T, user_id: 11, role: 'student', status: 1 },
-      { id: 8, tenant_id: T, user_id: 12, role: 'student', status: 1 },
-      { id: 3, tenant_id: T, user_id: 20, role: 'faculty', status: 1 },
-      { id: 4, tenant_id: T, user_id: 21, role: 'faculty', status: 1 },
-      { id: 5, tenant_id: T, user_id: 30, role: 'exams', status: 1 },
-      { id: 6, tenant_id: T, user_id: 40, role: 'admin', status: 1 },
-      { id: 7, tenant_id: T, user_id: 50, role: 'guardian', status: 1 },
+      { id: 1, tenant_id: T, user_id: 'user-10', role: 'student', status: 1 },
+      { id: 2, tenant_id: T, user_id: 'user-11', role: 'student', status: 1 },
+      { id: 8, tenant_id: T, user_id: 'user-12', role: 'student', status: 1 },
+      { id: 3, tenant_id: T, user_id: 'user-20', role: 'faculty', status: 1 },
+      { id: 4, tenant_id: T, user_id: 'user-21', role: 'faculty', status: 1 },
+      { id: 5, tenant_id: T, user_id: 'user-30', role: 'exams', status: 1 },
+      { id: 6, tenant_id: T, user_id: 'user-40', role: 'admin', status: 1 },
+      { id: 7, tenant_id: T, user_id: 'user-50', role: 'guardian', status: 1 },
     ],
     onyx_programs: [{ id: 1, tenant_id: T, name: 'CS', code: 'CS' }],
     onyx_semesters: [{ id: 1, tenant_id: T, program_id: 1, name: 'Fall', starts_at: '2026-01-01', ends_at: '2026-06-01' }],
@@ -62,18 +62,18 @@ function world(c = clock()) {
     // students actually enrolled below, so scheduling against them behaves
     // like scheduling against a real cohort.
     onyx_batch_members: [
-      { id: 1, tenant_id: T, batch_id: 1, user_id: 10 },
-      { id: 2, tenant_id: T, batch_id: 1, user_id: 11 },
-      { id: 3, tenant_id: T, batch_id: 2, user_id: 12 },
+      { id: 1, tenant_id: T, batch_id: 1, user_id: 'user-10' },
+      { id: 2, tenant_id: T, batch_id: 1, user_id: 'user-11' },
+      { id: 3, tenant_id: T, batch_id: 2, user_id: 'user-12' },
     ],
     onyx_courses: [
       { id: 1, tenant_id: T, code: 'CS101', title: 'Programming', slug: 'p', status: 1 },
       { id: 2, tenant_id: T, code: 'CS102', title: 'Databases', slug: 'd', status: 1 },
     ],
     onyx_enrollments: [
-      { id: 1, tenant_id: T, course_id: 1, user_id: 10, status: 1 },
-      { id: 2, tenant_id: T, course_id: 2, user_id: 10, status: 1 },
-      { id: 3, tenant_id: T, course_id: 1, user_id: 11, status: 1 },
+      { id: 1, tenant_id: T, course_id: 1, user_id: 'user-10', status: 1 },
+      { id: 2, tenant_id: T, course_id: 2, user_id: 'user-10', status: 1 },
+      { id: 3, tenant_id: T, course_id: 1, user_id: 'user-11', status: 1 },
     ],
     onyx_rooms: [], onyx_timetable_slots: [], onyx_faculty_allocations: [],
     onyx_exams: [], onyx_halls: [], onyx_seat_allocations: [],
@@ -97,11 +97,11 @@ function world(c = clock()) {
   return { db, audit, campus, exams, finance, guardians, c };
 }
 
-const student = { userId: 10, role: 'student' as const };
-const admin = { userId: 40, role: 'admin' as const };
-const examsOfficer = { userId: 30, role: 'exams' as const };
-const facultyMember = { userId: 20, role: 'faculty' as const };
-const guardianActor = { userId: 50, role: 'guardian' as const };
+const student = { userId: 'user-10', role: 'student' as const };
+const admin = { userId: 'user-40', role: 'admin' as const };
+const examsOfficer = { userId: 'user-30', role: 'exams' as const };
+const facultyMember = { userId: 'user-20', role: 'faculty' as const };
+const guardianActor = { userId: 'user-50', role: 'guardian' as const };
 
 // ---------------------------------------------------------------------------
 // CMP-01: timetable clash detection
@@ -116,12 +116,12 @@ test('CMP-01 a room double-booking is refused and names the room', async () => {
   const room = await withRoom(w);
   await w.campus.schedule(T, {
     semester_id: 1, course_id: 1, batch_id: 1, room_id: Number(room!.id),
-    faculty_id: 20, day_of_week: 1, starts_at: '09:00', ends_at: '10:00',
+    faculty_id: 'user-20', day_of_week: 1, starts_at: '09:00', ends_at: '10:00',
   });
   await assert.rejects(
     () => w.campus.schedule(T, {
       semester_id: 1, course_id: 2, batch_id: 2, room_id: Number(room!.id),
-      faculty_id: 21, day_of_week: 1, starts_at: '09:30', ends_at: '10:30',
+      faculty_id: 'user-21', day_of_week: 1, starts_at: '09:30', ends_at: '10:30',
     }),
     (e: unknown) => e instanceof HttpError && e.status === 409 && /R1/.test(e.message));
 });
@@ -132,12 +132,12 @@ test('CMP-01 a faculty double-booking is refused even in a different room', asyn
   const r2 = await w.campus.createRoom(T, { code: 'R2', name: 'Room 2' });
   await w.campus.schedule(T, {
     semester_id: 1, course_id: 1, batch_id: 1, room_id: Number(r1!.id),
-    faculty_id: 20, day_of_week: 1, starts_at: '09:00', ends_at: '10:00',
+    faculty_id: 'user-20', day_of_week: 1, starts_at: '09:00', ends_at: '10:00',
   });
   await assert.rejects(
     () => w.campus.schedule(T, {
       semester_id: 1, course_id: 2, batch_id: 2, room_id: Number(r2!.id),
-      faculty_id: 20, day_of_week: 1, starts_at: '09:30', ends_at: '10:30',
+      faculty_id: 'user-20', day_of_week: 1, starts_at: '09:30', ends_at: '10:30',
     }),
     (e: unknown) => e instanceof HttpError && e.status === 409);
 });
@@ -148,12 +148,12 @@ test('CMP-01 a batch cannot be in two rooms at once however free both rooms are'
   const r2 = await w.campus.createRoom(T, { code: 'R2', name: 'Room 2' });
   await w.campus.schedule(T, {
     semester_id: 1, course_id: 1, batch_id: 1, room_id: Number(r1!.id),
-    faculty_id: 20, day_of_week: 1, starts_at: '09:00', ends_at: '10:00',
+    faculty_id: 'user-20', day_of_week: 1, starts_at: '09:00', ends_at: '10:00',
   });
   await assert.rejects(
     () => w.campus.schedule(T, {
       semester_id: 1, course_id: 2, batch_id: 1, room_id: Number(r2!.id),
-      faculty_id: 21, day_of_week: 1, starts_at: '09:30', ends_at: '10:30',
+      faculty_id: 'user-21', day_of_week: 1, starts_at: '09:30', ends_at: '10:30',
     }),
     (e: unknown) => e instanceof HttpError && e.status === 409);
 });
@@ -163,11 +163,11 @@ test('CMP-01 back-to-back classes in the same room do not clash', async () => {
   const room = await withRoom(w);
   await w.campus.schedule(T, {
     semester_id: 1, course_id: 1, batch_id: 1, room_id: Number(room!.id),
-    faculty_id: 20, day_of_week: 1, starts_at: '09:00', ends_at: '10:00',
+    faculty_id: 'user-20', day_of_week: 1, starts_at: '09:00', ends_at: '10:00',
   });
   const slot = await w.campus.schedule(T, {
     semester_id: 1, course_id: 2, batch_id: 2, room_id: Number(room!.id),
-    faculty_id: 21, day_of_week: 1, starts_at: '10:00', ends_at: '11:00',
+    faculty_id: 'user-21', day_of_week: 1, starts_at: '10:00', ends_at: '11:00',
   });
   assert.ok(slot, 'a class ending at 10:00 must not clash with one starting at 10:00');
 });
@@ -177,11 +177,11 @@ test('CMP-01 a different weekday never clashes', async () => {
   const room = await withRoom(w);
   await w.campus.schedule(T, {
     semester_id: 1, course_id: 1, batch_id: 1, room_id: Number(room!.id),
-    faculty_id: 20, day_of_week: 1, starts_at: '09:00', ends_at: '10:00',
+    faculty_id: 'user-20', day_of_week: 1, starts_at: '09:00', ends_at: '10:00',
   });
   const slot = await w.campus.schedule(T, {
     semester_id: 1, course_id: 2, batch_id: 1, room_id: Number(room!.id),
-    faculty_id: 20, day_of_week: 2, starts_at: '09:00', ends_at: '10:00',
+    faculty_id: 'user-20', day_of_week: 2, starts_at: '09:00', ends_at: '10:00',
   });
   assert.ok(slot);
 });
@@ -194,14 +194,14 @@ test('CMP-01 publishing re-checks every slot and refuses if two collide', async 
   // moved. Publish is the last point at which this is still cheap to catch.
   await w.campus.schedule(T, {
     semester_id: 1, course_id: 1, batch_id: 1, room_id: Number(room!.id),
-    faculty_id: 20, day_of_week: 1, starts_at: '09:00', ends_at: '10:00',
+    faculty_id: 'user-20', day_of_week: 1, starts_at: '09:00', ends_at: '10:00',
   });
   await w.db.from('onyx_timetable_slots').insert({
     tenant_id: T, semester_id: 1, course_id: 2, batch_id: 1, room_id: Number(room!.id),
-    faculty_id: 20, day_of_week: 1, starts_at: '09:30:00', ends_at: '10:30:00', status: 'draft',
+    faculty_id: 'user-20', day_of_week: 1, starts_at: '09:30:00', ends_at: '10:30:00', status: 'draft',
   });
   await assert.rejects(
-    () => w.campus.publish(T, 1, 40),
+    () => w.campus.publish(T, 1, 'user-40'),
     (e: unknown) => e instanceof HttpError && e.status === 409);
 });
 
@@ -210,9 +210,9 @@ test('CMP-01 a learner only ever sees a published timetable', async () => {
   const room = await withRoom(w);
   await w.campus.schedule(T, {
     semester_id: 1, course_id: 1, batch_id: 1, room_id: Number(room!.id),
-    faculty_id: 20, day_of_week: 1, starts_at: '09:00', ends_at: '10:00',
+    faculty_id: 'user-20', day_of_week: 1, starts_at: '09:00', ends_at: '10:00',
   });
-  const published = await w.campus.publish(T, 1, 40);
+  const published = await w.campus.publish(T, 1, 'user-40');
   assert.equal(published.published, 1);
   const rows = await w.campus.timetable(T, { publishedOnly: true });
   assert.equal(rows.length, 1);
@@ -222,7 +222,7 @@ test('CMP-01 a learner only ever sees a published timetable', async () => {
 test('CMP-01 allocating a learner to teach is refused', async () => {
   const w = world();
   await assert.rejects(
-    () => w.campus.allocate(T, { semester_id: 1, course_id: 1, user_id: 10 }),
+    () => w.campus.allocate(T, { semester_id: 1, course_id: 1, user_id: 'user-10' }),
     (e: unknown) => e instanceof HttpError && e.status === 422);
 });
 
@@ -250,9 +250,9 @@ test('CMP-02a two exams whose rosters never intersect do not clash', async () =>
   // Course 2's fixture enrolment (user 10, who is also in course 1) is
   // replaced with user 12, who is nowhere near course 1 -- the two rosters
   // then share nobody.
-  await w.db.from('onyx_enrollments').delete().eq('course_id', 2).eq('user_id', 10);
+  await w.db.from('onyx_enrollments').delete().eq('course_id', 2).eq('user_id', 'user-10');
   await w.db.from('onyx_enrollments').insert(
-    { tenant_id: T, course_id: 2, user_id: 12, status: 1 });
+    { tenant_id: T, course_id: 2, user_id: 'user-12', status: 1 });
 
   await w.exams.schedule(T, examsOfficer, {
     semester_id: 1, course_id: 1, title: 'CS101 final',
@@ -322,9 +322,9 @@ test('CMP-02b a learner cannot read the full seating plan, only their own seat',
   });
   const hall = await w.exams.createHall(T, { code: 'H1', name: 'Hall 1', row_count: 2, col_count: 2 });
   await w.exams.allocateSeats(T, Number(exam!.id), [Number(hall!.id)], examsOfficer);
-  const seat = await w.exams.seatFor(T, Number(exam!.id), 10);
+  const seat = await w.exams.seatFor(T, Number(exam!.id), 'user-10');
   assert.ok(seat);
-  assert.equal(Number(seat!.user_id), 10);
+  assert.equal(seat!.user_id, 'user-10');
   void student;
 });
 
@@ -344,7 +344,7 @@ test('CMP-02c moderation keeps the raw mark and stores only the delta', async ()
     semester_id: 1, course_id: 1, title: 'CS101 final', starts_at: new Date(START + 86_400_000).toISOString(),
     max_marks: 100,
   });
-  await w.exams.enterMarks(T, Number(exam!.id), facultyMember, [{ user_id: 10, raw_marks: 60 }]);
+  await w.exams.enterMarks(T, Number(exam!.id), facultyMember, [{ user_id: 'user-10', raw_marks: 60 }]);
   await w.exams.moderate(T, Number(exam!.id), examsOfficer, 5, 'paper found to be harder than intended');
 
   const [mark] = await w.exams.marksForExam(T, Number(exam!.id), examsOfficer);
@@ -359,7 +359,7 @@ test('CMP-02c a moderated mark is clamped to the paper\'s range', async () => {
     semester_id: 1, course_id: 1, title: 'CS101 final', starts_at: new Date(START + 86_400_000).toISOString(),
     max_marks: 100,
   });
-  await w.exams.enterMarks(T, Number(exam!.id), facultyMember, [{ user_id: 10, raw_marks: 98 }]);
+  await w.exams.enterMarks(T, Number(exam!.id), facultyMember, [{ user_id: 'user-10', raw_marks: 98 }]);
   await w.exams.moderate(T, Number(exam!.id), examsOfficer, 10, 'generous curve');
   const [mark] = await w.exams.marksForExam(T, Number(exam!.id), examsOfficer);
   assert.equal(Number(mark!.final_marks), 100, '98 + 10 must clamp to the maximum, not read 108');
@@ -370,12 +370,12 @@ test('CMP-02c a learner never sees a mark before it is published', async () => {
   const exam = await w.exams.schedule(T, examsOfficer, {
     semester_id: 1, course_id: 1, title: 'CS101 final', starts_at: new Date(START + 86_400_000).toISOString(),
   });
-  await w.exams.enterMarks(T, Number(exam!.id), facultyMember, [{ user_id: 10, raw_marks: 70 }]);
-  const seenByLearner = await w.exams.marksFor(T, 10, student);
+  await w.exams.enterMarks(T, Number(exam!.id), facultyMember, [{ user_id: 'user-10', raw_marks: 70 }]);
+  const seenByLearner = await w.exams.marksFor(T, 'user-10', student);
   assert.equal(seenByLearner.length, 0, 'an entered-but-unpublished mark must be invisible');
 
   await w.exams.publishMarks(T, Number(exam!.id), examsOfficer);
-  const afterPublish = await w.exams.marksFor(T, 10, student);
+  const afterPublish = await w.exams.marksFor(T, 'user-10', student);
   assert.equal(afterPublish.length, 1);
 });
 
@@ -384,9 +384,9 @@ test('CMP-02c a transcript checksum reconciles with the marks behind it, and dri
   const exam = await w.exams.schedule(T, examsOfficer, {
     semester_id: 1, course_id: 1, title: 'CS101 final', starts_at: new Date(START + 86_400_000).toISOString(),
   });
-  await w.exams.enterMarks(T, Number(exam!.id), facultyMember, [{ user_id: 10, raw_marks: 80 }]);
+  await w.exams.enterMarks(T, Number(exam!.id), facultyMember, [{ user_id: 'user-10', raw_marks: 80 }]);
   await w.exams.publishMarks(T, Number(exam!.id), examsOfficer);
-  const transcript = await w.exams.issueTranscript(T, 10, examsOfficer);
+  const transcript = await w.exams.issueTranscript(T, 'user-10', examsOfficer);
 
   const check = await w.exams.verifyTranscript(T, String(transcript!.serial));
   assert.equal(check.intact, true);
@@ -433,7 +433,7 @@ test('CMP-03 an invoice\'s lines reconcile to the fee structure that produced it
   const w = world();
   const structure = await withStructure(w);
   await w.finance.publishStructure(T, Number(structure!.id), admin);
-  const invoice = await w.finance.issueInvoice(T, admin, { user_id: 10, structure_id: Number(structure!.id) });
+  const invoice = await w.finance.issueInvoice(T, admin, { user_id: 'user-10', structure_id: Number(structure!.id) });
 
   const report = await w.finance.reconcile(T, Number(invoice!.id), admin);
   assert.equal(report.lines_balance, true);
@@ -444,7 +444,7 @@ test('CMP-03 an edited structure does not retroactively change an already-issued
   const w = world();
   const structure = await withStructure(w);
   await w.finance.publishStructure(T, Number(structure!.id), admin);
-  const invoice = await w.finance.issueInvoice(T, admin, { user_id: 10, structure_id: Number(structure!.id) });
+  const invoice = await w.finance.issueInvoice(T, admin, { user_id: 'user-10', structure_id: Number(structure!.id) });
 
   // The structure changes after the invoice was raised.
   await w.db.from('onyx_fee_structure_lines').update({ amount_minor: 20_000_00 })
@@ -461,9 +461,9 @@ test('CMP-03 instalments split with the remainder on the first, and sum back to 
   const w = world();
   const structure = await withStructure(w, 3); // 10,000.00 / 3 does not divide evenly
   await w.finance.publishStructure(T, Number(structure!.id), admin);
-  const one = await w.finance.issueInvoice(T, admin, { user_id: 10, structure_id: Number(structure!.id), instalment_no: 1 });
-  const two = await w.finance.issueInvoice(T, admin, { user_id: 10, structure_id: Number(structure!.id), instalment_no: 2 });
-  const three = await w.finance.issueInvoice(T, admin, { user_id: 10, structure_id: Number(structure!.id), instalment_no: 3 });
+  const one = await w.finance.issueInvoice(T, admin, { user_id: 'user-10', structure_id: Number(structure!.id), instalment_no: 1 });
+  const two = await w.finance.issueInvoice(T, admin, { user_id: 'user-10', structure_id: Number(structure!.id), instalment_no: 2 });
+  const three = await w.finance.issueInvoice(T, admin, { user_id: 'user-10', structure_id: Number(structure!.id), instalment_no: 3 });
   const sum = Number(one!.total_minor) + Number(two!.total_minor) + Number(three!.total_minor);
   assert.equal(sum, 10_000_00);
 });
@@ -472,7 +472,7 @@ test('CMP-03 a replayed webhook never double-credits an invoice', async () => {
   const w = world();
   const structure = await withStructure(w);
   await w.finance.publishStructure(T, Number(structure!.id), admin);
-  const invoice = await w.finance.issueInvoice(T, admin, { user_id: 10, structure_id: Number(structure!.id) });
+  const invoice = await w.finance.issueInvoice(T, admin, { user_id: 'user-10', structure_id: Number(structure!.id) });
 
   const first = await w.finance.recordPayment(T, {
     invoice_id: Number(invoice!.id), gateway: 'razorpay', reference: 'pay_123',
@@ -493,9 +493,9 @@ test('CMP-03 a learner cannot see another learner\'s invoice', async () => {
   const w = world();
   const structure = await withStructure(w);
   await w.finance.publishStructure(T, Number(structure!.id), admin);
-  const invoice = await w.finance.issueInvoice(T, admin, { user_id: 10, structure_id: Number(structure!.id) });
+  const invoice = await w.finance.issueInvoice(T, admin, { user_id: 'user-10', structure_id: Number(structure!.id) });
   await assert.rejects(
-    () => w.finance.invoice(T, Number(invoice!.id), { userId: 11, role: 'student' }),
+    () => w.finance.invoice(T, Number(invoice!.id), { userId: 'user-11', role: 'student' }),
     (e: unknown) => e instanceof HttpError && e.status === 403);
 });
 
@@ -505,64 +505,64 @@ test('CMP-03 a learner cannot see another learner\'s invoice', async () => {
 
 test('CMP-04 a guardian sees nothing until the link is accepted and the category is switched on', async () => {
   const w = world();
-  const link = await w.guardians.link(T, admin, { guardian_user_id: 50, student_user_id: 10 });
+  const link = await w.guardians.link(T, admin, { guardian_user_id: 'user-50', student_user_id: 'user-10' });
   await assert.rejects(
-    () => w.guardians.attendanceFor(T, 50, 10),
+    () => w.guardians.attendanceFor(T, 'user-50', 'user-10'),
     (e: unknown) => e instanceof HttpError && e.status === 403,
     'unverified link must grant nothing');
 
-  await w.guardians.accept(T, Number(link!.id), { userId: 10 });
+  await w.guardians.accept(T, Number(link!.id), { userId: 'user-10' });
   await assert.rejects(
-    () => w.guardians.attendanceFor(T, 50, 10),
+    () => w.guardians.attendanceFor(T, 'user-50', 'user-10'),
     (e: unknown) => e instanceof HttpError && e.status === 403,
     'accepted but not consented must still grant nothing');
 
   await w.guardians.setConsent(T, Number(link!.id), student, 'attendance', true);
-  const attendance = await w.guardians.attendanceFor(T, 50, 10);
+  const attendance = await w.guardians.attendanceFor(T, 'user-50', 'user-10');
   assert.ok(attendance);
 });
 
 test('CMP-04 revoking consent closes the page immediately, not after a cache expires', async () => {
   const w = world();
-  const link = await w.guardians.link(T, admin, { guardian_user_id: 50, student_user_id: 10 });
-  await w.guardians.accept(T, Number(link!.id), { userId: 10 });
+  const link = await w.guardians.link(T, admin, { guardian_user_id: 'user-50', student_user_id: 'user-10' });
+  await w.guardians.accept(T, Number(link!.id), { userId: 'user-10' });
   await w.guardians.setConsent(T, Number(link!.id), student, 'results', true);
   await w.exams.schedule(T, examsOfficer, {
     semester_id: 1, course_id: 1, title: 'CS101 final', starts_at: new Date(START + 86_400_000).toISOString(),
   });
-  const results = await w.guardians.resultsFor(T, 50, 10);
+  const results = await w.guardians.resultsFor(T, 'user-50', 'user-10');
   assert.ok(results);
 
   await w.guardians.setConsent(T, Number(link!.id), student, 'results', false);
   await assert.rejects(
-    () => w.guardians.resultsFor(T, 50, 10),
+    () => w.guardians.resultsFor(T, 'user-50', 'user-10'),
     (e: unknown) => e instanceof HttpError && e.status === 403);
 });
 
 test('CMP-04 a guardian cannot see a category a learner never turned on, even if another category is shared', async () => {
   const w = world();
-  const link = await w.guardians.link(T, admin, { guardian_user_id: 50, student_user_id: 10 });
-  await w.guardians.accept(T, Number(link!.id), { userId: 10 });
+  const link = await w.guardians.link(T, admin, { guardian_user_id: 'user-50', student_user_id: 'user-10' });
+  await w.guardians.accept(T, Number(link!.id), { userId: 'user-10' });
   await w.guardians.setConsent(T, Number(link!.id), student, 'attendance', true);
   await assert.rejects(
-    () => w.guardians.feesFor(T, 50, 10),
+    () => w.guardians.feesFor(T, 'user-50', 'user-10'),
     (e: unknown) => e instanceof HttpError && e.status === 403);
 });
 
 test('CMP-04 a guardian cannot propose their own link -- only the learner or staff can', async () => {
   const w = world();
   await assert.rejects(
-    () => w.guardians.link(T, guardianActor, { guardian_user_id: 50, student_user_id: 10 }),
+    () => w.guardians.link(T, guardianActor, { guardian_user_id: 'user-50', student_user_id: 'user-10' }),
     (e: unknown) => e instanceof HttpError && e.status === 403);
 });
 
 test('CMP-04 the overview reports "not shared" for a switched-off category rather than omitting it', async () => {
   const w = world();
-  const link = await w.guardians.link(T, admin, { guardian_user_id: 50, student_user_id: 10 });
-  await w.guardians.accept(T, Number(link!.id), { userId: 10 });
+  const link = await w.guardians.link(T, admin, { guardian_user_id: 'user-50', student_user_id: 'user-10' });
+  await w.guardians.accept(T, Number(link!.id), { userId: 'user-10' });
   await w.guardians.setConsent(T, Number(link!.id), student, 'attendance', true);
 
-  const overview = await w.guardians.overview(T, 50);
+  const overview = await w.guardians.overview(T, 'user-50');
   const child = overview.children[0]!;
   assert.equal(child.shares.attendance, true);
   assert.equal(child.shares.results, false);

@@ -8,7 +8,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, createTenant, withDb, RUN, API } from './harness.ts';
+import { api, createTenant, withDb, RUN, API, onyxLogin } from './harness.ts';
 
 const pw = 'OnyxTest#2026';
 const mail = (who: string) => 'l.' + who + '.' + RUN + '@onyx.test';
@@ -18,16 +18,10 @@ const B = { name: 'Rival Institute ' + RUN, slug: 'learn-b-' + RUN };
 const w = {
   alpha: { id: 0, admin: '', faculty: '', s1: '', s2: '', outsider: '' },
   beta: { id: 0, admin: '', student: '' },
-  ids: {} as Record<string, number>,
+  ids: {} as Record<string, string>,
   course: 0, betaCourse: 0, batch: 0, module: 0, lesson: 0,
   session: 0, assignment: 0, submission: 0, resource: 0,
   rubric: [] as { id: number; points: number }[],
-};
-
-const login = async (email: string) => {
-  const r = await api<{ token: string }>('/api/onyx/auth/login', { body: { email, password: pw } });
-  assert.equal(r.ok, true, 'login ' + email + ': ' + r.message);
-  return r.data.token;
 };
 
 test('two institutions, each with a cohort', async () => {
@@ -39,15 +33,15 @@ test('two institutions, each with a cohort', async () => {
     assert.equal(res.ok, true, 'create ' + t.slug + ': ' + res.message);
     w[key].id = Number(res.data.tenant.id);
   }
-  w.alpha.admin = await login(mail('alpha.admin'));
-  w.beta.admin = await login(mail('beta.admin'));
+  w.alpha.admin = await onyxLogin(mail('alpha.admin'), pw);
+  w.beta.admin = await onyxLogin(mail('beta.admin'), pw);
 
   const invite = async (token: string, who: string, role: string) => {
-    const r = await api<{ user: { id: number } }>('/api/onyx/members', {
+    const r = await api<{ user: { id: string } }>('/api/onyx/members', {
       token, body: { name: who, email: mail(who), role, password: pw },
     });
     assert.equal(r.ok, true, 'invite ' + who + ': ' + r.message);
-    w.ids[who] = Number(r.data.user.id);
+    w.ids[who] = r.data.user.id;
   };
   await invite(w.alpha.admin, 'faculty', 'faculty');
   await invite(w.alpha.admin, 's1', 'student');
@@ -55,11 +49,11 @@ test('two institutions, each with a cohort', async () => {
   await invite(w.alpha.admin, 'outsider', 'student');
   await invite(w.beta.admin, 'beta.student', 'student');
 
-  w.alpha.faculty = await login(mail('faculty'));
-  w.alpha.s1 = await login(mail('s1'));
-  w.alpha.s2 = await login(mail('s2'));
-  w.alpha.outsider = await login(mail('outsider'));
-  w.beta.student = await login(mail('beta.student'));
+  w.alpha.faculty = await onyxLogin(mail('faculty'), pw);
+  w.alpha.s1 = await onyxLogin(mail('s1'), pw);
+  w.alpha.s2 = await onyxLogin(mail('s2'), pw);
+  w.alpha.outsider = await onyxLogin(mail('outsider'), pw);
+  w.beta.student = await onyxLogin(mail('beta.student'), pw);
 });
 
 // ---------------------------------------------------------------------------
@@ -290,13 +284,13 @@ test('LRN-03b the QR code rotates, and only the current one is accepted', async 
   assert.equal((await api('/api/onyx/attendance/' + w.session + '/check-in',
     { token: w.alpha.s1, body: { code: 'DEADBEEF' } })).status, 422, 'a wrong code was accepted');
 
-  const marked = await api<{ status: string; method: string; marked_by: number }>(
+  const marked = await api<{ status: string; method: string; marked_by: string }>(
     '/api/onyx/attendance/' + w.session + '/check-in',
     { token: w.alpha.s1, body: { code: code.data.code } });
   assert.equal(marked.ok, true, marked.message);
   assert.equal(marked.data.method, 'qr');
   // For QR the actor is the learner: that is what makes it a record.
-  assert.equal(Number(marked.data.marked_by), w.ids.s1);
+  assert.equal(marked.data.marked_by, w.ids.s1);
 
   // A second scan is refused. There is no user_id parameter at all, so marking
   // somebody else is not something the endpoint can express.
@@ -339,7 +333,7 @@ test('LRN-03a/c the roster is marked and the percentages follow', async () => {
 
   const analytics = await api<{
     sessions: number;
-    learners: { user_id: number; attended: number; percent: number; below_threshold: boolean }[];
+    learners: { user_id: string; attended: number; percent: number; below_threshold: boolean }[];
     cohort: { below: number };
   }>('/api/onyx/courses/' + w.course + '/attendance/analytics', { token: w.alpha.faculty });
   assert.equal(analytics.data.sessions, 2, analytics.message);
@@ -352,7 +346,7 @@ test('LRN-03a/c the roster is marked and the percentages follow', async () => {
   assert.equal(s2.percent, 0, JSON.stringify(s2));
   assert.equal(analytics.data.cohort.below, 2);
 
-  const rows = await api<{ user_id: number; status: string }[]>(
+  const rows = await api<{ user_id: string; status: string }[]>(
     '/api/onyx/courses/' + w.course + '/attendance/export', { token: w.alpha.faculty });
   assert.equal(rows.data.length, 4, 'two learners, two sessions');
   assert.equal(rows.data.filter((r) => r.status === 'absent').length, 3);
@@ -431,7 +425,7 @@ test('LRN-04b work is submitted, graded by rubric, and returned', async () => {
   assert.equal(submitted.ok, true, submitted.message);
   assert.equal(submitted.data.is_late, 0);
 
-  const queue = await api<{ submissions: { id: number; user_id: number }[] }>(
+  const queue = await api<{ submissions: { id: number; user_id: string }[] }>(
     '/api/onyx/assignments/' + w.assignment, { token: w.alpha.faculty });
   assert.equal(queue.data.submissions.length, 1, 'nothing reached the marking queue');
   w.submission = Number(queue.data.submissions[0]!.id);
@@ -601,7 +595,7 @@ test('RLS confines the O02 tables at the database, not just at the API', async (
   const { data: progress } = await alpha.from('onyx_lesson_progress').select('user_id, tenant_id');
   for (const p of progress!) {
     assert.equal(Number(p.tenant_id), w.alpha.id);
-    assert.equal(Number(p.user_id), w.ids.s1);
+    assert.equal(p.user_id, w.ids.s1);
   }
   const { data: others } = await onyxTenantClient(w.alpha.s2)
     .from('onyx_lesson_progress').select('id');

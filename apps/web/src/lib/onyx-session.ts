@@ -11,6 +11,17 @@ import { redirect } from 'next/navigation';
  * The cookie is deliberately NOT the port's `onyx_session`. Two products share
  * this origin in development, and a session for one must never be mistaken for
  * a session in the other.
+ *
+ * Since docs/ADR-011-supabase-auth-migration.md, the token is Supabase
+ * Auth-issued, not signed by this app -- and Supabase Auth sessions come in
+ * pairs (a short-lived access token, a refresh token to mint the next one),
+ * so the cookie now holds both as JSON rather than a bare token string.
+ * Nothing here uses the refresh token to auto-refresh mid-render: Next only
+ * allows writing cookies from a Server Action or Route Handler, not during a
+ * page's render, so a session's lifetime is still bounded by the access
+ * token's TTL, same as before this migration -- only `/api/onyx/switch`
+ * (a Route Handler) reads the refresh token, to mint a session scoped to the
+ * newly chosen tenant.
  */
 export const ONYX_COOKIE = 'onyx_tenant_session';
 
@@ -18,7 +29,7 @@ export type Role =
   | 'student' | 'faculty' | 'exams' | 'placement' | 'employer' | 'admin' | 'guardian';
 
 export interface OnyxClaims {
-  user_id: number;
+  user_id: string;
   tenant_id: number;
   tenant_role: Role;
   email: string;
@@ -33,7 +44,7 @@ export interface Tenant {
 }
 
 export interface Me {
-  user_id: number;
+  user_id: string;
   /** Null for an account somehow missing a name row -- email is the fallback. */
   name: string | null;
   email: string;
@@ -42,9 +53,15 @@ export interface Me {
   memberships: { tenant: Tenant; role: Role }[];
 }
 
+export interface OnyxSessionCookie {
+  token: string;
+  refresh_token: string;
+  expires_at: number;
+}
+
 const API = process.env.API_URL ?? 'http://127.0.0.1:4000';
 
-function decode(token: string): OnyxClaims | null {
+function decodeClaims(token: string): OnyxClaims | null {
   try {
     const claims = JSON.parse(
       Buffer.from(token.split('.')[1] ?? '', 'base64url').toString()) as OnyxClaims;
@@ -58,13 +75,29 @@ function decode(token: string): OnyxClaims | null {
   }
 }
 
+async function readCookie(): Promise<OnyxSessionCookie | null> {
+  const raw = (await cookies()).get(ONYX_COOKIE)?.value;
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as OnyxSessionCookie;
+    return parsed.token ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getOnyxToken(): Promise<string | null> {
-  return (await cookies()).get(ONYX_COOKIE)?.value ?? null;
+  return (await readCookie())?.token ?? null;
+}
+
+/** Only /api/onyx/switch (a Route Handler) needs this -- see the module comment. */
+export async function getOnyxRefreshToken(): Promise<string | null> {
+  return (await readCookie())?.refresh_token ?? null;
 }
 
 export async function getOnyxSession(): Promise<OnyxClaims | null> {
   const token = await getOnyxToken();
-  return token ? decode(token) : null;
+  return token ? decodeClaims(token) : null;
 }
 
 export async function onyxApi<T>(path: string, init?: RequestInit): Promise<T> {

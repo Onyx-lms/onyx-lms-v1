@@ -99,7 +99,7 @@ export class EngageService {
    * count. Opening a page does not -- a streak that rewards logging in is a
    * streak about logging in.
    */
-  async #activeDays(tenantId: number, userId: number): Promise<Set<string>> {
+  async #activeDays(tenantId: number, userId: string): Promise<Set<string>> {
     const [lessons, assignments, code] = await Promise.all([
       this.#db.from('onyx_lesson_progress').select('completed_at')
         .eq('tenant_id', tenantId).eq('user_id', userId).not('completed_at', 'is', null),
@@ -149,7 +149,7 @@ export class EngageService {
     return { current, longest, active_today: activeToday };
   }
 
-  async summary(tenantId: number, userId: number): Promise<ProgressSummary> {
+  async summary(tenantId: number, userId: string): Promise<ProgressSummary> {
     const enrolments = await this.#academics.enrollmentsFor(tenantId, userId);
     const courseIds = enrolments.map((e) => Number(e.course_id));
     const now = this.#now();
@@ -317,13 +317,13 @@ export class EngageService {
   // -------------------------------------------------------------------------
 
   /** Staff read any course; everyone else has to be in it. */
-  async #assertCanRead(tenantId: number, courseId: number, userId: number, role: Role) {
+  async #assertCanRead(tenantId: number, courseId: number, userId: string, role: Role) {
     await this.#academics.course(tenantId, courseId);
     if (isStaff(role)) return;
     await this.#academics.assertEnrolled(tenantId, courseId, userId);
   }
 
-  async discussions(tenantId: number, courseId: number, viewer: { userId: number; role: Role },
+  async discussions(tenantId: number, courseId: number, viewer: { userId: string; role: Role },
     filters: { status?: DiscussionStatus; q?: string } = {}) {
     await this.#assertCanRead(tenantId, courseId, viewer.userId, viewer.role);
 
@@ -342,7 +342,7 @@ export class EngageService {
     return data ?? [];
   }
 
-  async discussion(tenantId: number, id: number, viewer: { userId: number; role: Role }) {
+  async discussion(tenantId: number, id: number, viewer: { userId: string; role: Role }) {
     const { data } = await this.#db.from('onyx_discussions').select(DISCUSSION_COLUMNS)
       .eq('tenant_id', tenantId).eq('id', id).maybeSingle();
     if (!data) throw new HttpError(404, 'No such discussion.');
@@ -353,18 +353,21 @@ export class EngageService {
       .order('created_at', { ascending: true });
 
     const people = await this.#names(tenantId, [
-      Number(data.author_id),
-      ...(posts ?? []).map((p) => Number(p.author_id)),
+      String(data.author_id),
+      ...(posts ?? []).map((p) => String(p.author_id)),
     ]);
 
     return {
       ...data,
-      author: people.get(Number(data.author_id)) ?? null,
+      author: people.get(String(data.author_id)) ?? null,
       posts: (posts ?? []).map((p) => ({
         ...p,
-        author: people.get(Number(p.author_id)) ?? null,
+        author: people.get(String(p.author_id)) ?? null,
         vote_count: Array.isArray(p.votes) ? p.votes.length : 0,
-        voted: Array.isArray(p.votes) ? p.votes.includes(viewer.userId) : false,
+        // `votes` holds the uuid of everyone who voted -- mapped through
+        // String() because the column's declared type has not caught up
+        // with the auth migration yet, not because the values are numeric.
+        voted: Array.isArray(p.votes) ? p.votes.map(String).includes(viewer.userId) : false,
         // The voter list is how one-vote-per-person is enforced, not something
         // the room is entitled to read.
         votes: undefined,
@@ -372,16 +375,16 @@ export class EngageService {
     };
   }
 
-  async #names(tenantId: number, ids: number[]) {
+  async #names(tenantId: number, ids: string[]) {
     const unique = [...new Set(ids.filter(Boolean))];
-    if (!unique.length) return new Map<number, { id: number; name: string }>();
+    if (!unique.length) return new Map<string, { id: string; name: string }>();
     const { data } = await this.#db.from('onyx_users').select('id, name').in('id', unique);
     void tenantId;
-    return new Map((data ?? []).map((u) => [Number(u.id), { id: Number(u.id), name: String(u.name) }]));
+    return new Map((data ?? []).map((u) => [String(u.id), { id: String(u.id), name: String(u.name) }]));
   }
 
-  async ask(tenantId: number, courseId: number, author: { userId: number; role: Role }, input: {
-    title: string; body: string; lesson_id?: number | null; mentions?: number[];
+  async ask(tenantId: number, courseId: number, author: { userId: string; role: Role }, input: {
+    title: string; body: string; lesson_id?: number | null; mentions?: string[];
   }) {
     await this.#assertCanRead(tenantId, courseId, author.userId, author.role);
     const title = input.title.trim();
@@ -412,8 +415,8 @@ export class EngageService {
     return data;
   }
 
-  async reply(tenantId: number, discussionId: number, author: { userId: number; role: Role },
-    input: { body: string; parent_id?: number | null; mentions?: number[] }) {
+  async reply(tenantId: number, discussionId: number, author: { userId: string; role: Role },
+    input: { body: string; parent_id?: number | null; mentions?: string[] }) {
     const thread = await this.#thread(tenantId, discussionId);
     await this.#assertCanRead(tenantId, Number(thread.course_id), author.userId, author.role);
     if (thread.status === 'closed') {
@@ -465,7 +468,7 @@ export class EngageService {
    * a second click is far more often a mistake than an attempt to cheat, and
    * either way it cannot inflate the number.
    */
-  async vote(tenantId: number, postId: number, userId: number, role: Role) {
+  async vote(tenantId: number, postId: number, userId: string, role: Role) {
     const { data: post } = await this.#db.from('onyx_discussion_posts')
       .select('id, discussion_id, author_id, votes')
       .eq('tenant_id', tenantId).eq('id', postId).maybeSingle();
@@ -474,7 +477,7 @@ export class EngageService {
     const thread = await this.#thread(tenantId, Number(post.discussion_id));
     await this.#assertCanRead(tenantId, Number(thread.course_id), userId, role);
 
-    const votes: number[] = Array.isArray(post.votes) ? post.votes.map(Number) : [];
+    const votes: string[] = Array.isArray(post.votes) ? post.votes.map(String) : [];
     const already = votes.includes(userId);
     const next = already ? votes.filter((v) => v !== userId) : [...votes, userId];
 
@@ -493,9 +496,9 @@ export class EngageService {
    * person who asked is still stuck.
    */
   async resolve(tenantId: number, discussionId: number, postId: number,
-    actor: { userId: number; role: Role }) {
+    actor: { userId: string; role: Role }) {
     const thread = await this.#thread(tenantId, discussionId);
-    if (Number(thread.author_id) !== actor.userId && !isStaff(actor.role)) {
+    if (String(thread.author_id) !== actor.userId && !isStaff(actor.role)) {
       throw new HttpError(403, 'Only the person who asked, or staff, can mark this answered.');
     }
 
@@ -531,9 +534,9 @@ export class EngageService {
   }
 
   /** Reopening is deliberately as easy as resolving: being wrong is common. */
-  async reopen(tenantId: number, discussionId: number, actor: { userId: number; role: Role }) {
+  async reopen(tenantId: number, discussionId: number, actor: { userId: string; role: Role }) {
     const thread = await this.#thread(tenantId, discussionId);
-    if (Number(thread.author_id) !== actor.userId && !isStaff(actor.role)) {
+    if (String(thread.author_id) !== actor.userId && !isStaff(actor.role)) {
       throw new HttpError(403, 'Only the person who asked, or staff, can reopen this.');
     }
     await this.#db.from('onyx_discussion_posts').update({ is_answer: false })
@@ -553,8 +556,8 @@ export class EngageService {
   }
 
   async #mention(tenantId: number, discussionId: number, postId: number | null,
-    userIds: number[], by: number) {
-    const targets = [...new Set(userIds.map(Number))].filter((id) => id && id !== by);
+    userIds: string[], by: string) {
+    const targets = [...new Set(userIds.map(String))].filter((id) => id && id !== by);
     if (!targets.length) return;
 
     // A mention of somebody outside the institution is silently dropped rather
@@ -562,7 +565,7 @@ export class EngageService {
     // the message over.
     const { data: members } = await this.#db.from('onyx_memberships').select('user_id')
       .eq('tenant_id', tenantId).eq('status', 1).in('user_id', targets);
-    const inside = new Set((members ?? []).map((m) => Number(m.user_id)));
+    const inside = new Set((members ?? []).map((m) => String(m.user_id)));
 
     const rows = targets.filter((id) => inside.has(id)).map((id) => ({
       tenant_id: tenantId, discussion_id: discussionId, post_id: postId, user_id: id,
@@ -579,7 +582,7 @@ export class EngageService {
    * endpoint had no screen for exactly as long as that was all it returned. One
    * extra query for the whole page rather than one per mention.
    */
-  async mentions(tenantId: number, userId: number) {
+  async mentions(tenantId: number, userId: string) {
     const { data } = await this.#db.from('onyx_discussion_mentions')
       .select('id, discussion_id, post_id, read_at, created_at')
       .eq('tenant_id', tenantId).eq('user_id', userId)
@@ -612,7 +615,7 @@ export class EngageService {
     });
   }
 
-  async readMentions(tenantId: number, userId: number) {
+  async readMentions(tenantId: number, userId: string) {
     await this.#db.from('onyx_discussion_mentions')
       .update({ read_at: new Date(this.#now()).toISOString() })
       .eq('tenant_id', tenantId).eq('user_id', userId).is('read_at', null);

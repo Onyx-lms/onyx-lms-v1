@@ -61,7 +61,7 @@ export type NotificationKind =
   | 'assessment.integrity_review';
 
 export interface NotificationInput {
-  userId: number;
+  userId: string;
   kind: NotificationKind;
   title: string;
   body?: string | null;
@@ -156,7 +156,7 @@ export class NotifyService {
   }
 
   /** Somebody's own inbox. Newest first, and never anyone else's. */
-  async inbox(tenantId: number, userId: number, opts: { limit?: number } = {}) {
+  async inbox(tenantId: number, userId: string, opts: { limit?: number } = {}) {
     const { data } = await this.#db.from('onyx_notifications')
       .select(COLUMNS)
       .eq('tenant_id', tenantId).eq('user_id', userId)
@@ -166,7 +166,7 @@ export class NotifyService {
   }
 
   /** What the header badge asks for on every page load, so it stays cheap. */
-  async unreadCount(tenantId: number, userId: number): Promise<number> {
+  async unreadCount(tenantId: number, userId: string): Promise<number> {
     const { data } = await this.#db.from('onyx_notifications')
       .select('id')
       .eq('tenant_id', tenantId).eq('user_id', userId).is('read_at', null);
@@ -174,7 +174,7 @@ export class NotifyService {
   }
 
   /** Marks one, or everything. Only ever the caller's own. */
-  async markRead(tenantId: number, userId: number, id?: number) {
+  async markRead(tenantId: number, userId: string, id?: number) {
     const at = new Date(this.#now()).toISOString();
     let q = this.#db.from('onyx_notifications')
       .update({ read_at: at })

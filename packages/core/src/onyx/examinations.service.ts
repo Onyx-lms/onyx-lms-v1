@@ -69,7 +69,7 @@ export function gradeFor(marks: number, maxMarks: number): { grade: string; poin
  * building the string by hand is.
  */
 export function canonicalise(payload: {
-  user_id: number; program_id: number | null;
+  user_id: string; program_id: number | null;
   lines: { exam_id: number; final_marks: number; max_marks: number; grade: string }[];
 }): string {
   const lines = [...payload.lines]
@@ -103,15 +103,15 @@ export class ExaminationsService {
    * Two exams on different courses are not a clash. Two exams whose rosters
    * intersect are, for exactly the people in the intersection.
    */
-  async #candidates(tenantId: number, courseId: number): Promise<Set<number>> {
+  async #candidates(tenantId: number, courseId: number): Promise<Set<string>> {
     // `status` is a smallint (1 = active), same as everywhere else in Onyx
     // Learn -- see academics.service.ts. It is not the string 'active'.
     const { data } = await this.#db.from('onyx_enrollments').select('user_id')
       .eq('tenant_id', tenantId).eq('course_id', courseId).eq('status', 1);
-    return new Set((data ?? []).map((e) => Number(e.user_id)));
+    return new Set((data ?? []).map((e) => String(e.user_id)));
   }
 
-  async schedule(tenantId: number, actor: { userId: number; role: Role }, input: {
+  async schedule(tenantId: number, actor: { userId: string; role: Role }, input: {
     semester_id: number; course_id: number; title: string; starts_at: string;
     duration_minutes?: number; max_marks?: number; pass_marks?: number;
     assessment_id?: number | null;
@@ -171,7 +171,7 @@ export class ExaminationsService {
    * same clash they are trying to resolve would be the check working against
    * the person using it.
    */
-  async updateExam(tenantId: number, examId: number, actor: { userId: number; role: Role },
+  async updateExam(tenantId: number, examId: number, actor: { userId: string; role: Role },
     patch: {
       title?: string; starts_at?: string | null; duration_minutes?: number;
       max_marks?: number; pass_marks?: number; status?: string;
@@ -302,7 +302,7 @@ export class ExaminationsService {
    * run it twice is that the roster changed.
    */
   async allocateSeats(tenantId: number, examId: number, hallIds: number[],
-    actor: { userId: number; role: Role }) {
+    actor: { userId: string; role: Role }) {
     if (!canRunExams(actor.role)) {
       throw new HttpError(403, 'Only the examinations office can allocate seating.');
     }
@@ -317,8 +317,10 @@ export class ExaminationsService {
       halls.push(data);
     }
 
-    const candidates = [...await this.#candidates(tenantId, Number(exam.course_id))]
-      .sort((a, b) => a - b);
+    // Sorted lexicographically now that a candidate is named by their auth
+    // uuid rather than a sequential id -- still deterministic, which is the
+    // property this needs, not numeric order.
+    const candidates = [...await this.#candidates(tenantId, Number(exam.course_id))].sort();
     if (!candidates.length) throw new HttpError(422, 'Nobody is enrolled in that course.');
 
     const seats = halls.reduce((sum, h) => sum + Number(h.capacity), 0);
@@ -327,7 +329,7 @@ export class ExaminationsService {
         + ' seats. Add another hall.');
     }
 
-    const rows: { tenant_id: number; exam_id: number; hall_id: number; user_id: number; seat_label: string }[] = [];
+    const rows: { tenant_id: number; exam_id: number; hall_id: number; user_id: string; seat_label: string }[] = [];
     let index = 0;
     for (const hall of halls) {
       const capacity = Number(hall.capacity);
@@ -364,11 +366,11 @@ export class ExaminationsService {
       .order('hall_id', { ascending: true }).order('seat_label', { ascending: true });
     const seats = data ?? [];
 
-    const names = new Map<number, string>();
+    const names = new Map<string, string>();
     if (seats.length) {
       const { data: people } = await this.#db.from('onyx_users').select('id, name')
-        .in('id', seats.map((s) => Number(s.user_id)));
-      for (const p of people ?? []) names.set(Number(p.id), String(p.name));
+        .in('id', seats.map((s) => String(s.user_id)));
+      for (const p of people ?? []) names.set(String(p.id), String(p.name));
     }
 
     const byHall = new Map<number, { hall_id: number; hall: string; seats: unknown[] }>();
@@ -377,8 +379,8 @@ export class ExaminationsService {
       if (!byHall.has(hallId)) byHall.set(hallId, { hall_id: hallId, hall: '', seats: [] });
       byHall.get(hallId)!.seats.push({
         seat_label: seat.seat_label,
-        user_id: Number(seat.user_id),
-        name: names.get(Number(seat.user_id)) ?? null,
+        user_id: String(seat.user_id),
+        name: names.get(String(seat.user_id)) ?? null,
       });
     }
 
@@ -412,7 +414,7 @@ export class ExaminationsService {
 
     const rows: (string | number)[][] = [];
     for (const hall of plan.halls) {
-      for (const seat of hall.seats as { seat_label: string; user_id: number; name: string | null }[]) {
+      for (const seat of hall.seats as { seat_label: string; user_id: string; name: string | null }[]) {
         rows.push([
           hall.hall,
           seat.seat_label,
@@ -451,7 +453,7 @@ export class ExaminationsService {
   }
 
   /** Where one candidate sits. What the learner's own page asks for. */
-  async seatFor(tenantId: number, examId: number, userId: number) {
+  async seatFor(tenantId: number, examId: number, userId: string) {
     const { data } = await this.#db.from('onyx_seat_allocations').select(SEAT_COLUMNS)
       .eq('tenant_id', tenantId).eq('exam_id', examId).eq('user_id', userId).maybeSingle();
     return data ?? null;
@@ -461,8 +463,8 @@ export class ExaminationsService {
   // CMP-02c: marks, moderation, transcripts
   // -------------------------------------------------------------------------
 
-  async enterMarks(tenantId: number, examId: number, actor: { userId: number; role: Role },
-    entries: { user_id: number; raw_marks: number }[]) {
+  async enterMarks(tenantId: number, examId: number, actor: { userId: string; role: Role },
+    entries: { user_id: string; raw_marks: number }[]) {
     if (!canRunExams(actor.role) && actor.role !== 'faculty') {
       throw new HttpError(403, 'Only faculty or the examinations office can enter marks.');
     }
@@ -470,10 +472,10 @@ export class ExaminationsService {
     const maxMarks = Number(exam.max_marks);
 
     const roster = await this.#candidates(tenantId, Number(exam.course_id));
-    const written: number[] = [];
+    const written: string[] = [];
 
     for (const entry of entries) {
-      if (!roster.has(Number(entry.user_id))) {
+      if (!roster.has(String(entry.user_id))) {
         throw new HttpError(422, 'User ' + entry.user_id + ' is not enrolled in that course.');
       }
       if (entry.raw_marks < 0 || entry.raw_marks > maxMarks) {
@@ -509,7 +511,7 @@ export class ExaminationsService {
           status: 'entered', entered_by: actor.userId,
         });
       }
-      written.push(Number(entry.user_id));
+      written.push(String(entry.user_id));
     }
 
     await this.#audit.record(
@@ -527,7 +529,7 @@ export class ExaminationsService {
    * the deliberate override, not the everyday path enterMarks() protects
    * with its "not after publish" rule.
    */
-  async updateMark(tenantId: number, markId: number, actor: { userId: number; role: Role },
+  async updateMark(tenantId: number, markId: number, actor: { userId: string; role: Role },
     patch: { raw_marks?: number; final_marks?: number }) {
     if (!canRunExams(actor.role)) {
       throw new HttpError(403, 'Only the examinations office can change a mark.');
@@ -564,7 +566,7 @@ export class ExaminationsService {
    * moderated mark is still clamped to the paper's range: a +10 on a 95 gives
    * 100, not 105.
    */
-  async moderate(tenantId: number, examId: number, actor: { userId: number; role: Role },
+  async moderate(tenantId: number, examId: number, actor: { userId: string; role: Role },
     delta: number, reason: string) {
     if (!canRunExams(actor.role) && actor.role !== 'faculty') {
       throw new HttpError(403, 'Only the examinations office or the course’s own faculty '
@@ -601,7 +603,7 @@ export class ExaminationsService {
     return { moderated: marks.length, delta };
   }
 
-  async publishMarks(tenantId: number, examId: number, actor: { userId: number; role: Role }) {
+  async publishMarks(tenantId: number, examId: number, actor: { userId: string; role: Role }) {
     if (!canRunExams(actor.role) && actor.role !== 'faculty') {
       throw new HttpError(403, 'Only the examinations office or the course’s own faculty '
         + 'can publish results.');
@@ -633,7 +635,7 @@ export class ExaminationsService {
    * everything, because somebody has to be able to look at a paper before it
    * goes out.
    */
-  async marksFor(tenantId: number, userId: number, viewer: { userId: number; role: Role },
+  async marksFor(tenantId: number, userId: string, viewer: { userId: string; role: Role },
     filters: { exam_id?: number } = {}) {
     const own = viewer.userId === userId;
     if (!own && !canRunExams(viewer.role) && viewer.role !== 'faculty') {
@@ -665,7 +667,7 @@ export class ExaminationsService {
    * Only published marks go on it: a transcript built from a mark still under
    * moderation is a document that will contradict itself next week.
    */
-  async issueTranscript(tenantId: number, userId: number, actor: { userId: number; role: Role },
+  async issueTranscript(tenantId: number, userId: string, actor: { userId: string; role: Role },
     opts: { program_id?: number | null } = {}) {
     if (!canRunExams(actor.role)) {
       throw new HttpError(403, 'Only the examinations office can issue a transcript.');
@@ -738,11 +740,11 @@ export class ExaminationsService {
       .eq('tenant_id', tenantId).eq('serial', serial).maybeSingle();
     if (!data) throw new HttpError(404, 'No such transcript.');
 
-    const stored = data.payload as { user_id: number; program_id: number | null; lines: { exam_id: number; final_marks: number; max_marks: number; grade: string }[] };
+    const stored = data.payload as { user_id: string; program_id: number | null; lines: { exam_id: number; final_marks: number; max_marks: number; grade: string }[] };
     const intact = checksumOf(canonicalise(stored)) === data.checksum;
 
     const { data: marks } = await this.#db.from('onyx_exam_marks').select(MARK_COLUMNS)
-      .eq('tenant_id', tenantId).eq('user_id', Number(data.user_id)).eq('status', 'published')
+      .eq('tenant_id', tenantId).eq('user_id', String(data.user_id)).eq('status', 'published')
       .order('exam_id', { ascending: true });
 
     const liveLines: { exam_id: number; final_marks: number; max_marks: number; grade: string }[] = [];
@@ -756,7 +758,7 @@ export class ExaminationsService {
       });
     }
     const live = checksumOf(canonicalise({
-      user_id: Number(data.user_id),
+      user_id: String(data.user_id),
       program_id: data.program_id === null ? null : Number(data.program_id),
       lines: liveLines,
     }));
@@ -801,7 +803,7 @@ export class ExaminationsService {
       .eq('serial', trimmed).maybeSingle();
     if (!data) return { found: false as const };
 
-    const stored = data.payload as { user_id: number; program_id: number | null; lines: { exam_id: number; final_marks: number; max_marks: number; grade: string }[] };
+    const stored = data.payload as { user_id: string; program_id: number | null; lines: { exam_id: number; final_marks: number; max_marks: number; grade: string }[] };
     const intact = checksumOf(canonicalise(stored)) === data.checksum;
 
     const [{ data: tenant }, { data: holder }] = await Promise.all([
@@ -817,7 +819,7 @@ export class ExaminationsService {
     // rather than trusted from the caller, which is exactly why this can be
     // public at all: the tenant comes from what was found, never from input.
     const { data: marks } = await this.#db.from('onyx_exam_marks').select(MARK_COLUMNS)
-      .eq('tenant_id', data.tenant_id).eq('user_id', Number(data.user_id)).eq('status', 'published')
+      .eq('tenant_id', data.tenant_id).eq('user_id', String(data.user_id)).eq('status', 'published')
       .order('exam_id', { ascending: true });
     const liveLines: { exam_id: number; final_marks: number; max_marks: number; grade: string }[] = [];
     for (const mark of marks ?? []) {
@@ -828,7 +830,7 @@ export class ExaminationsService {
       });
     }
     const live = checksumOf(canonicalise({
-      user_id: Number(data.user_id),
+      user_id: String(data.user_id),
       program_id: data.program_id === null ? null : Number(data.program_id),
       lines: liveLines,
     }));
@@ -848,7 +850,7 @@ export class ExaminationsService {
     };
   }
 
-  async transcripts(tenantId: number, userId: number, viewer: { userId: number; role: Role }) {
+  async transcripts(tenantId: number, userId: string, viewer: { userId: string; role: Role }) {
     if (viewer.userId !== userId && !canRunExams(viewer.role)) {
       throw new HttpError(403, 'Those are not your transcripts.');
     }
@@ -859,7 +861,7 @@ export class ExaminationsService {
   }
 
   /** Marks for one person, but only the published ones. The guardian path. */
-  async publishedMarks(tenantId: number, userId: number) {
+  async publishedMarks(tenantId: number, userId: string) {
     const { data } = await this.#db.from('onyx_exam_marks')
       .select(MARK_COLUMNS)
       .eq('tenant_id', tenantId).eq('user_id', userId).eq('status', 'published')

@@ -614,7 +614,7 @@ async function FacultyDashboard({ me }: { me: Me }) {
   const details = await Promise.all(catalog.slice(0, SCAN).map((c) =>
     onyxApiSafe<CourseDetail>('/api/onyx/courses/' + c.id)));
   const taught = details.filter((d): d is CourseDetail =>
-    Boolean(d?.faculty?.some((f) => Number(f.user_id) === me.user_id)));
+    Boolean(d?.faculty?.some((f) => String(f.user_id) === me.user_id)));
 
   // Everything a course can tell its teacher, per course, in parallel.
   const packs = await Promise.all(taught.slice(0, DEEP).map(async (course) => {
@@ -740,7 +740,7 @@ async function FacultyDashboard({ me }: { me: Me }) {
     n + (minutesOf(s.ends_at) - minutesOf(s.starts_at)), 0);
   const daysTaught = new Set(slots.map((s) => s.day_of_week)).size;
 
-  const myName = (members ?? []).find((m) => Number(m.user_id) === me.user_id)?.user?.name ?? null;
+  const myName = (members ?? []).find((m) => String(m.user_id) === me.user_id)?.user?.name ?? null;
 
   /* The one thing on the page, chosen rather than stacked: marking first
      because it blocks a learner, then questions, then an open register. */

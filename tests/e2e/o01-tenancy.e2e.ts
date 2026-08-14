@@ -11,7 +11,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, withDb, RUN, env, createTenant } from './harness.ts';
+import { api, withDb, RUN, env, createTenant, onyxLogin } from './harness.ts';
 
 const A = { name: 'Alpha University ' + RUN, slug: 'alpha-' + RUN };
 const B = { name: 'Beta Institute ' + RUN, slug: 'beta-' + RUN };
@@ -30,13 +30,6 @@ const world = {
   studentToken: '',
 };
 
-const login = async (email: string, tenantId?: number) => {
-  const res = await api<{ token: string }>('/api/onyx/auth/login',
-    { body: { email, password: pw, tenant_id: tenantId } });
-  assert.equal(res.ok, true, 'login(' + email + ') failed: ' + res.message);
-  return res.data.token;
-};
-
 test('two institutions can be created, each with its own administrator', async () => {
   for (const [key, t] of [['alpha', A], ['beta', B]] as const) {
     const res = await createTenant({
@@ -50,8 +43,8 @@ test('two institutions can be created, each with its own administrator', async (
   }
   assert.notEqual(world.alpha.id, world.beta.id);
 
-  world.alpha.token = await login(world.alpha.adminEmail);
-  world.beta.token = await login(world.beta.adminEmail);
+  world.alpha.token = await onyxLogin(world.alpha.adminEmail, pw);
+  world.beta.token = await onyxLogin(world.beta.adminEmail, pw);
 });
 
 /**
@@ -144,7 +137,7 @@ test('each institution builds its own roster', async () => {
   await add(world.alpha.token, 'shared', 'faculty', world.shared.email);
   await add(world.beta.token, 'shared', 'student', world.shared.email);
 
-  world.studentToken = await login(mail('alpha.student'));
+  world.studentToken = await onyxLogin(mail('alpha.student'), pw);
 });
 
 test('an administrator sees their own roster and nobody else', async () => {
@@ -169,8 +162,8 @@ test('an administrator sees their own roster and nobody else', async () => {
 });
 
 test('the shared person is faculty in one institution and a student in the other', async () => {
-  world.shared.alphaToken = await login(world.shared.email, world.alpha.id);
-  world.shared.betaToken = await login(world.shared.email, world.beta.id);
+  world.shared.alphaToken = await onyxLogin(world.shared.email, pw, world.alpha.id);
+  world.shared.betaToken = await onyxLogin(world.shared.email, pw, world.beta.id);
 
   const inAlpha = await api('/api/onyx/me', { token: world.shared.alphaToken });
   const inBeta = await api('/api/onyx/me', { token: world.shared.betaToken });
@@ -184,8 +177,17 @@ test('the shared person is faculty in one institution and a student in the other
 });
 
 test('switching institutions works only between the ones you belong to', async () => {
+  // Switching needs the caller's own refresh token, not just their access
+  // token (see tenancy.service.ts's switchTenant()) -- onyxLogin() only
+  // hands back the access token, so this signs in directly for the one
+  // that also needs the pair.
+  const signedIn = await api<{ token: string; refresh_token: string }>(
+    '/api/onyx/auth/login', { body: { email: world.shared.email, password: pw, tenant_id: world.alpha.id } });
+  assert.equal(signedIn.ok, true, signedIn.message);
+
   const switched = await api<{ token: string }>('/api/onyx/auth/switch', {
-    token: world.shared.alphaToken, body: { tenant_id: world.beta.id },
+    token: signedIn.data.token,
+    body: { tenant_id: world.beta.id, refresh_token: signedIn.data.refresh_token },
   });
   assert.equal(switched.ok, true, switched.message);
   assert.equal(switched.data.role, 'student');
@@ -197,8 +199,11 @@ test('switching institutions works only between the ones you belong to', async (
 
   // Alpha's admin belongs to Alpha only, so Beta is not a place they can go --
   // even though Beta plainly exists and its id is easy to guess.
+  const adminSignedIn = await api<{ token: string; refresh_token: string }>(
+    '/api/onyx/auth/login', { body: { email: world.alpha.adminEmail, password: pw, tenant_id: world.alpha.id } });
   const denied = await api('/api/onyx/auth/switch', {
-    token: world.alpha.token, body: { tenant_id: world.beta.id },
+    token: adminSignedIn.data.token,
+    body: { tenant_id: world.beta.id, refresh_token: adminSignedIn.data.refresh_token },
   });
   assert.equal(denied.status, 403, 'an admin switched into an institution they do not belong to');
 });

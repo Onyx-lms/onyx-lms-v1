@@ -16,7 +16,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, createTenant, withDb, RUN, env } from './harness.ts';
+import { api, createTenant, withDb, RUN, env, onyxLogin } from './harness.ts';
 
 const pw = 'OnyxTest#2026';
 const mail = (who: string) => 'cmp.' + who + '.' + RUN + '@onyx.test';
@@ -26,15 +26,9 @@ const B = { name: 'Rival Campus ' + RUN, slug: 'campus-b-' + RUN };
 const w = {
   alpha: { id: 0, admin: '', faculty: '', exams: '', s1: '', s2: '', guardian: '' },
   beta: { id: 0, admin: '', s1: '' },
-  ids: {} as Record<string, number>,
+  ids: {} as Record<string, string>,
   course: 0, semester: 0, batch: 0, room: 0, exam: 0, hall: 0,
   head: 0, structure: 0, invoice: 0, guardianLink: 0,
-};
-
-const login = async (email: string) => {
-  const r = await api<{ token: string }>('/api/onyx/auth/login', { body: { email, password: pw } });
-  assert.equal(r.ok, true, 'login ' + email + ': ' + r.message);
-  return r.data.token;
 };
 
 test('two institutions, a course, a term, and the people who run it', async () => {
@@ -46,30 +40,30 @@ test('two institutions, a course, a term, and the people who run it', async () =
     assert.equal(res.ok, true, res.message);
     w[key].id = Number(res.data.tenant.id);
   }
-  w.alpha.admin = await login(mail('alpha.admin'));
-  w.beta.admin = await login(mail('beta.admin'));
+  w.alpha.admin = await onyxLogin(mail('alpha.admin'), pw);
+  w.beta.admin = await onyxLogin(mail('beta.admin'), pw);
 
   for (const [who, role] of [
     ['faculty', 'faculty'], ['exams', 'exams'], ['s1', 'student'], ['s2', 'student'],
     ['guardian', 'guardian'],
   ] as const) {
-    const r = await api<{ user: { id: number } }>('/api/onyx/members', {
+    const r = await api<{ user: { id: string } }>('/api/onyx/members', {
       token: w.alpha.admin, body: { name: who, email: mail(who), role, password: pw },
     });
     assert.equal(r.ok, true, who + ': ' + r.message);
-    w.ids[who] = Number(r.data.user.id);
+    w.ids[who] = r.data.user.id;
   }
-  w.alpha.faculty = await login(mail('faculty'));
-  w.alpha.exams = await login(mail('exams'));
-  w.alpha.s1 = await login(mail('s1'));
-  w.alpha.s2 = await login(mail('s2'));
-  w.alpha.guardian = await login(mail('guardian'));
+  w.alpha.faculty = await onyxLogin(mail('faculty'), pw);
+  w.alpha.exams = await onyxLogin(mail('exams'), pw);
+  w.alpha.s1 = await onyxLogin(mail('s1'), pw);
+  w.alpha.s2 = await onyxLogin(mail('s2'), pw);
+  w.alpha.guardian = await onyxLogin(mail('guardian'), pw);
 
-  const bs1 = await api<{ user: { id: number } }>('/api/onyx/members', {
+  const bs1 = await api<{ user: { id: string } }>('/api/onyx/members', {
     token: w.beta.admin, body: { name: 'b-s1', email: mail('b.s1'), role: 'student', password: pw },
   });
   assert.equal(bs1.ok, true, bs1.message);
-  w.beta.s1 = await login(mail('b.s1'));
+  w.beta.s1 = await onyxLogin(mail('b.s1'), pw);
 
   const program = await api<{ id: number }>('/api/onyx/programs', {
     token: w.alpha.admin, body: { name: 'Computer Science', code: 'CS' },
@@ -183,7 +177,7 @@ test('CMP-02b seating: every candidate seated once, and a learner sees only thei
 
   const mine = await api('/api/onyx/exams/' + w.exam + '/seat', { token: w.alpha.s1 });
   assert.equal(mine.ok, true, mine.message);
-  assert.equal(Number(mine.data.user_id), w.ids.s1);
+  assert.equal(mine.data.user_id, w.ids.s1);
 });
 
 test('CMP-02c marks stay invisible to a learner until published, then reconcile with the transcript', async () => {
@@ -316,10 +310,10 @@ test('RLS: a learner reading exam marks or invoices directly through PostgREST s
   const s2 = onyxTenantClient(w.alpha.s2);
 
   const { data: marks } = await s2.from('onyx_exam_marks').select('user_id');
-  for (const m of marks ?? []) assert.equal(Number(m.user_id), w.ids.s2);
+  for (const m of marks ?? []) assert.equal(m.user_id, w.ids.s2);
 
   const { data: invoices } = await s2.from('onyx_invoices').select('user_id');
-  for (const i of invoices ?? []) assert.equal(Number(i.user_id), w.ids.s2);
+  for (const i of invoices ?? []) assert.equal(i.user_id, w.ids.s2);
 
   const beta = onyxTenantClient(w.beta.s1);
   const { data: alphaRooms } = await beta.from('onyx_rooms').select('id');

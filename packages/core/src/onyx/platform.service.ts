@@ -12,10 +12,11 @@
  * claim for RLS to check a platform admin's token against. See 0009_platform
  * for why a permissive policy here would be the wrong shape of trust.
  */
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Role } from '@onyx/types';
 import type { OnyxDb } from './db.ts';
+import { onyxAuthAdmin, onyxAuthClient } from './db.ts';
 import { HttpError } from '../http/errors.ts';
-import { hashPassword, verifyPassword } from '../auth/password.ts';
 import { slugify } from '../authoring/slug.ts';
 import { ROLES } from './tenancy.service.ts';
 import { gradeFor } from './examinations.service.ts';
@@ -56,7 +57,12 @@ interface PersonRow {
 
 export class PlatformService {
   #db: OnyxDb;
-  constructor(db: OnyxDb) { this.#db = db; }
+  #authClientOverride: SupabaseClient | undefined;
+  constructor(db: OnyxDb, authClient?: SupabaseClient) {
+    this.#db = db;
+    this.#authClientOverride = authClient;
+  }
+  get #authClient(): SupabaseClient { return this.#authClientOverride ?? onyxAuthClient(); }
 
   // -------------------------------------------------------------------------
   // Who gets in
@@ -65,30 +71,37 @@ export class PlatformService {
   /**
    * Signing in as a platform admin uses the same email and password as any
    * other Onyx account -- there is one identity per person, same as
-   * tenancy.service.ts's authenticate(). What differs is what it checks
+   * tenancy.service.ts's signIn(). What differs is what it checks
    * afterwards: not "do you belong to an institution" but "are you listed in
-   * onyx_platform_admins", and what it issues: a token with no tenant_id.
+   * onyx_platform_admins", and what it carries: no tenant_id at all -- the
+   * Custom Access Token Hook checks onyx_platform_admins first and stamps
+   * `platform: true` instead (0015_auth_claims_hook.sql), so there is
+   * nothing this method needs to point at a tenant the way tenancy
+   * service's signIn() does.
    */
   async authenticate(email: string, password: string) {
+    const { data: signed, error: signError } = await this.#authClient.auth.signInWithPassword({
+      email: email.trim().toLowerCase(), password,
+    });
+    // The same message either way: which emails exist, and which of those
+    // are platform admins, is not public.
+    if (signError || !signed.user || !signed.session) throw new HttpError(401, 'Those details do not match.');
+
     const { data: user } = await this.#db.from('onyx_users')
-      .select('id, email, name, password, status')
-      .eq('email', email.trim().toLowerCase()).maybeSingle();
-    // The same message either way: which emails exist, and which of those are
-    // platform admins, is not public.
-    if (!user || !user.password) throw new HttpError(401, 'Those details do not match.');
-    if (!(await verifyPassword(password, user.password))) {
-      throw new HttpError(401, 'Those details do not match.');
-    }
-    if (user.status !== 1) throw new HttpError(403, 'That account is not active.');
+      .select('id, email, name, status').eq('id', signed.user.id).maybeSingle();
+    if (!user || user.status !== 1) throw new HttpError(403, 'That account is not active.');
 
     const { data: grant } = await this.#db.from('onyx_platform_admins')
-      .select(ADMIN_COLUMNS).eq('user_id', Number(user.id)).maybeSingle();
+      .select(ADMIN_COLUMNS).eq('user_id', user.id).maybeSingle();
     if (!grant) throw new HttpError(401, 'Those details do not match.');
 
-    return { user: { id: user.id, email: user.email, name: user.name } };
+    // No tenant pointer to set and no refresh needed: the hook reads
+    // onyx_platform_admins directly, so this first-minted session already
+    // carries `platform: true`.
+    return { session: signed.session, user: { id: user.id, email: user.email, name: user.name } };
   }
 
-  async isPlatformAdmin(userId: number): Promise<boolean> {
+  async isPlatformAdmin(userId: string): Promise<boolean> {
     const { data } = await this.#db.from('onyx_platform_admins')
       .select('id').eq('user_id', userId).maybeSingle();
     return Boolean(data);
@@ -100,9 +113,9 @@ export class PlatformService {
     const rows = data ?? [];
     if (!rows.length) return [];
     const { data: people } = await this.#db.from('onyx_users').select('id, name, email')
-      .in('id', rows.map((r) => Number(r.user_id)));
-    const byId = new Map((people ?? []).map((p) => [Number(p.id), p]));
-    return rows.map((r) => ({ ...r, user: byId.get(Number(r.user_id)) ?? null }));
+      .in('id', rows.map((r) => String(r.user_id)));
+    const byId = new Map((people ?? []).map((p) => [String(p.id), p]));
+    return rows.map((r) => ({ ...r, user: byId.get(String(r.user_id)) ?? null }));
   }
 
   /**
@@ -114,24 +127,34 @@ export class PlatformService {
    * the machine, via tools/onyx/grant-platform-admin.mjs, which writes the
    * row directly with the service-role connection this same class uses. This
    * method is for the second admin onward, granted by the first.
+   *
+   * A brand-new account's identity is created in auth.users first (the
+   * Admin API, same as tenancy.service.ts's upsertUser()) -- see
+   * docs/ADR-011-supabase-auth-migration.md.
    */
-  async grant(email: string, name: string, password: string | null, grantedBy: number | null) {
+  async grant(email: string, name: string, password: string | null, grantedBy: string | null) {
     const normalised = email.trim().toLowerCase();
     const { data: existing } = await this.#db.from('onyx_users')
       .select('id, name').eq('email', normalised).maybeSingle();
 
-    let userId: number;
+    let userId: string;
     if (existing) {
-      userId = Number(existing.id);
+      userId = String(existing.id);
     } else {
       if (!password) throw new HttpError(422, 'A new account needs a password.');
-      const { data: created, error } = await this.#db.from('onyx_users').insert({
-        email: normalised, name: name.trim(), password: await hashPassword(password), status: 1,
-      }).select('id').maybeSingle();
-      if (error || !created) {
-        throw new HttpError(500, 'Could not create the account: ' + (error?.message ?? 'no row'));
+      const { data: authUser, error: authError } = await onyxAuthAdmin().auth.admin.createUser({
+        email: normalised, password, email_confirm: true,
+      });
+      if (authError || !authUser?.user) {
+        throw new HttpError(500, 'Could not create the account: ' + (authError?.message ?? 'unknown error'));
       }
-      userId = Number(created.id);
+      const { error } = await this.#db.from('onyx_users').insert({
+        id: authUser.user.id, email: normalised, name: name.trim(), status: 1,
+      });
+      if (error) {
+        throw new HttpError(500, 'Could not create the account: ' + error.message);
+      }
+      userId = authUser.user.id;
     }
 
     const { data, error } = await this.#db.from('onyx_platform_admins').insert({
@@ -149,7 +172,7 @@ export class PlatformService {
     return data;
   }
 
-  async revoke(id: number, actorId: number | null) {
+  async revoke(id: number, actorId: string | null) {
     const { data: row } = await this.#db.from('onyx_platform_admins')
       .select(ADMIN_COLUMNS).eq('id', id).maybeSingle();
     if (!row) throw new HttpError(404, 'No such platform admin.');
@@ -663,7 +686,7 @@ export class PlatformService {
    * way past, the same as grant()/revoke()/suspend() do for writes. An
    * unlogged read here would be indistinguishable from an exfiltration.
    */
-  async tenantGrades(id: number, actorId: number | null, opts: {
+  async tenantGrades(id: number, actorId: string | null, opts: {
     limit?: number; examId?: number; assessmentId?: number;
   } = {}) {
     const tenant = await this.#requireTenant(id);
@@ -855,7 +878,7 @@ export class PlatformService {
   async createTenant(input: {
     name: string; slug?: string; plan?: string | null;
     admin: { name: string; email: string; password: string };
-  }, actorId: number | null) {
+  }, actorId: string | null) {
     const slug = slugify(input.slug ?? input.name);
     if (!slug) throw new HttpError(422, 'That name does not make a usable address.');
     const { data: clash } = await this.#db.from('onyx_tenants')
@@ -872,14 +895,22 @@ export class PlatformService {
       .select('id, email, name').eq('email', email).maybeSingle();
     let admin = existingUser;
     if (!admin) {
+      // Supabase Auth owns the credential now -- see tenancy.service.ts's
+      // upsertUser(), the same pattern duplicated here for the reason the
+      // doc comment above gives.
+      const { data: authUser, error: authError } = await onyxAuthAdmin().auth.admin.createUser({
+        email, password: input.admin.password, email_confirm: true,
+      });
+      if (authError || !authUser?.user) {
+        throw new HttpError(500, 'Could not create the account: ' + (authError?.message ?? 'unknown error'));
+      }
       const { data: created } = await this.#db.from('onyx_users').insert({
-        email, name: input.admin.name.trim(),
-        password: await hashPassword(input.admin.password), status: 1,
+        id: authUser.user.id, email, name: input.admin.name.trim(), status: 1,
       }).select('id, email, name').maybeSingle();
       admin = created!;
     }
     await this.#db.from('onyx_memberships').insert({
-      tenant_id: Number(tenant!.id), user_id: Number(admin!.id), role: 'admin', status: 1,
+      tenant_id: Number(tenant!.id), user_id: admin!.id, role: 'admin', status: 1,
     });
 
     await this.#log(actorId, 'tenant.created', 'tenant', Number(tenant!.id),
@@ -904,7 +935,7 @@ export class PlatformService {
    * suspend() already exists for "stop this without destroying it" -- this is
    * the other thing, and it does not ask twice in the API, only once, hard.
    */
-  async deleteTenant(id: number, actorId: number | null, confirmName: string) {
+  async deleteTenant(id: number, actorId: string | null, confirmName: string) {
     const { data: tenant } = await this.#db.from('onyx_tenants')
       .select(TENANT_COLUMNS).eq('id', id).maybeSingle();
     if (!tenant) throw new HttpError(404, 'No such institution.');
@@ -918,7 +949,7 @@ export class PlatformService {
     return { ok: true };
   }
 
-  async suspend(id: number, actorId: number | null) {
+  async suspend(id: number, actorId: string | null) {
     const before = await this.tenant(id);
     const { data } = await this.#db.from('onyx_tenants')
       .update({ status: 0, updated_at: new Date().toISOString() })
@@ -928,7 +959,7 @@ export class PlatformService {
     return data;
   }
 
-  async activate(id: number, actorId: number | null) {
+  async activate(id: number, actorId: string | null) {
     const before = await this.tenant(id);
     const { data } = await this.#db.from('onyx_tenants')
       .update({ status: 1, updated_at: new Date().toISOString() })
@@ -951,7 +982,7 @@ export class PlatformService {
   // -------------------------------------------------------------------------
 
   /** Edit a tenant's own identity: its name, its address, or its plan label. */
-  async updateTenant(id: number, actorId: number | null, patch: {
+  async updateTenant(id: number, actorId: string | null, patch: {
     name?: string; slug?: string; plan?: string | null;
   }) {
     const { data: tenant } = await this.#db.from('onyx_tenants')
@@ -988,7 +1019,7 @@ export class PlatformService {
   /** Add someone to an institution -- the platform-console version of
    * tenancy.service.ts's invite(): finds or creates the identity by email,
    * then attaches a membership. */
-  async addMember(tenantId: number, actorId: number | null, input: {
+  async addMember(tenantId: number, actorId: string | null, input: {
     name: string; email: string; role: Role; password?: string;
   }) {
     if (!ROLES.includes(input.role)) throw new HttpError(422, 'That is not a role.');
@@ -996,19 +1027,27 @@ export class PlatformService {
     let { data: user } = await this.#db.from('onyx_users')
       .select('id, name, email').eq('email', email).maybeSingle();
     if (!user) {
+      if (!input.password) throw new HttpError(422, 'A new account needs a password.');
+      // Supabase Auth owns the credential now -- see tenancy.service.ts's
+      // upsertUser().
+      const { data: authUser, error: authError } = await onyxAuthAdmin().auth.admin.createUser({
+        email, password: input.password, email_confirm: true,
+      });
+      if (authError || !authUser?.user) {
+        throw new HttpError(500, 'Could not create the account: ' + (authError?.message ?? 'unknown error'));
+      }
       const { data: created, error } = await this.#db.from('onyx_users').insert({
-        email, name: input.name.trim(),
-        password: input.password ? await hashPassword(input.password) : null, status: 1,
+        id: authUser.user.id, email, name: input.name.trim(), status: 1,
       }).select('id, name, email').maybeSingle();
       if (error) throw new HttpError(500, 'Could not create the account: ' + error.message);
       user = created!;
     }
     const { data: existing } = await this.#db.from('onyx_memberships')
-      .select('id').eq('tenant_id', tenantId).eq('user_id', Number(user.id)).maybeSingle();
+      .select('id').eq('tenant_id', tenantId).eq('user_id', user.id).maybeSingle();
     if (existing) throw new HttpError(422, 'They are already a member of this institution.');
 
     const { data: membership, error } = await this.#db.from('onyx_memberships')
-      .insert({ tenant_id: tenantId, user_id: Number(user.id), role: input.role, status: 1 })
+      .insert({ tenant_id: tenantId, user_id: user.id, role: input.role, status: 1 })
       .select('id, role, status, created_at').maybeSingle();
     if (error) throw new HttpError(500, 'Could not add them: ' + error.message);
     await this.#log(actorId, 'member.added', 'membership', Number(membership!.id), null,
@@ -1018,7 +1057,7 @@ export class PlatformService {
 
   /** Remove someone from an institution. The last admin cannot be removed
    * this way, same guard as tenancy.service.ts's removeMember(). */
-  async removeMember(tenantId: number, membershipId: number, actorId: number | null) {
+  async removeMember(tenantId: number, membershipId: number, actorId: string | null) {
     const { data: membership } = await this.#db.from('onyx_memberships')
       .select('id, tenant_id, user_id, role').eq('id', membershipId).maybeSingle();
     if (!membership || Number(membership.tenant_id) !== tenantId) {
@@ -1045,7 +1084,7 @@ export class PlatformService {
    * audited as two different sentences -- "renamed someone" is not "made
    * someone an admin" -- so each only writes a row when it actually changed.
    */
-  async updateMember(tenantId: number, membershipId: number, actorId: number | null, patch: {
+  async updateMember(tenantId: number, membershipId: number, actorId: string | null, patch: {
     name?: string; email?: string; phone?: string | null; account_status?: number;
     role?: Role; membership_status?: number;
   }) {
@@ -1054,7 +1093,7 @@ export class PlatformService {
     if (!membership || Number(membership.tenant_id) !== tenantId) {
       throw new HttpError(404, 'No such member at this institution.');
     }
-    const userId = Number(membership.user_id);
+    const userId = String(membership.user_id);
     const { data: user } = await this.#db.from('onyx_users')
       .select('id, name, email, phone, status').eq('id', userId).maybeSingle();
     if (!user) throw new HttpError(404, 'No such account.');
@@ -1098,7 +1137,12 @@ export class PlatformService {
       const { error } = await this.#db.from('onyx_users')
         .update({ ...userPatch, updated_at: new Date().toISOString() }).eq('id', userId);
       if (error) throw new HttpError(500, 'Could not update the account: ' + error.message);
-      await this.#log(actorId, 'user.updated', 'user', userId, userBefore, userPatch);
+      // entity_id is bigint (shared across every entity type this log
+      // covers, most of which are still bigint-keyed) and userId is a uuid
+      // since the auth migration -- carried in the payload instead of a
+      // column that cannot hold it.
+      await this.#log(actorId, 'user.updated', 'user', null,
+        { ...userBefore, user_id: userId }, { ...userPatch, user_id: userId });
     }
 
     const memberPatch: Record<string, unknown> = {};
@@ -1129,7 +1173,7 @@ export class PlatformService {
    * regardless of status -- an operator resolving a dispute cannot be blocked
    * by the same publish lock that protects faculty from themselves.
    */
-  async updateExamMark(tenantId: number, markId: number, actorId: number | null, patch: {
+  async updateExamMark(tenantId: number, markId: number, actorId: string | null, patch: {
     raw_marks?: number; final_marks?: number;
   }) {
     const { data: mark } = await this.#db.from('onyx_exam_marks')
@@ -1158,7 +1202,7 @@ export class PlatformService {
   }
 
   /** The same override, for an assessment attempt's score. */
-  async updateAssessmentAttemptScore(tenantId: number, attemptId: number, actorId: number | null,
+  async updateAssessmentAttemptScore(tenantId: number, attemptId: number, actorId: string | null,
     score: number) {
     const { data: attempt } = await this.#db.from('onyx_assessment_attempts')
       .select('id, tenant_id, max_score, score').eq('id', attemptId).maybeSingle();
@@ -1219,7 +1263,7 @@ export class PlatformService {
   }
 
   /** Override a submission's score/feedback directly, same shape as an exam mark. */
-  async updateSubmissionGrade(tenantId: number, submissionId: number, actorId: number | null,
+  async updateSubmissionGrade(tenantId: number, submissionId: number, actorId: string | null,
     patch: { score?: number; feedback?: string | null }) {
     const { data: submission } = await this.#db.from('onyx_assignment_submissions')
       .select('id, tenant_id, assignment_id, score, feedback').eq('id', submissionId).maybeSingle();
@@ -1289,7 +1333,7 @@ export class PlatformService {
    * shape, called with the service-role client like everything else in this
    * file.
    */
-  async createCourse(tenantId: number, actorId: number | null, input: {
+  async createCourse(tenantId: number, actorId: string | null, input: {
     code: string; title: string; credits?: number; self_enroll?: boolean; status?: number;
   }) {
     const slug = slugify(input.title);
@@ -1308,7 +1352,7 @@ export class PlatformService {
     return data;
   }
 
-  async updateCourse(tenantId: number, courseId: number, actorId: number | null, patch: {
+  async updateCourse(tenantId: number, courseId: number, actorId: string | null, patch: {
     title?: string; code?: string; credits?: number; status?: number;
   }) {
     const { data: course } = await this.#db.from('onyx_courses')
@@ -1328,7 +1372,7 @@ export class PlatformService {
     return { ...course, ...after };
   }
 
-  async createAssignment(tenantId: number, actorId: number | null, input: {
+  async createAssignment(tenantId: number, actorId: string | null, input: {
     course_id: number; title: string; due_at?: string | null; total_points?: number;
   }) {
     const { data: course } = await this.#db.from('onyx_courses')
@@ -1348,7 +1392,7 @@ export class PlatformService {
     return data;
   }
 
-  async updateAssignment(tenantId: number, assignmentId: number, actorId: number | null, patch: {
+  async updateAssignment(tenantId: number, assignmentId: number, actorId: string | null, patch: {
     title?: string; due_at?: string | null; total_points?: number; status?: string;
   }) {
     const { data: a } = await this.#db.from('onyx_assignments')
@@ -1378,7 +1422,7 @@ export class PlatformService {
    * path, the same trust level updateExamMark() extends past a published
    * mark's normal lock. It is not skipped by accident.
    */
-  async createExam(tenantId: number, actorId: number | null, input: {
+  async createExam(tenantId: number, actorId: string | null, input: {
     semester_id: number; course_id: number; title: string; starts_at: string;
     duration_minutes?: number; max_marks?: number; pass_marks?: number;
   }) {
@@ -1408,7 +1452,7 @@ export class PlatformService {
     return data;
   }
 
-  async updateExam(tenantId: number, examId: number, actorId: number | null, patch: {
+  async updateExam(tenantId: number, examId: number, actorId: string | null, patch: {
     title?: string; starts_at?: string | null; duration_minutes?: number;
     max_marks?: number; pass_marks?: number; status?: string;
   }) {
@@ -1434,7 +1478,7 @@ export class PlatformService {
   /** A basic assessment -- no sections/proctoring here, same as any assessment
    * created without a question bank on hand. Course faculty add sections once
    * a bank exists; this just gets it on the calendar. */
-  async createAssessment(tenantId: number, actorId: number | null, input: {
+  async createAssessment(tenantId: number, actorId: string | null, input: {
     course_id?: number | null; title: string; opens_at?: string | null;
     closes_at?: string | null; duration_minutes?: number; pass_mark?: number | null;
   }) {
@@ -1462,7 +1506,7 @@ export class PlatformService {
     return data;
   }
 
-  async updateAssessment(tenantId: number, assessmentId: number, actorId: number | null, patch: {
+  async updateAssessment(tenantId: number, assessmentId: number, actorId: string | null, patch: {
     title?: string; opens_at?: string | null; closes_at?: string | null;
     pass_mark?: number | null; duration_minutes?: number; status?: string;
   }) {
@@ -1539,7 +1583,7 @@ export class PlatformService {
     };
   }
 
-  async createFeeHead(tenantId: number, actorId: number | null, input: {
+  async createFeeHead(tenantId: number, actorId: string | null, input: {
     code: string; name: string;
     category?: 'tuition' | 'exam' | 'hostel' | 'transport' | 'library' | 'misc';
     refundable?: boolean;
@@ -1561,7 +1605,7 @@ export class PlatformService {
     return data;
   }
 
-  async createFeeStructure(tenantId: number, actorId: number | null, input: {
+  async createFeeStructure(tenantId: number, actorId: string | null, input: {
     name: string; instalments?: number; currency?: string;
     lines: { head_id: number; amount_minor: number }[];
   }) {
@@ -1606,7 +1650,7 @@ export class PlatformService {
    * assessments/exams: nothing here is ever hard-deleted once it might be
    * referenced by an invoice, so the platform surface for retiring one is
    * the same status flip the tenant side uses. */
-  async updateFeeStructureStatus(tenantId: number, structureId: number, actorId: number | null,
+  async updateFeeStructureStatus(tenantId: number, structureId: number, actorId: string | null,
     status: 'draft' | 'published' | 'archived') {
     const { data: structure } = await this.#db.from('onyx_fee_structures')
       .select('id, tenant_id, status').eq('id', structureId).maybeSingle();
@@ -1656,7 +1700,7 @@ export class PlatformService {
     };
   }
 
-  async #log(actorId: number | null, action: string, entityType: string, entityId: number | null,
+  async #log(actorId: string | null, action: string, entityType: string, entityId: number | null,
     before: unknown, after: unknown) {
     // Never throw: an audit row describes work that already happened.
     await this.#db.from('onyx_platform_audit_logs').insert({

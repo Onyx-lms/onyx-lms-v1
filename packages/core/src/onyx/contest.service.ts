@@ -58,7 +58,7 @@ export class ContestService {
   // CAR-01 -- contests
   // -------------------------------------------------------------------------
 
-  async create(tenantId: number, createdBy: number, input: {
+  async create(tenantId: number, createdBy: string, input: {
     title: string; description?: string | null;
     starts_at: string; ends_at: string;
     problems?: { problem_id: number; points: number }[];
@@ -125,7 +125,7 @@ export class ContestService {
 
   // ---- teams ----
 
-  async createTeam(tenantId: number, contestId: number, userId: number, name: string) {
+  async createTeam(tenantId: number, contestId: number, userId: string, name: string) {
     const contest = await this.contest(tenantId, contestId);
     if (contest.status === 'draft') throw new HttpError(404, 'Contest not found.');
     // Forming a team after the whistle is how a team of one becomes a team of
@@ -149,7 +149,7 @@ export class ContestService {
     return data!;
   }
 
-  async joinTeam(tenantId: number, teamId: number, userId: number) {
+  async joinTeam(tenantId: number, teamId: number, userId: string) {
     const { data: team } = await this.#db.from('onyx_contest_teams')
       .select(TEAM_COLUMNS).eq('tenant_id', tenantId).eq('id', teamId).maybeSingle();
     if (!team) throw new HttpError(404, 'Team not found.');
@@ -175,7 +175,7 @@ export class ContestService {
     return team;
   }
 
-  async teamFor(tenantId: number, contestId: number, userId: number) {
+  async teamFor(tenantId: number, contestId: number, userId: string) {
     const { data } = await this.#db.from('onyx_contest_members')
       .select(MEMBER_COLUMNS)
       .eq('tenant_id', tenantId).eq('contest_id', contestId).eq('user_id', userId)
@@ -204,7 +204,7 @@ export class ContestService {
    * the submission's own score. Recomputing it here would let the two disagree,
    * and then nobody could say which was right.
    */
-  async recordSubmission(tenantId: number, contestId: number, userId: number, input: {
+  async recordSubmission(tenantId: number, contestId: number, userId: string, input: {
     problem_id: number; submission_id: number;
   }) {
     const contest = await this.contest(tenantId, contestId);
@@ -223,7 +223,7 @@ export class ContestService {
       .select('id, user_id, problem_id, score, max_score, status')
       .eq('tenant_id', tenantId).eq('id', input.submission_id).maybeSingle();
     if (!submission) throw new HttpError(404, 'Submission not found.');
-    if (Number(submission.user_id) !== userId) throw new HttpError(403, 'That is not your submission.');
+    if (String(submission.user_id) !== userId) throw new HttpError(403, 'That is not your submission.');
     if (Number(submission.problem_id) !== input.problem_id) {
       throw new HttpError(422, 'That submission is for a different problem.');
     }
@@ -351,7 +351,7 @@ export class ContestService {
   // -------------------------------------------------------------------------
 
   async scheduleInterview(tenantId: number, input: {
-    user_id: number; interviewer_id?: number | null; title: string;
+    user_id: string; interviewer_id?: string | null; title: string;
     scheduled_at: string; duration_minutes?: number; join_url?: string | null;
   }) {
     if (Number.isNaN(Date.parse(input.scheduled_at))) {
@@ -379,13 +379,13 @@ export class ContestService {
    * feedback is stripped even from the person it is about. A half-written note
    * read as a verdict is worse than no note.
    */
-  async interview(tenantId: number, id: number, viewer: { role: Role; userId: number }) {
+  async interview(tenantId: number, id: number, viewer: { role: Role; userId: string }) {
     const { data } = await this.#db.from('onyx_mock_interviews')
       .select(INTERVIEW_COLUMNS).eq('tenant_id', tenantId).eq('id', id).maybeSingle();
     if (!data) throw new HttpError(404, 'Interview not found.');
 
-    const own = Number(data.user_id) === viewer.userId;
-    const interviewer = Number(data.interviewer_id) === viewer.userId;
+    const own = String(data.user_id) === viewer.userId;
+    const interviewer = String(data.interviewer_id) === viewer.userId;
     if (!own && !interviewer && !isStaff(viewer.role)) {
       throw new HttpError(403, 'That is not your interview.');
     }
@@ -404,7 +404,7 @@ export class ContestService {
     };
   }
 
-  async myInterviews(tenantId: number, userId: number) {
+  async myInterviews(tenantId: number, userId: string) {
     const { data } = await this.#db.from('onyx_mock_interviews')
       .select(INTERVIEW_COLUMNS)
       .eq('tenant_id', tenantId).eq('user_id', userId)
@@ -420,7 +420,7 @@ export class ContestService {
   }
 
   /** The interviewer's own list, for the people they are seeing. */
-  async interviewsFor(tenantId: number, interviewerId: number) {
+  async interviewsFor(tenantId: number, interviewerId: string) {
     const { data } = await this.#db.from('onyx_mock_interviews')
       .select(INTERVIEW_COLUMNS)
       .eq('tenant_id', tenantId).eq('interviewer_id', interviewerId)
@@ -428,7 +428,7 @@ export class ContestService {
     return data ?? [];
   }
 
-  async recordFeedback(tenantId: number, id: number, viewer: { role: Role; userId: number }, input: {
+  async recordFeedback(tenantId: number, id: number, viewer: { role: Role; userId: string }, input: {
     feedback: { criterion: string; score: number; of: number; comment?: string | null }[];
     overall: number; notes?: string | null; release?: boolean;
     recording_path?: string | null; recording_consented?: boolean;
@@ -436,7 +436,7 @@ export class ContestService {
     const { data } = await this.#db.from('onyx_mock_interviews')
       .select(INTERVIEW_COLUMNS).eq('tenant_id', tenantId).eq('id', id).maybeSingle();
     if (!data) throw new HttpError(404, 'Interview not found.');
-    if (Number(data.interviewer_id) !== viewer.userId && !isStaff(viewer.role)) {
+    if (String(data.interviewer_id) !== viewer.userId && !isStaff(viewer.role)) {
       throw new HttpError(403, 'You are not the interviewer.');
     }
     if (input.overall < 1 || input.overall > 5) {
@@ -470,11 +470,11 @@ export class ContestService {
   }
 
   /** Releasing is a separate act, so feedback can be written and reviewed first. */
-  async releaseFeedback(tenantId: number, id: number, viewer: { role: Role; userId: number }) {
+  async releaseFeedback(tenantId: number, id: number, viewer: { role: Role; userId: string }) {
     const { data } = await this.#db.from('onyx_mock_interviews')
       .select(INTERVIEW_COLUMNS).eq('tenant_id', tenantId).eq('id', id).maybeSingle();
     if (!data) throw new HttpError(404, 'Interview not found.');
-    if (Number(data.interviewer_id) !== viewer.userId && !isStaff(viewer.role)) {
+    if (String(data.interviewer_id) !== viewer.userId && !isStaff(viewer.role)) {
       throw new HttpError(403, 'You are not the interviewer.');
     }
     if (!data.feedback) throw new HttpError(422, 'There is no feedback to release.');

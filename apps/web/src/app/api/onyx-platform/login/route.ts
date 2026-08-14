@@ -23,7 +23,11 @@ export async function POST(request: Request) {
   const payload = await res.json().catch(() => ({ ok: false, message: 'Bad response' }));
 
   if (res.ok && payload?.data?.token) {
-    (await cookies()).set(PLATFORM_COOKIE, payload.data.token, {
+    (await cookies()).set(PLATFORM_COOKIE, JSON.stringify({
+      token: payload.data.token,
+      refresh_token: payload.data.refresh_token,
+      expires_at: payload.data.expires_at,
+    }), {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
@@ -31,6 +35,8 @@ export async function POST(request: Request) {
       maxAge: Number(process.env.ACCESS_TOKEN_TTL ?? 3600),
     });
     delete payload.data.token;
+    delete payload.data.refresh_token;
+    delete payload.data.expires_at;
   }
   return NextResponse.json(payload, { status: res.status });
 }

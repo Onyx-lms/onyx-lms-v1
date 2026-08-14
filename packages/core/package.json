@@ -12,6 +12,7 @@
     "@onyx/types": "*",
     "@supabase/supabase-js": "^2.47.10",
     "bcryptjs": "^2.4.3",
+    "jose": "^5.9.6",
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^9.0.5",
     "qrcode": "^1.5.4",

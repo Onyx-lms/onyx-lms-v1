@@ -30,8 +30,8 @@ const PrioritySchema = z.enum(
   TICKET_PRIORITIES as unknown as [TicketPriority, ...TicketPriority[]]);
 
 export function registerOnyxEngageRoutes(app: FastifyInstance, ctx: AppContext): void {
-  const viewerOf = (req: FastifyRequest) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+  const viewerOf = async (req: FastifyRequest) => {
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return { claims, viewer: { role: claims.tenant_role, userId: claims.user_id } };
   };
 
@@ -47,17 +47,17 @@ export function registerOnyxEngageRoutes(app: FastifyInstance, ctx: AppContext):
    * acceptance criterion rather than an accident.
    */
   app.get('/api/onyx/progress', async (req) => {
-    const { claims } = viewerOf(req);
+    const { claims } = await viewerOf(req);
     return ok(await ctx.onyxEngage.summary(claims.tenant_id, claims.user_id));
   });
 
   app.get('/api/onyx/mentions', async (req) => {
-    const { claims } = viewerOf(req);
+    const { claims } = await viewerOf(req);
     return ok(await ctx.onyxEngage.mentions(claims.tenant_id, claims.user_id));
   });
 
   app.post('/api/onyx/mentions/read', async (req) => {
-    const { claims } = viewerOf(req);
+    const { claims } = await viewerOf(req);
     return ok(await ctx.onyxEngage.readMentions(claims.tenant_id, claims.user_id));
   });
 
@@ -66,7 +66,7 @@ export function registerOnyxEngageRoutes(app: FastifyInstance, ctx: AppContext):
   // -------------------------------------------------------------------------
 
   app.get('/api/onyx/courses/:id/discussions', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     const query = req.query as { status?: string; q?: string };
     return ok(await ctx.onyxEngage.discussions(claims.tenant_id, idOf(req), viewer, {
       status: query.status as DiscussionStatus | undefined,
@@ -75,44 +75,44 @@ export function registerOnyxEngageRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.post('/api/onyx/courses/:id/discussions', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     const body = validate(z.object({
       title: z.string().min(3).max(255),
       body: z.string().min(1),
       lesson_id: z.number().int().positive().nullish(),
-      mentions: z.array(z.number().int().positive()).max(20).optional(),
+      mentions: z.array(z.string().uuid()).max(20).optional(),
     }), req.body);
     return ok(await ctx.onyxEngage.ask(claims.tenant_id, idOf(req), viewer, body));
   });
 
   app.get('/api/onyx/discussions/:id', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     return ok(await ctx.onyxEngage.discussion(claims.tenant_id, idOf(req), viewer));
   });
 
   app.post('/api/onyx/discussions/:id/replies', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     const body = validate(z.object({
       body: z.string().min(1),
       parent_id: z.number().int().positive().nullish(),
-      mentions: z.array(z.number().int().positive()).max(20).optional(),
+      mentions: z.array(z.string().uuid()).max(20).optional(),
     }), req.body);
     return ok(await ctx.onyxEngage.reply(claims.tenant_id, idOf(req), viewer, body));
   });
 
   app.post('/api/onyx/posts/:id/vote', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     return ok(await ctx.onyxEngage.vote(claims.tenant_id, idOf(req), viewer.userId, viewer.role));
   });
 
   app.post('/api/onyx/discussions/:id/resolve', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     const body = validate(z.object({ post_id: z.number().int().positive() }), req.body);
     return ok(await ctx.onyxEngage.resolve(claims.tenant_id, idOf(req), body.post_id, viewer));
   });
 
   app.post('/api/onyx/discussions/:id/reopen', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     return ok(await ctx.onyxEngage.reopen(claims.tenant_id, idOf(req), viewer));
   });
 
@@ -121,7 +121,7 @@ export function registerOnyxEngageRoutes(app: FastifyInstance, ctx: AppContext):
   // -------------------------------------------------------------------------
 
   app.post('/api/onyx/discussions/:id/escalate', async (req) => {
-    const { claims } = viewerOf(req);
+    const { claims } = await viewerOf(req);
     const body = validate(z.object({
       note: z.string().max(2000).optional(),
       priority: PrioritySchema.optional(),
@@ -130,7 +130,7 @@ export function registerOnyxEngageRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.post('/api/onyx/tickets', async (req) => {
-    const { claims } = viewerOf(req);
+    const { claims } = await viewerOf(req);
     const body = validate(z.object({
       subject: z.string().min(3).max(255),
       body: z.string().min(1),
@@ -145,7 +145,7 @@ export function registerOnyxEngageRoutes(app: FastifyInstance, ctx: AppContext):
    * from the token's role, not from a query parameter a learner could set.
    */
   app.get('/api/onyx/tickets', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     const query = req.query as { status?: string; mine?: string; unowned?: string };
     return ok(await ctx.onyxSupport.queue(claims.tenant_id, viewer, {
       status: query.status as TicketStatus | undefined,
@@ -155,20 +155,20 @@ export function registerOnyxEngageRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.get('/api/onyx/tickets/breaches', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     return ok(await ctx.onyxSupport.breaches(claims.tenant_id, viewer));
   });
 
   app.get('/api/onyx/tickets/:id', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     return ok(await ctx.onyxSupport.ticket(claims.tenant_id, idOf(req), viewer));
   });
 
   app.post('/api/onyx/tickets/:id/assign', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, ...MENTORS);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, ...MENTORS);
     const viewer = { role: claims.tenant_role, userId: claims.user_id };
     const body = validate(z.object({
-      owner_id: z.number().int().positive().optional(),
+      owner_id: z.string().uuid().optional(),
     }), req.body ?? {});
     // No owner given means "I am taking this", which is what actually happens.
     const ticket = body.owner_id
@@ -192,19 +192,19 @@ export function registerOnyxEngageRoutes(app: FastifyInstance, ctx: AppContext):
   });
 
   app.post('/api/onyx/tickets/:id/respond', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     const body = validate(z.object({ note: z.string().min(1).max(5000) }), req.body);
     return ok(await ctx.onyxSupport.respond(claims.tenant_id, idOf(req), viewer, body.note));
   });
 
   app.post('/api/onyx/tickets/:id/resolve', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     const body = validate(z.object({ note: z.string().max(5000).optional() }), req.body ?? {});
     return ok(await ctx.onyxSupport.resolve(claims.tenant_id, idOf(req), viewer, body.note));
   });
 
   app.post('/api/onyx/tickets/:id/reopen', async (req) => {
-    const { claims, viewer } = viewerOf(req);
+    const { claims, viewer } = await viewerOf(req);
     const body = validate(z.object({ note: z.string().max(5000).optional() }), req.body ?? {});
     return ok(await ctx.onyxSupport.reopen(claims.tenant_id, idOf(req), viewer, body.note));
   });

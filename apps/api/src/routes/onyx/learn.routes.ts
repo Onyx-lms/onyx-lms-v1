@@ -33,6 +33,9 @@ const asReq = (req: FastifyRequest) => ({
 
 const idOf = (req: FastifyRequest, key = 'id') =>
   Number((req.params as Record<string, string>)[key]);
+// A person's id, straight off the URL -- a Supabase Auth uuid, never Number()'d.
+const userIdOf = (req: FastifyRequest, key: string) =>
+  String((req.params as Record<string, string>)[key] ?? '');
 const ipOf = (req: FastifyRequest) => (req as unknown as { ip?: string }).ip ?? null;
 
 // Course video belongs with a video provider, not in object storage; this is
@@ -59,7 +62,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
    * institution.
    */
   async function requireCourseManager(req: FastifyRequest, courseId: number) {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     if (claims.tenant_role !== 'admin') {
       await ctx.onyxAcademics.assertCanTeach(
         claims.tenant_id, courseId, claims.user_id, claims.tenant_role);
@@ -72,12 +75,12 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   // -------------------------------------------------------------------------
 
   app.get('/api/onyx/programs', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxAcademics.programs(claims.tenant_id));
   });
 
   app.post('/api/onyx/programs', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
     const body = validate(z.object({
       name: z.string().min(1).max(255),
       code: z.string().min(1).max(50),
@@ -88,14 +91,14 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.get('/api/onyx/semesters', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const q = req.query as { program_id?: string };
     return ok(await ctx.onyxAcademics.semesters(
       claims.tenant_id, q.program_id ? Number(q.program_id) : undefined));
   });
 
   app.post('/api/onyx/semesters', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
     const body = validate(z.object({
       program_id: z.number().int().positive(),
       name: z.string().min(1).max(255),
@@ -107,14 +110,14 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.get('/api/onyx/batches', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     const q = req.query as { program_id?: string };
     return ok(await ctx.onyxAcademics.batches(
       claims.tenant_id, q.program_id ? Number(q.program_id) : undefined));
   });
 
   app.post('/api/onyx/batches', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
     const body = validate(z.object({
       program_id: z.number().int().positive(),
       name: z.string().min(1).max(255),
@@ -125,20 +128,20 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.get('/api/onyx/batches/:id/members', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     return ok(await ctx.onyxAcademics.batchMembers(claims.tenant_id, idOf(req)));
   });
 
   app.post('/api/onyx/batches/:id/members', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
     const body = validate(z.object({
-      user_ids: z.array(z.number().int().positive()).min(1).max(1000),
+      user_ids: z.array(z.string().uuid()).min(1).max(1000),
     }), req.body);
 
     // Everyone named has to be a member of this institution. Without this the
     // batch would accept any user id in the platform.
     const members = await ctx.onyxTenancy.members(claims.tenant_id);
-    const known = new Set(members.map((m) => Number(m.user_id)));
+    const known = new Set(members.map((m) => String(m.user_id)));
     const stranger = body.user_ids.find((id) => !known.has(id));
     if (stranger) throw new HttpError(422, 'Someone in that list is not at this institution.');
 
@@ -151,7 +154,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   // -------------------------------------------------------------------------
 
   app.get('/api/onyx/courses', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const q = req.query as { program_id?: string; semester_id?: string; search?: string; all?: string };
     // A learner sees the published catalog. Faculty and admins see drafts too,
     // because they are the ones who have to finish them.
@@ -165,7 +168,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.get('/api/onyx/courses/:id', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const course = await ctx.onyxAcademics.course(claims.tenant_id, idOf(req));
     return ok({
       ...course,
@@ -186,7 +189,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
    * the same as if an administrator had assigned them right after.
    */
   app.post('/api/onyx/courses', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     const body = validate(z.object({
       code: z.string().min(1).max(50),
       title: z.string().min(1).max(255),
@@ -252,8 +255,8 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.post('/api/onyx/courses/:id/faculty', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
-    const body = validate(z.object({ user_id: z.number().int().positive() }), req.body);
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const body = validate(z.object({ user_id: z.string().uuid() }), req.body);
 
     // They have to teach here before they can teach this.
     const membership = await ctx.onyxTenancy.membership(claims.tenant_id, body.user_id);
@@ -273,7 +276,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
 
   /** Who currently teaches this course -- an admin, or faculty of this course. */
   app.get('/api/onyx/courses/:id/faculty', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     await ctx.onyxAcademics.assertCanTeach(
       claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role);
     return ok(await ctx.onyxAcademics.faculty(claims.tenant_id, idOf(req)));
@@ -281,12 +284,12 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
 
   /** The other half of assigning -- freeing a slot back below the cap of two. */
   app.delete('/api/onyx/courses/:id/faculty/:userId', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin');
     const removed = await ctx.onyxAcademics.removeFaculty(
-      claims.tenant_id, idOf(req), idOf(req, 'userId'));
+      claims.tenant_id, idOf(req), userIdOf(req, 'userId'));
     await ctx.onyxAudit.record(claims, {
       action: 'course.faculty_removed', entityType: 'course', entityId: idOf(req),
-      before: { user_id: idOf(req, 'userId') }, ip: ipOf(req),
+      before: { user_id: userIdOf(req, 'userId') }, ip: ipOf(req),
     });
     return ok(removed, 'Removed.');
   });
@@ -301,7 +304,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
    * "your courses", a workspace's course picker) inherited the same hole.
    */
   app.get('/api/onyx/my/courses', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const [enrollments, teaching] = await Promise.all([
       ctx.onyxAcademics.enrollmentsFor(claims.tenant_id, claims.user_id),
       ctx.onyxAcademics.teachingFor(claims.tenant_id, claims.user_id),
@@ -316,16 +319,16 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.get('/api/onyx/courses/:id/roster', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     await ctx.onyxAcademics.assertCanTeach(
       claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role);
     return ok(await ctx.onyxAcademics.roster(claims.tenant_id, idOf(req)));
   });
 
   app.post('/api/onyx/courses/:id/enroll', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
-      user_id: z.number().int().positive().optional(),
+      user_id: z.string().uuid().optional(),
       batch_id: z.number().int().positive().optional(),
     }), req.body ?? {});
     const courseId = idOf(req);
@@ -361,7 +364,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
 
   app.delete('/api/onyx/courses/:id/enroll/:userId', async (req) => {
     const claims = await requireCourseManager(req, idOf(req));
-    const userId = idOf(req, 'userId');
+    const userId = userIdOf(req, 'userId');
     const result = await ctx.onyxAcademics.withdraw(claims.tenant_id, idOf(req), userId);
     await ctx.onyxAudit.record(claims, {
       action: 'enrolment.removed', entityType: 'enrollment', entityId: idOf(req),
@@ -375,7 +378,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   // -------------------------------------------------------------------------
 
   app.post('/api/onyx/courses/:id/modules', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     await ctx.onyxAcademics.assertCanTeach(
       claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role);
     const body = validate(z.object({
@@ -388,7 +391,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.post('/api/onyx/modules/:id/lessons', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     const body = validate(z.object({
       title: z.string().min(1).max(255),
       type: TypeSchema.optional(),
@@ -407,19 +410,19 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.get('/api/onyx/courses/:id/outline', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxContent.outline(
       claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role));
   });
 
   app.get('/api/onyx/lessons/:id', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxContent.lesson(
       claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role));
   });
 
   app.post('/api/onyx/lessons/:id/progress', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       position_seconds: z.number().int().min(0),
       completed: z.boolean().optional(),
@@ -431,7 +434,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   // ---- LRN-02b: resources ----
 
   app.post('/api/onyx/courses/:id/resources', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     await ctx.onyxAcademics.assertCanTeach(
       claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role);
     const body = validate(z.object({
@@ -451,7 +454,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
    * from a request body is a path into another institution's files.
    */
   app.post('/api/onyx/courses/:id/resources/upload', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     await ctx.onyxAcademics.assertCanTeach(
       claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role);
 
@@ -473,7 +476,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.get('/api/onyx/courses/:id/resources', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     if (!isStaff(claims.tenant_role)) {
       await ctx.onyxAcademics.assertEnrolled(claims.tenant_id, idOf(req), claims.user_id);
     }
@@ -482,7 +485,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
 
   /** The signed, expiring link. The enrolment check lives in the service. */
   app.get('/api/onyx/resources/:id/url', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxContent.resourceUrl(
       claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role));
   });
@@ -492,7 +495,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   // -------------------------------------------------------------------------
 
   app.post('/api/onyx/courses/:id/attendance', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     await ctx.onyxAcademics.assertCanTeach(
       claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role);
     const body = validate(z.object({
@@ -506,7 +509,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.get('/api/onyx/courses/:id/attendance', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     if (!isStaff(claims.tenant_role)) {
       await ctx.onyxAcademics.assertEnrolled(claims.tenant_id, idOf(req), claims.user_id);
     }
@@ -514,7 +517,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.get('/api/onyx/attendance/:id/roster', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     const session = await ctx.onyxAttendance.session(claims.tenant_id, idOf(req));
     await ctx.onyxAcademics.assertCanTeach(
       claims.tenant_id, Number(session.course_id), claims.user_id, claims.tenant_role);
@@ -522,13 +525,13 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.post('/api/onyx/attendance/:id/mark', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     const session = await ctx.onyxAttendance.session(claims.tenant_id, idOf(req));
     await ctx.onyxAcademics.assertCanTeach(
       claims.tenant_id, Number(session.course_id), claims.user_id, claims.tenant_role);
     const body = validate(z.object({
       entries: z.array(z.object({
-        user_id: z.number().int().positive(),
+        user_id: z.string().uuid(),
         status: StatusSchema,
         note: z.string().max(500).nullish(),
       })).min(1).max(1000),
@@ -545,7 +548,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.post('/api/onyx/attendance/:id/close', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     const session = await ctx.onyxAttendance.session(claims.tenant_id, idOf(req));
     await ctx.onyxAcademics.assertCanTeach(
       claims.tenant_id, Number(session.course_id), claims.user_id, claims.tenant_role);
@@ -559,7 +562,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
    * themselves present from anywhere.
    */
   app.get('/api/onyx/attendance/:id/code', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     const session = await ctx.onyxAttendance.session(claims.tenant_id, idOf(req));
     await ctx.onyxAcademics.assertCanTeach(
       claims.tenant_id, Number(session.course_id), claims.user_id, claims.tenant_role);
@@ -568,7 +571,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
 
   /** The learner scans and posts the code. There is no user_id to send. */
   app.post('/api/onyx/attendance/:id/check-in', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({ code: z.string().min(1).max(32) }), req.body);
     return ok(await ctx.onyxAttendance.checkIn(
       claims.tenant_id, idOf(req), claims.user_id, body.code), 'You are marked present.');
@@ -577,7 +580,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   // ---- LRN-03c: analytics ----
 
   app.get('/api/onyx/courses/:id/attendance/analytics', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     await ctx.onyxAcademics.assertCanTeach(
       claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role);
     const q = req.query as { threshold?: string };
@@ -586,7 +589,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.get('/api/onyx/courses/:id/attendance/export', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     await ctx.onyxAcademics.assertCanTeach(
       claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role);
     return ok(await ctx.onyxAttendance.exportRows(claims.tenant_id, idOf(req)));
@@ -594,11 +597,11 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
 
   /** LRN-03c -- the same rows as a file, which is what an export means here. */
   app.get('/api/onyx/courses/:id/attendance/export.csv', async (req, reply) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     await ctx.onyxAcademics.assertCanTeach(
       claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role);
     const members = await ctx.onyxTenancy.members(claims.tenant_id);
-    const names = new Map(members.map((m) => [Number(m.user_id), {
+    const names = new Map(members.map((m) => [String(m.user_id), {
       name: m.user?.name ?? '', email: m.user?.email ?? '',
     }]));
     const csv = await ctx.onyxAttendance.exportCsv(claims.tenant_id, idOf(req), { names });
@@ -611,7 +614,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
 
   /** A learner's own attendance, across everything they are enrolled in. */
   app.get('/api/onyx/my/attendance', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok(await ctx.onyxAttendance.learnerSummary(claims.tenant_id, claims.user_id));
   });
 
@@ -620,7 +623,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   // -------------------------------------------------------------------------
 
   app.post('/api/onyx/courses/:id/assignments', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     await ctx.onyxAcademics.assertCanTeach(
       claims.tenant_id, idOf(req), claims.user_id, claims.tenant_role);
     const body = validate(z.object({
@@ -638,7 +641,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.get('/api/onyx/courses/:id/assignments', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const staff = isStaff(claims.tenant_role);
     if (!staff) {
       await ctx.onyxAcademics.assertEnrolled(claims.tenant_id, idOf(req), claims.user_id);
@@ -649,7 +652,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.put('/api/onyx/assignments/:id/rubric', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     const assignment = await ctx.onyxAssignments.assignment(claims.tenant_id, idOf(req));
     await ctx.onyxAcademics.assertCanTeach(
       claims.tenant_id, Number(assignment.course_id), claims.user_id, claims.tenant_role);
@@ -665,7 +668,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.get('/api/onyx/assignments/:id', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const assignment = await ctx.onyxAssignments.assignment(claims.tenant_id, idOf(req));
     const staff = isStaff(claims.tenant_role);
     if (!staff) {
@@ -688,7 +691,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.post('/api/onyx/assignments/:id/publish', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     const assignment = await ctx.onyxAssignments.assignment(claims.tenant_id, idOf(req));
     await ctx.onyxAcademics.assertCanTeach(
       claims.tenant_id, Number(assignment.course_id), claims.user_id, claims.tenant_role);
@@ -704,7 +707,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
 
   /** LRN-04c -- autosave. Saves without submitting, and never submits. */
   app.post('/api/onyx/assignments/:id/draft', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({ body: z.string().max(200_000) }), req.body);
     const saved = await ctx.onyxAssignments.saveDraft(
       claims.tenant_id, idOf(req), claims.user_id, body.body);
@@ -712,7 +715,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.post('/api/onyx/assignments/:id/submit', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       body: z.string().max(200_000).nullish(),
       file_path: z.string().max(500).nullish(),
@@ -724,7 +727,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   // ---- marking ----
 
   app.get('/api/onyx/submissions/:id', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     const detail = await ctx.onyxAssignments.submissionDetail(claims.tenant_id, idOf(req));
     const assignment = await ctx.onyxAssignments.assignment(
       claims.tenant_id, Number(detail.assignment_id));
@@ -734,7 +737,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.post('/api/onyx/submissions/:id/grade', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     const submission = await ctx.onyxAssignments.submissionDetail(claims.tenant_id, idOf(req));
     const assignment = await ctx.onyxAssignments.assignment(
       claims.tenant_id, Number(submission.assignment_id));
@@ -761,7 +764,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.post('/api/onyx/submissions/:id/return', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     const submission = await ctx.onyxAssignments.submissionDetail(claims.tenant_id, idOf(req));
     const assignment = await ctx.onyxAssignments.assignment(
       claims.tenant_id, Number(submission.assignment_id));
@@ -777,7 +780,7 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   app.post('/api/onyx/assignments/:id/return-all', async (req) => {
-    const claims = requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
     const assignment = await ctx.onyxAssignments.assignment(claims.tenant_id, idOf(req));
     await ctx.onyxAcademics.assertCanTeach(
       claims.tenant_id, Number(assignment.course_id), claims.user_id, claims.tenant_role);

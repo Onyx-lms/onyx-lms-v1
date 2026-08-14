@@ -20,7 +20,7 @@ const asReq = (req: FastifyRequest) => ({
 export function registerOnyxNotifyRoutes(app: FastifyInstance, ctx: AppContext): void {
   /** Your own inbox. The tenant and the person both come from the token. */
   app.get('/api/onyx/notifications', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const q = req.query as { limit?: string };
     const [items, unread] = await Promise.all([
       ctx.onyxNotify.inbox(claims.tenant_id, claims.user_id,
@@ -37,13 +37,13 @@ export function registerOnyxNotifyRoutes(app: FastifyInstance, ctx: AppContext):
    * of them wants fifty rows to render one digit.
    */
   app.get('/api/onyx/notifications/unread', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     return ok({ unread: await ctx.onyxNotify.unreadCount(claims.tenant_id, claims.user_id) });
   });
 
   /** Mark one as read, or all of them. Yours only -- there is no user id here. */
   app.post('/api/onyx/notifications/read', async (req) => {
-    const claims = requireOnyx(asReq(req), ctx.jwtSecret);
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({
       id: z.number().int().positive().optional(),
     }), req.body ?? {});

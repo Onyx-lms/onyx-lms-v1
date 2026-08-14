@@ -17,7 +17,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { api, createTenant, withDb, RUN, API } from './harness.ts';
+import { api, createTenant, withDb, RUN, API, onyxLogin } from './harness.ts';
 
 const pw = 'OnyxTest#2026';
 const mail = (who: string) => 'ca.' + who + '.' + RUN + '@onyx.test';
@@ -27,16 +27,10 @@ const B = { name: 'Rival Career ' + RUN, slug: 'career-b-' + RUN };
 const w = {
   alpha: { id: 0, admin: '', placement: '', employer: '', s1: '', s2: '' },
   beta: { id: 0, admin: '' },
-  ids: {} as Record<string, number>,
+  ids: {} as Record<string, string>,
   course: 0, skill: 0, employerId: 0, rivalId: 0, job: 0, application: 0,
   drive: 0, rounds: [] as number[], contest: 0, team: 0, interview: 0,
   credential: '', certificate: 0, problem: 0,
-};
-
-const login = async (email: string) => {
-  const r = await api<{ token: string }>('/api/onyx/auth/login', { body: { email, password: pw } });
-  assert.equal(r.ok, true, 'login ' + email + ': ' + r.message);
-  return r.data.token;
 };
 
 test('two institutions, a placement office and an employer', async () => {
@@ -48,23 +42,23 @@ test('two institutions, a placement office and an employer', async () => {
     assert.equal(res.ok, true, res.message);
     w[key].id = Number(res.data.tenant.id);
   }
-  w.alpha.admin = await login(mail('alpha.admin'));
-  w.beta.admin = await login(mail('beta.admin'));
+  w.alpha.admin = await onyxLogin(mail('alpha.admin'), pw);
+  w.beta.admin = await onyxLogin(mail('beta.admin'), pw);
 
   for (const [who, role] of [
     ['placement', 'placement'], ['employer', 'employer'],
     ['s1', 'student'], ['s2', 'student'],
   ] as const) {
-    const r = await api<{ user: { id: number } }>('/api/onyx/members', {
+    const r = await api<{ user: { id: string } }>('/api/onyx/members', {
       token: w.alpha.admin, body: { name: who, email: mail(who), role, password: pw },
     });
     assert.equal(r.ok, true, who + ': ' + r.message);
-    w.ids[who] = Number(r.data.user.id);
+    w.ids[who] = r.data.user.id;
   }
-  w.alpha.placement = await login(mail('placement'));
-  w.alpha.employer = await login(mail('employer'));
-  w.alpha.s1 = await login(mail('s1'));
-  w.alpha.s2 = await login(mail('s2'));
+  w.alpha.placement = await onyxLogin(mail('placement'), pw);
+  w.alpha.employer = await onyxLogin(mail('employer'), pw);
+  w.alpha.s1 = await onyxLogin(mail('s1'), pw);
+  w.alpha.s2 = await onyxLogin(mail('s2'), pw);
 
   const course = await api<{ id: number }>('/api/onyx/courses', {
     token: w.alpha.admin, body: { code: 'CA101', title: 'Career Course' },
@@ -566,7 +560,7 @@ test('RLS confines the O05 tables at the database', async () => {
   // Own certificates, own skills, own score.
   const { data: certs } = await learner.from('onyx_certificates').select('user_id, tenant_id');
   for (const c of certs!) {
-    assert.equal(Number(c.user_id), w.ids.s1);
+    assert.equal(c.user_id, w.ids.s1);
     assert.equal(Number(c.tenant_id), w.alpha.id);
   }
   assert.equal((await other.from('onyx_certificates').select('id')).data?.length ?? 0, 0,
@@ -575,7 +569,7 @@ test('RLS confines the O05 tables at the database', async () => {
   // What matters is that it is theirs.
   const { data: scores } = await other.from('onyx_readiness_scores').select('user_id');
   for (const row of scores!) {
-    assert.equal(Number(row.user_id), w.ids.s2, "a learner read another's readiness score");
+    assert.equal(row.user_id, w.ids.s2, "a learner read another's readiness score");
   }
   assert.equal((await rival.from('onyx_skills').select('id')).data?.length ?? 0, 0);
 
