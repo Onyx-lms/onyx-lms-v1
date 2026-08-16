@@ -33,7 +33,7 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
   const [me, outline, members] = await Promise.all([
     onyxApi<Me>('/api/onyx/me'),
     onyxApi<Outline>('/api/onyx/courses/' + id + '/outline'),
-    onyxApiSafe<{ user: { id: number; name: string; email: string } | null; role: string }[]>(
+    onyxApiSafe<{ user: { id: string; name: string; email: string } | null; role: string }[]>(
       '/api/onyx/members'),
   ]);
   const teachers = (members ?? []).filter((m) => m.role === 'faculty' || m.role === 'admin');
@@ -48,8 +48,8 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
   // this course" falls out, with no separate check needed here.
   const [courseFaculty, roster] = isStaff(me.role)
     ? await Promise.all([
-      onyxApiSafe<{ user_id: number }[]>('/api/onyx/courses/' + id + '/faculty'),
-      onyxApiSafe<{ user_id: number }[]>('/api/onyx/courses/' + id + '/roster'),
+      onyxApiSafe<{ user_id: string }[]>('/api/onyx/courses/' + id + '/faculty'),
+      onyxApiSafe<{ user_id: string }[]>('/api/onyx/courses/' + id + '/roster'),
     ])
     : [null, null];
 

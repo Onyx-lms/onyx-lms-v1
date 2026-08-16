@@ -2076,8 +2076,8 @@ export function SemesterPicker({ semesters, selected }: {
  */
 export function CourseFacultyManager({ courseId, current, options, canManage }: {
   courseId: number;
-  current: { user_id: number; name: string }[];
-  options: { id: number; name: string }[];
+  current: { user_id: string; name: string }[];
+  options: { id: string; name: string }[];
   canManage: boolean;
 }) {
   const router = useRouter();
@@ -2136,7 +2136,7 @@ export function CourseFacultyManager({ courseId, current, options, canManage }: 
             start(async () => {
               setError(null);
               const res = await send(
-                'courses/' + courseId + '/faculty', { user_id: Number(userId) });
+                'courses/' + courseId + '/faculty', { user_id: userId });
               if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
               setOpen(false); setUserId('');
               router.refresh();
@@ -2177,8 +2177,8 @@ export function CourseFacultyManager({ courseId, current, options, canManage }: 
  */
 export function CourseRosterManager({ courseId, roster, options, canManage }: {
   courseId: number;
-  roster: { user_id: number; name: string; email: string }[];
-  options: { id: number; name: string }[];
+  roster: { user_id: string; name: string; email: string }[];
+  options: { id: string; name: string }[];
   canManage: boolean;
 }) {
   const router = useRouter();
@@ -2234,7 +2234,7 @@ export function CourseRosterManager({ courseId, roster, options, canManage }: {
             if (!userId) return;
             start(async () => {
               setError(null);
-              const res = await send('courses/' + courseId + '/enroll', { user_id: Number(userId) });
+              const res = await send('courses/' + courseId + '/enroll', { user_id: userId });
               if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
               setOpen(false); setUserId('');
               router.refresh();
