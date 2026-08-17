@@ -391,10 +391,13 @@ export class TenancyService {
       throw new HttpError(401, 'Those details do not match.');
     }
 
-    const profile = await this.userByEmail(email);
+    // Independent reads, run together -- neither needs the other's result,
+    // only the uuid signInWithPassword() already returned.
+    const [profile, memberships] = await Promise.all([
+      this.userByEmail(email),
+      this.membershipsFor(signed.user.id),
+    ]);
     if (!profile || profile.status !== 1) throw new HttpError(403, 'That account is not active.');
-
-    const memberships = await this.membershipsFor(signed.user.id);
     if (!memberships.length) {
       throw new HttpError(403, 'That account does not belong to an institution yet.');
     }
