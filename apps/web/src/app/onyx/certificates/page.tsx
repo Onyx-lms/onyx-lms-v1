@@ -48,13 +48,13 @@ export default async function OnyxCertificatesPage() {
   const [me, certificates, members, courses] = await Promise.all([
     onyxApi<Me>('/api/onyx/me'),
     onyxApi<Certificate[]>('/api/onyx/certificates'),
-    onyxApiSafe<{ user_id: number; role: string; user: { name: string; email: string } | null }[]>(
+    onyxApiSafe<{ user_id: string; role: string; user: { name: string; email: string } | null }[]>(
       '/api/onyx/members'),
     onyxApiSafe<Course[]>('/api/onyx/courses'),
   ]);
 
   const learners = (members ?? []).filter((m) => m.role === 'student');
-  const names = new Map((members ?? []).map((m) => [Number(m.user_id), m.user]));
+  const names = new Map((members ?? []).map((m) => [m.user_id, m.user]));
   const live = certificates.filter((c) => !c.revoked_at).length;
 
   const now = Date.now();

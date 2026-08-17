@@ -64,11 +64,11 @@ export default async function OnyxCourseAttendancePage(
     onyxApiSafe<AttendanceAnalytics>(
       '/api/onyx/courses/' + id + '/attendance/analytics?threshold=' + threshold),
     onyxApiSafe<AttendanceSession[]>('/api/onyx/courses/' + id + '/attendance'),
-    onyxApiSafe<{ user_id: number; user: { name: string; email: string } | null }[]>(
+    onyxApiSafe<{ user_id: string; user: { name: string; email: string } | null }[]>(
       '/api/onyx/members'),
   ]);
 
-  const names = new Map((members ?? []).map((m) => [Number(m.user_id), m.user]));
+  const names = new Map((members ?? []).map((m) => [m.user_id, m.user]));
   // Worst first. Within the same percentage, by name, so the order is stable
   // between loads rather than following whatever the roster query returned.
   const learners = [...(analytics?.learners ?? [])].sort((a, b) =>

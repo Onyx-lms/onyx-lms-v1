@@ -1707,11 +1707,11 @@ const ROUND_OUTCOMES = [
  */
 export function RecordRound({ roundId, roundName, candidates }: {
   roundId: number; roundName: string;
-  candidates: { user_id: number; name: string; current?: string | null }[];
+  candidates: { user_id: string; name: string; current?: string | null }[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [outcomes, setOutcomes] = useState<Record<number, string>>(
+  const [outcomes, setOutcomes] = useState<Record<string, string>>(
     Object.fromEntries(candidates.map((c) => [c.user_id, c.current ?? ''])));
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -1883,11 +1883,11 @@ export function BuildDrive({ employers, jobs }: {
  * employer role and are not already linked to a different company.
  */
 export function LinkEmployerAccount({ employerId, candidates }: {
-  employerId: number; candidates: { user_id: number; name: string }[];
+  employerId: number; candidates: { user_id: string; name: string }[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [userId, setUserId] = useState(candidates[0]?.user_id ?? 0);
+  const [userId, setUserId] = useState(candidates[0]?.user_id ?? '');
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -1905,7 +1905,7 @@ export function LinkEmployerAccount({ employerId, candidates }: {
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
       <select value={userId} aria-label="Account to link"
-        onChange={(e) => setUserId(Number(e.target.value))}
+        onChange={(e) => setUserId(e.target.value)}
         className={input + ' py-1 text-[12.5px]'}>
         {candidates.map((c) => <option key={c.user_id} value={c.user_id}>{c.name}</option>)}
       </select>

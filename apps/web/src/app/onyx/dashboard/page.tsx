@@ -619,7 +619,7 @@ async function FacultyDashboard({ me }: { me: Me }) {
   // Everything a course can tell its teacher, per course, in parallel.
   const packs = await Promise.all(taught.slice(0, DEEP).map(async (course) => {
     const [roster, assignments, sessions, questions, attendance] = await Promise.all([
-      onyxApiSafe<{ user_id: number }[]>('/api/onyx/courses/' + course.id + '/roster'),
+      onyxApiSafe<{ user_id: string }[]>('/api/onyx/courses/' + course.id + '/roster'),
       onyxApiSafe<Assignment[]>('/api/onyx/courses/' + course.id + '/assignments'),
       onyxApiSafe<AttendanceSession[]>('/api/onyx/courses/' + course.id + '/attendance'),
       onyxApiSafe<Discussion[]>('/api/onyx/courses/' + course.id + '/discussions?status=open'),
@@ -665,8 +665,8 @@ async function FacultyDashboard({ me }: { me: Me }) {
 
   // Headcount that means something to a teacher: the people in front of them,
   // counted once even when they take two of your courses.
-  const learners = new Set<number>();
-  packs.forEach((p) => p.roster.forEach((r) => learners.add(Number(r.user_id))));
+  const learners = new Set<string>();
+  packs.forEach((p) => p.roster.forEach((r) => learners.add(r.user_id)));
 
   const now = new Date();
   const todayNum = ((now.getDay() + 6) % 7) + 1;   // 0 = Sunday in JS; 1 = Monday here

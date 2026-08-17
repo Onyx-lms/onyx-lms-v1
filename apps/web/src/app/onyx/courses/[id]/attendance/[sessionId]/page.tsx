@@ -16,7 +16,7 @@ const CALM = '[&_i]:motion-reduce:animate-none';
 
 interface RosterResponse {
   session: AttendanceSession;
-  roster: { user_id: number; record: AttendanceRecord | null }[];
+  roster: { user_id: string; record: AttendanceRecord | null }[];
 }
 
 /** "40 seconds ago" — the only form in which "when was the last scan" is useful. */
@@ -68,7 +68,7 @@ export default async function OnyxSessionPage(
     onyxApi<Me>('/api/onyx/me'),
     onyxApi<AttendanceSession[]>('/api/onyx/courses/' + id + '/attendance'),
     staff ? onyxApiSafe<RosterResponse>('/api/onyx/attendance/' + sessionId + '/roster') : null,
-    staff ? onyxApiSafe<{ user_id: number; user: { name: string; email: string } | null }[]>(
+    staff ? onyxApiSafe<{ user_id: string; user: { name: string; email: string } | null }[]>(
       '/api/onyx/members') : null,
   ]);
 
@@ -89,7 +89,7 @@ export default async function OnyxSessionPage(
     );
   }
 
-  const names = new Map((members ?? []).map((m) => [Number(m.user_id), m.user]));
+  const names = new Map((members ?? []).map((m) => [m.user_id, m.user]));
   const roster = (rosterData?.roster ?? []).map((r) => ({
     user_id: r.user_id,
     name: names.get(r.user_id)?.name ?? ('User ' + r.user_id),

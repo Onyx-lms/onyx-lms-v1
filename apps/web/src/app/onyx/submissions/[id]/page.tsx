@@ -19,9 +19,9 @@ export default async function OnyxSubmissionPage({ params }: { params: Promise<{
     onyxApi<Submission>('/api/onyx/submissions/' + id),
   ]);
   const assignment = await onyxApi<Assignment>('/api/onyx/assignments/' + submission.assignment_id);
-  const members = await onyxApiSafe<{ user_id: number; user: { name: string } | null }[]>(
+  const members = await onyxApiSafe<{ user_id: string; user: { name: string } | null }[]>(
     '/api/onyx/members');
-  const name = (members ?? []).find((m) => Number(m.user_id) === submission.user_id)?.user?.name
+  const name = (members ?? []).find((m) => m.user_id === submission.user_id)?.user?.name
     ?? 'User ' + submission.user_id;
   const initials = name.slice(0, 2).toUpperCase();
 

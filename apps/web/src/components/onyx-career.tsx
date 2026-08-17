@@ -161,12 +161,12 @@ export function OnyxApply({ job, eligibility, applied }: {
 /** CAR-04b -- the employer's pipeline for one post. */
 export function OnyxApplicants({ jobId, applicants, names, emails }: {
   jobId: number;
-  applicants: { id: number; user_id: number; status: string; created_at: string;
+  applicants: { id: number; user_id: string; status: string; created_at: string;
     readiness_at_apply: number | null }[];
-  names: Record<number, string>;
+  names: Record<string, string>;
   /** Applying shares a candidate's email with the employer/placement office
    *  reviewing this post -- the same consent that shares their name. */
-  emails: Record<number, string>;
+  emails: Record<string, string>;
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);

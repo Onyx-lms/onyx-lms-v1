@@ -61,7 +61,7 @@ export default async function OnyxAllocationsPage(
     onyxApi<Semester[]>('/api/onyx/semesters'),
     onyxApiSafe<Course[]>('/api/onyx/courses'),
     onyxApiSafe<Batch[]>('/api/onyx/batches'),
-    onyxApiSafe<{ user_id: number; role: string; user: { name: string; email: string } | null }[]>(
+    onyxApiSafe<{ user_id: string; role: string; user: { name: string; email: string } | null }[]>(
       '/api/onyx/members'),
   ]);
 
@@ -78,7 +78,7 @@ export default async function OnyxAllocationsPage(
     : [null, null];
 
   const teachers = (members ?? []).filter((m) => m.role === 'faculty' || m.role === 'admin');
-  const names = new Map((members ?? []).map((m) => [Number(m.user_id), m.user]));
+  const names = new Map((members ?? []).map((m) => [m.user_id, m.user]));
   const courseById = new Map((courses ?? []).map((c) => [c.id, c]));
   const batchById = new Map((batches ?? []).map((b) => [b.id, b]));
 
@@ -86,7 +86,7 @@ export default async function OnyxAllocationsPage(
   const totalHours = rows.reduce((sum, r) => sum + r.hours, 0);
   // Nobody allocated anything is not the same as nobody teaching zero hours,
   // so an unallocated faculty member is listed rather than left out.
-  const unallocated = teachers.filter((t) => !rows.some((r) => r.user_id === Number(t.user_id)));
+  const unallocated = teachers.filter((t) => !rows.some((r) => r.user_id === t.user_id));
 
   // One list, so the roll call and the distribution cannot disagree: every
   // teaching name this institution has, with the hours it is carrying.

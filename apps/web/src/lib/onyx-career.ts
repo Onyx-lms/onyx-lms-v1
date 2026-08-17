@@ -19,7 +19,7 @@ export interface Certificate {
   issued_at: string; expires_at: string | null;
   revoked_at: string | null; detail: Record<string, unknown>;
   /** Present on the institution's register; the holder's own list is all theirs. */
-  user_id?: number;
+  user_id?: string;
   revoked_reason?: string | null;
   course_id?: number | null;
   assessment_id?: number | null;
@@ -40,14 +40,14 @@ export interface ReadinessComponent {
 }
 
 export interface Readiness {
-  user_id: number; score: number;
+  user_id: string; score: number;
   breakdown: ReadinessComponent[];
   formula: Record<string, number>;
   computed_at: string;
 }
 
 export interface Profile {
-  user_id: number;
+  user_id: string;
   readiness: Readiness;
   skills: SkillEntry[];
   certificates: { id: number; credential_id: string; title: string; kind: string;
@@ -57,7 +57,7 @@ export interface Profile {
 export interface Employer {
   id: number; name: string; website: string | null; about: string | null;
   contact_name: string | null; contact_email: string | null;
-  user_id: number | null; status: number;
+  user_id: string | null; status: number;
 }
 
 export interface JobPost {
@@ -75,7 +75,7 @@ export interface Eligibility {
 }
 
 export interface Application {
-  id: number; job_id: number; user_id: number; status: string;
+  id: number; job_id: number; user_id: string; status: string;
   note: string | null; readiness_at_apply: number | null;
   decided_at: string | null; created_at: string;
   job?: JobPost | null;
@@ -95,8 +95,8 @@ export interface DriveSummary {
   cleared_final_round: number;
   offers: number;
   reconciles: boolean;
-  offered_without_clearing: number[];
-  cleared_without_offer: number[];
+  offered_without_clearing: string[];
+  cleared_without_offer: string[];
 }
 
 export interface Contest {
@@ -129,8 +129,8 @@ export interface Interview {
   notes: string | null;
   has_recording?: boolean;
   feedback_released: boolean;
-  user_id?: number;
-  interviewer_id?: number | null;
+  user_id?: string;
+  interviewer_id?: string | null;
 }
 
 /** Who runs placement. Employers are outsiders and are never in this list. */

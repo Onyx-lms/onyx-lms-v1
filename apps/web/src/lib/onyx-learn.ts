@@ -74,7 +74,7 @@ export interface AttendanceAnalytics {
   sessions: number;
   threshold: number;
   learners: {
-    user_id: number; held: number; attended: number; excused: number;
+    user_id: string; held: number; attended: number; excused: number;
     absent: number; percent: number; below_threshold: boolean;
   }[];
   cohort: { held: number; percent: number; below: number };
@@ -86,7 +86,7 @@ export interface RubricCriterion {
 }
 
 export interface Submission {
-  id: number; assignment_id: number; user_id: number;
+  id: number; assignment_id: number; user_id: string;
   body: string | null; file_path: string | null;
   status: 'draft' | 'submitted' | 'graded' | 'returned';
   attempt: number; submitted_at: string | null; is_late: number;

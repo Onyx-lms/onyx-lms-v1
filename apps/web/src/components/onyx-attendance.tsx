@@ -183,10 +183,10 @@ function provenance(record: AttendanceRecord | null, now: number): string {
  */
 export function OnyxRosterMarking({ session, roster }: {
   session: AttendanceSession;
-  roster: { user_id: number; name: string; email: string; record: AttendanceRecord | null }[];
+  roster: { user_id: string; name: string; email: string; record: AttendanceRecord | null }[];
 }) {
   const router = useRouter();
-  const [marks, setMarks] = useState<Record<number, string>>(
+  const [marks, setMarks] = useState<Record<string, string>>(
     () => Object.fromEntries(roster.map((r) => [r.user_id, r.record?.status ?? 'present'])));
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, start] = useTransition();

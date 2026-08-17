@@ -101,14 +101,14 @@ export const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday',
 /** CMP-01a -- who is teaching what, in which term. */
 export interface FacultyAllocation {
   id: number; semester_id: number; course_id: number;
-  batch_id: number | null; user_id: number;
+  batch_id: number | null; user_id: string;
   kind: 'lead' | 'assistant' | 'lab';
   hours_per_week: number;
 }
 
 /** The same allocations rolled up per person: the console's one useful number. */
 export interface WorkloadRow {
-  user_id: number; name: string | null; courses: number; hours: number;
+  user_id: string; name: string | null; courses: number; hours: number;
 }
 
 export interface Room {

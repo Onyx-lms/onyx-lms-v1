@@ -13,7 +13,7 @@ import {
 export const metadata: Metadata = { title: 'Invigilate' };
 
 interface QueueRow {
-  attempt_id: number; assessment_id: number; user_id: number; status: string;
+  attempt_id: number; assessment_id: number; user_id: string; status: string;
   integrity_flags: number; integrity_status: string; open_events: number;
   /** null means the attempt has never reported either way -- not the same as off. */
   camera_on: boolean | null; screen_on: boolean | null;
@@ -99,7 +99,7 @@ function paperLabel(assessmentId: number, examByAssessment: Map<number, Exam>): 
 }
 
 /** A candidate's name if it is known, or the id it used to be stuck showing. */
-function candidateOf(userId: number, nameOf: Map<number, string | null>): string {
+function candidateOf(userId: string, nameOf: Map<string, string | null>): string {
   return nameOf.get(userId) || 'Candidate #' + userId;
 }
 
@@ -122,9 +122,9 @@ export default async function OnyxInvigilatePage(
     // Every flag on this console used to be a bare "Candidate #867" -- the
     // one thing an invigilator or examinations officer actually needs to
     // know when a flag is real enough to walk into a hall over.
-    onyxApiSafe<{ user_id: number; user: { name: string } | null }[]>('/api/onyx/members'),
+    onyxApiSafe<{ user_id: string; user: { name: string } | null }[]>('/api/onyx/members'),
   ]);
-  const nameOf = new Map((members ?? []).map((m) => [Number(m.user_id), m.user?.name ?? null]));
+  const nameOf = new Map((members ?? []).map((m) => [m.user_id, m.user?.name ?? null]));
 
   // Only exams sat online carry an assessment_id at all -- a paper exam never
   // enters this map and every lookup against it correctly falls through to

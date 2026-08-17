@@ -30,10 +30,10 @@ export default async function OnyxAssignmentPage({ params }: { params: Promise<{
 
   const staff = isStaff(claims.tenant_role);
   const members = staff
-    ? await onyxApiSafe<{ user_id: number; user: { name: string; email: string } | null }[]>(
+    ? await onyxApiSafe<{ user_id: string; user: { name: string; email: string } | null }[]>(
       '/api/onyx/members')
     : null;
-  const names = new Map((members ?? []).map((m) => [Number(m.user_id), m.user]));
+  const names = new Map((members ?? []).map((m) => [m.user_id, m.user]));
   const mine = assignment.my_submission ?? null;
   const when = relativeDue(assignment.due_at);
   // Graded but not yet released. What "return all" would actually release.

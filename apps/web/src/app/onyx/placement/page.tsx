@@ -39,7 +39,7 @@ export default async function OnyxPlacementPage() {
   // Both lists come from the institution rather than being typed as ids.
   const [skills, members] = await Promise.all([
     onyxApiSafe<{ id: number; name: string }[]>('/api/onyx/skills'),
-    onyxApiSafe<{ user_id: number; role: string; user: { name: string } | null }[]>(
+    onyxApiSafe<{ user_id: string; role: string; user: { name: string } | null }[]>(
       '/api/onyx/members'),
   ]);
   const learners = (members ?? []).filter((m) => m.role === 'student');

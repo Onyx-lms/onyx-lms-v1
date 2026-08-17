@@ -35,10 +35,10 @@ export default async function OnyxDrivePage({ params }: { params: Promise<{ id: 
   const [me, summary, members] = await Promise.all([
     onyxApi<Me>('/api/onyx/me'),
     onyxApi<DriveSummary>('/api/onyx/drives/' + id + '/summary'),
-    onyxApiSafe<{ user_id: number; user: { name: string } | null }[]>('/api/onyx/members'),
+    onyxApiSafe<{ user_id: string; user: { name: string } | null }[]>('/api/onyx/members'),
   ]);
   const names = new Map((members ?? [])
-    .map((m) => [Number(m.user_id), m.user?.name ?? ('User ' + m.user_id)]));
+    .map((m) => [m.user_id, m.user?.name ?? ('User ' + m.user_id)]));
 
   // Who is actually in this drive: the people who applied to the post it runs
   // against, minus the ones already rejected or withdrawn. An employer coming
@@ -49,11 +49,11 @@ export default async function OnyxDrivePage({ params }: { params: Promise<{ id: 
     : null;
   const roster = (applicants ?? []).map((a) => ({
     id: a.id,
-    user_id: Number(a.user_id),
+    user_id: a.user_id,
     status: a.status,
     created_at: a.created_at,
     readiness_at_apply: a.readiness_at_apply,
-    name: a.candidate?.name ?? names.get(Number(a.user_id)) ?? ('User ' + a.user_id),
+    name: a.candidate?.name ?? names.get(a.user_id) ?? ('User ' + a.user_id),
   }));
   const candidates = roster
     .filter((a) => !['rejected', 'withdrawn'].includes(a.status))
