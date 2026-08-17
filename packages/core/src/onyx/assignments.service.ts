@@ -103,6 +103,21 @@ export class AssignmentsService {
     return data ?? [];
   }
 
+  /**
+   * The bulk twin of `list()` -- one query across several courses, rows
+   * carrying `course_id` for a caller to group. Written for a dashboard
+   * scanning everything due across a dozen courses, which used to mean a
+   * `list()`-shaped call per course.
+   */
+  async listBulk(tenantId: number, courseIds: number[], opts: { publishedOnly?: boolean } = {}) {
+    if (!courseIds.length) return [];
+    let q = this.#db.from('onyx_assignments')
+      .select(ASSIGNMENT_COLUMNS).eq('tenant_id', tenantId).in('course_id', courseIds);
+    if (opts.publishedOnly) q = q.eq('status', 'published');
+    const { data } = await q.order('due_at');
+    return data ?? [];
+  }
+
   // ---- rubrics ----
 
   async setRubric(tenantId: number, assignmentId: number, criteria: {
@@ -389,6 +404,35 @@ export class AssignmentsService {
       .filter((s) => s.status === 'graded');
     for (const s of graded) await this.returnToLearner(tenantId, Number(s.id));
     return { returned: graded.length };
+  }
+
+  /**
+   * Marking-queue counts for several assignments at once: how many are
+   * handed in, waiting, marked-but-not-returned, and done.
+   *
+   * A marking screen needs one assignment's full submissions; a dashboard
+   * scanning a dozen assignments for "how many are waiting" only needs
+   * these four numbers per assignment, so this reads every relevant
+   * submission in one query and folds the counts in memory instead of
+   * calling `assignment()` (and its embedded submissions) once per
+   * assignment. Keyed by assignment id -- a plain object, not a Map, since
+   * this crosses into a JSON response.
+   */
+  async submissionCountsBulk(tenantId: number, assignmentIds: number[]) {
+    const counts: Record<number, { total: number; waiting: number; held: number; done: number }> = {};
+    if (!assignmentIds.length) return counts;
+    const { data } = await this.#db.from('onyx_assignment_submissions')
+      .select('assignment_id, status')
+      .eq('tenant_id', tenantId).neq('status', 'draft').in('assignment_id', assignmentIds);
+    for (const s of data ?? []) {
+      const id = Number(s.assignment_id);
+      const c = counts[id] ?? (counts[id] = { total: 0, waiting: 0, held: 0, done: 0 });
+      c.total += 1;
+      if (s.status === 'submitted') c.waiting += 1;
+      if (s.status === 'graded') c.held += 1;
+      if (s.status === 'graded' || s.status === 'returned') c.done += 1;
+    }
+    return counts;
   }
 
   async submissionDetail(tenantId: number, submissionId: number) {

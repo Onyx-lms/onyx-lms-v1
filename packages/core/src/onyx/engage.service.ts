@@ -342,6 +342,24 @@ export class EngageService {
     return data ?? [];
   }
 
+  /**
+   * Open discussions across several courses at once -- for a dashboard's
+   * "any question with no reply" scan, which would otherwise call
+   * `discussions()` once per taught course. The per-course read/enrolment
+   * check `discussions()` makes (`#assertCanRead`) is skipped here: the
+   * caller already teaches every course in the list -- it came from
+   * `teachingFor()` -- which is the same authority `#assertCanRead` would
+   * grant a teacher of the course, one at a time.
+   */
+  async openDiscussionsBulk(tenantId: number, courseIds: number[]) {
+    if (!courseIds.length) return [];
+    const { data } = await this.#db.from('onyx_discussions').select(DISCUSSION_COLUMNS)
+      .eq('tenant_id', tenantId).eq('status', 'open').in('course_id', courseIds)
+      .order('last_post_at', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false });
+    return data ?? [];
+  }
+
   async discussion(tenantId: number, id: number, viewer: { userId: string; role: Role }) {
     const { data } = await this.#db.from('onyx_discussions').select(DISCUSSION_COLUMNS)
       .eq('tenant_id', tenantId).eq('id', id).maybeSingle();

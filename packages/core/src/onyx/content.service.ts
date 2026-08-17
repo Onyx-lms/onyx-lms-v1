@@ -177,6 +177,88 @@ export class ContentService {
   }
 
   /**
+   * The bulk twin of `outline()`, for a learner's own enrolled courses.
+   *
+   * A dashboard building a "resume where you left off" card, or a progress
+   * ring per course, needs the same modules-with-progress shape `outline()`
+   * returns -- but for every enrolled course at once, and it used to get
+   * there by calling `outline()` in a loop, which is three queries
+   * (modules, lessons, progress) times every course. This reads modules,
+   * lessons and progress for the whole course set in three queries total
+   * and folds each course's shape in memory.
+   *
+   * Only ever called with a learner's own enrolled course ids, so unlike
+   * `outline()` there is no staff/enrolment branch to resolve -- every
+   * course in the list is already known to be theirs. Keyed by course id --
+   * a plain object, since this crosses into a JSON response.
+   */
+  async outlinesBulk(tenantId: number, courseIds: number[], userId: string) {
+    const result: Record<number, Awaited<ReturnType<ContentService['outline']>>> = {};
+    if (!courseIds.length) return result;
+
+    const [courses, modulesQ, lessonsQ, progressQ] = await Promise.all([
+      this.#academics.coursesByIds(tenantId, courseIds),
+      this.#db.from('onyx_modules').select(MODULE_COLUMNS)
+        .eq('tenant_id', tenantId).in('course_id', courseIds).order('sort'),
+      this.#db.from('onyx_lessons').select(LESSON_COLUMNS)
+        .eq('tenant_id', tenantId).in('course_id', courseIds).order('sort'),
+      this.#db.from('onyx_lesson_progress').select(PROGRESS_COLUMNS)
+        .eq('tenant_id', tenantId).eq('user_id', userId).in('course_id', courseIds),
+    ]);
+
+    const courseById = new Map(courses.map((c) => [Number(c.id), c]));
+    const modules = modulesQ.data ?? [];
+    const lessons = lessonsQ.data ?? [];
+    const progress = progressQ.data ?? [];
+
+    const modulesByCourse = new Map<number, typeof modules>();
+    for (const m of modules) {
+      const c = Number(m.course_id);
+      const list = modulesByCourse.get(c) ?? [];
+      list.push(m);
+      modulesByCourse.set(c, list);
+    }
+    const lessonsByCourse = new Map<number, typeof lessons>();
+    for (const l of lessons) {
+      const c = Number(l.course_id);
+      const list = lessonsByCourse.get(c) ?? [];
+      list.push(l);
+      lessonsByCourse.set(c, list);
+    }
+    const progressByLesson = new Map(progress.map((p) => [Number(p.lesson_id), p]));
+
+    for (const courseId of courseIds) {
+      const course = courseById.get(courseId);
+      if (!course) continue; // withdrawn or otherwise gone since the id list was built
+
+      const visible = (lessonsByCourse.get(courseId) ?? []).map((l) => {
+        const p = progressByLesson.get(Number(l.id));
+        return {
+          ...l,
+          locked: false, // this course is theirs; nothing on it is locked from them
+          position_seconds: p?.position_seconds ?? 0,
+          completed_at: p?.completed_at ?? null,
+        };
+      });
+      const done = visible.filter((l) => l.completed_at).length;
+
+      result[courseId] = {
+        course,
+        enrolled: true,
+        modules: (modulesByCourse.get(courseId) ?? []).map((m) => ({
+          ...m, lessons: visible.filter((l) => Number(l.module_id) === Number(m.id)),
+        })),
+        progress: {
+          total: visible.length,
+          completed: done,
+          percent: visible.length ? Math.round((done / visible.length) * 100) : 0,
+        },
+      };
+    }
+    return result;
+  }
+
+  /**
    * One lesson, ready to play.
    *
    * Video paths become short-lived signed URLs rather than public ones: course

@@ -228,6 +228,22 @@ export class AcademicsService {
     return data;
   }
 
+  /**
+   * The same course rows `course()` returns, for a whole id list at once.
+   * Written for the callers that already know exactly which courses they
+   * want -- `/my/courses`, a faculty member's taught set -- and used to get
+   * there by calling `course()` once per id. One `.in('id', ids)` query
+   * instead of N `.eq('id', id)` ones; unlike `courses()` this does not
+   * join enrolment counts or faculty, because the callers that have an id
+   * list in hand already know who is on it.
+   */
+  async coursesByIds(tenantId: number, ids: number[]) {
+    if (!ids.length) return [];
+    const { data } = await this.#db.from('onyx_courses')
+      .select(COURSE_COLUMNS).eq('tenant_id', tenantId).in('id', ids);
+    return data ?? [];
+  }
+
   async courseBySlug(tenantId: number, slug: string) {
     const { data } = await this.#db.from('onyx_courses')
       .select(COURSE_COLUMNS).eq('tenant_id', tenantId).eq('slug', slug).maybeSingle();
@@ -408,6 +424,20 @@ export class AcademicsService {
       .select(ENROLLMENT_COLUMNS)
       .eq('tenant_id', tenantId).eq('course_id', courseId).eq('status', 1)
       .order('id');
+    return data ?? [];
+  }
+
+  /**
+   * The active roster for several courses at once -- rows carry `course_id`
+   * so a caller groups them itself. The bulk twin of `roster()`, for a
+   * dashboard reading a dozen taught courses' headcounts, which would
+   * otherwise be a `roster()` call per course.
+   */
+  async rosterBulk(tenantId: number, courseIds: number[]) {
+    if (!courseIds.length) return [];
+    const { data } = await this.#db.from('onyx_enrollments')
+      .select(ENROLLMENT_COLUMNS)
+      .eq('tenant_id', tenantId).eq('status', 1).in('course_id', courseIds);
     return data ?? [];
   }
 

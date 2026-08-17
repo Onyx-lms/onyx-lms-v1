@@ -119,9 +119,18 @@ export default async function OnyxDashboard() {
   ]);
   const mine = courses ?? [];
 
-  const assignmentLists = await Promise.all(mine.map((c) =>
-    onyxApiSafe<Assignment[]>('/api/onyx/courses/' + c.id + '/assignments')
-      .then((list) => (list ?? []).map((a) => ({ ...a, course: c })))));
+  // What is due, and each course's own progress -- used to come from calling
+  // `/courses/:id/assignments` and `/courses/:id/outline` once per course in
+  // `mine`, uncapped. `/my/learning-overview` answers both in one round
+  // trip; this just reshapes that single response the same way the per-
+  // course loop used to.
+  const overview = mine.length
+    ? await onyxApiSafe<{ assignments: Assignment[]; outlines: Record<number, Outline> }>(
+      '/api/onyx/my/learning-overview')
+    : null;
+  const assignmentsByCourse = groupBy(overview?.assignments ?? [], (a) => a.course_id);
+  const assignmentLists = mine.map((c) =>
+    (assignmentsByCourse.get(c.id) ?? []).map((a) => ({ ...a, course: c })));
 
   // Per-course progress, from each course's own outline.
   //
@@ -130,8 +139,7 @@ export default async function OnyxDashboard() {
   // percentage onto every course card -- two different courses both showing
   // "50%" because that was the overall figure. These are the real numbers,
   // and they are what the resume card picks its target from.
-  const outlines = await Promise.all(mine.map((c) =>
-    onyxApiSafe<Outline>('/api/onyx/courses/' + c.id + '/outline')));
+  const outlines = mine.map((c) => overview?.outlines[c.id] ?? null);
   const progressFor = new Map<number, Outline['progress']>();
   mine.forEach((c, i) => {
     const o = outlines[i];
@@ -558,27 +566,58 @@ export default async function OnyxDashboard() {
 
 /* =========================================================== faculty ===== */
 
-/** `/api/onyx/courses/:id` carries the teaching assignment. Nothing else does. */
-interface CourseDetail extends Course { faculty?: { user_id: number }[] }
 interface Member { user_id: number; role: string; user: { name: string } | null }
 
 /**
- * Three caps, because every one of these is a fan-out.
+ * Two caps, because both are still a fan-out at the database, even bulked.
  *
- * There is no "courses I teach" endpoint -- teaching is a link that only
- * `/api/onyx/courses/:id` returns -- so finding them means reading the
- * catalogue and then reading each course. That is fine for a department and
- * silly for a thousand-course institution, so it stops at a sensible depth
- * rather than pretending the page is free.
+ * `/api/onyx/my/teaching-overview` answers "what do I teach" directly now
+ * (`teachingFor()`, one query), so there is no catalogue to scan a limit
+ * over any more. What is still bounded: how many of those taught courses
+ * get the full per-course bundle (roster, assignments, sessions,
+ * discussions, attendance), and how many published assignments get a
+ * marking-queue count -- both still one row read per item even bulked into
+ * a handful of queries, so a very large teaching load still costs a
+ * bounded, predictable amount rather than pretending the page is free.
  */
-const SCAN = 40;   // catalogue rows checked for a teaching link
-const DEEP = 12;   // taught courses given the full per-course fan-out
-const QUEUE = 24;  // published briefs whose marking queue is read
+const DEEP = 12;   // taught courses given the full per-course bundle
+const QUEUE = 24;  // published assignments whose marking queue is read
 
 const minutesOf = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
 const clockOf = (iso: string) =>
   new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 const plural = (n: number, one: string, many = one + 's') => n + ' ' + (n === 1 ? one : many);
+
+/** Buckets a flat, `course_id`-carrying list back into per-course arrays --
+ *  what every `/my/*-overview` bulk response needs turned into before it can
+ *  feed the same per-course rendering this page always rendered from. A
+ *  `function` declaration, not a `const`, so it is usable (like
+ *  `FacultyDashboard` below) above its own point in the file. */
+function groupBy<T, K>(items: T[], keyOf: (item: T) => K): Map<K, T[]> {
+  const map = new Map<K, T[]>();
+  for (const item of items) {
+    const key = keyOf(item);
+    const list = map.get(key);
+    if (list) list.push(item); else map.set(key, [item]);
+  }
+  return map;
+}
+
+/** The shape `/api/onyx/my/teaching-overview` returns -- everything the
+ *  faculty dashboard used to gather with a per-course fan-out, in one call. */
+interface TeachingOverview {
+  taught: Course[];
+  taughtTotal: number;
+  roster: { course_id: number; user_id: string }[];
+  assignments: Assignment[];
+  sessions: AttendanceSession[];
+  discussions: Discussion[];
+  cohort: Record<number, {
+    sessions: number; threshold: number;
+    cohort: { held: number; percent: number; below: number };
+  }>;
+  submissionCounts: Record<number, { total: number; waiting: number; held: number; done: number }>;
+}
 
 /** One line on the Today rail: a scheduled class, or a register to take. */
 interface TodayRow {
@@ -602,58 +641,54 @@ interface TodayRow {
  * that forced a substitution rather than an invention.
  */
 async function FacultyDashboard({ me }: { me: Me }) {
-  const [catalogue, grid, rooms, members] = await Promise.all([
+  const [catalogue, grid, rooms, members, overview] = await Promise.all([
     onyxApiSafe<Course[]>('/api/onyx/courses'),
     onyxApiSafe<TimetableSlot[]>('/api/onyx/timetable?faculty_id=' + me.user_id),
     onyxApiSafe<Room[]>('/api/onyx/rooms'),
     onyxApiSafe<Member[]>('/api/onyx/members'),
+    onyxApiSafe<TeachingOverview>(
+      '/api/onyx/my/teaching-overview?deep=' + DEEP + '&queue=' + QUEUE),
   ]);
 
   const catalog = catalogue ?? [];
   const slots = grid ?? [];
-  const details = await Promise.all(catalog.slice(0, SCAN).map((c) =>
-    onyxApiSafe<CourseDetail>('/api/onyx/courses/' + c.id)));
-  const taught = details.filter((d): d is CourseDetail =>
-    Boolean(d?.faculty?.some((f) => String(f.user_id) === me.user_id)));
 
-  // Everything a course can tell its teacher, per course, in parallel.
-  const packs = await Promise.all(taught.slice(0, DEEP).map(async (course) => {
-    const [roster, assignments, sessions, questions, attendance] = await Promise.all([
-      onyxApiSafe<{ user_id: string }[]>('/api/onyx/courses/' + course.id + '/roster'),
-      onyxApiSafe<Assignment[]>('/api/onyx/courses/' + course.id + '/assignments'),
-      onyxApiSafe<AttendanceSession[]>('/api/onyx/courses/' + course.id + '/attendance'),
-      onyxApiSafe<Discussion[]>('/api/onyx/courses/' + course.id + '/discussions?status=open'),
-      onyxApiSafe<AttendanceAnalytics>(
-        '/api/onyx/courses/' + course.id + '/attendance/analytics'),
-    ]);
-    return {
-      course,
-      roster: roster ?? [],
-      assignments: assignments ?? [],
-      sessions: sessions ?? [],
-      questions: questions ?? [],
-      attendance,
-    };
+  // Everything below used to come from up to SCAN individual course-detail
+  // reads (there was no direct "what do I teach" query, so the page read
+  // the catalogue and checked each course's own faculty list), then DEEP
+  // taught courses times 5 more per-course reads, then up to QUEUE more
+  // per-assignment reads for marking-queue counts -- as many as ~128 round
+  // trips for one page load. `/my/teaching-overview` answers all of it in
+  // one call; this just buckets that single response back into the same
+  // per-course `packs` / `queues` shape the rest of this function has
+  // always rendered from.
+  const taught = overview?.taught ?? [];
+  const taughtTotal = overview?.taughtTotal ?? taught.length;
+  const rosterByCourse = groupBy(overview?.roster ?? [], (r) => r.course_id);
+  const assignmentsByCourse = groupBy(overview?.assignments ?? [], (a) => a.course_id);
+  const sessionsByCourse = groupBy(overview?.sessions ?? [], (s) => s.course_id);
+  const discussionsByCourse = groupBy(overview?.discussions ?? [], (d) => d.course_id);
+  const cohortByCourse = overview?.cohort ?? {};
+
+  const packs = taught.map((course) => ({
+    course,
+    roster: rosterByCourse.get(course.id) ?? [],
+    assignments: assignmentsByCourse.get(course.id) ?? [],
+    sessions: sessionsByCourse.get(course.id) ?? [],
+    questions: discussionsByCourse.get(course.id) ?? [],
+    attendance: cohortByCourse[course.id] ?? null,
   }));
 
-  // The marking queue. `/api/onyx/assignments/:id` returns `submissions` to
-  // staff and nothing to anyone else, so this is the only place the count
-  // exists -- there is no cross-course "unmarked" endpoint to ask instead.
+  // The marking queue -- counts read in bulk by `/my/teaching-overview`
+  // (one query across every published assignment) instead of one
+  // `/api/onyx/assignments/:id` call per assignment.
   const briefs = packs.flatMap((p) => p.assignments
     .filter((a) => a.status === 'published')
     .map((a) => ({ assignment: a, course: p.course })));
-  const queues = await Promise.all(briefs.slice(0, QUEUE).map(async (b) => {
-    const full = await onyxApiSafe<Assignment>('/api/onyx/assignments/' + b.assignment.id);
-    const subs = full?.submissions ?? [];
-    return {
-      ...b,
-      total: subs.length,
-      waiting: subs.filter((s) => s.status === 'submitted').length,
-      // Marked but never released. Invisible to the learner, and the one
-      // backlog nobody notices because it does not look like a backlog.
-      held: subs.filter((s) => s.status === 'graded').length,
-      done: subs.filter((s) => s.status === 'graded' || s.status === 'returned').length,
-    };
+  const submissionCounts = overview?.submissionCounts ?? {};
+  const queues = briefs.map((b) => ({
+    ...b,
+    ...(submissionCounts[b.assignment.id] ?? { total: 0, waiting: 0, held: 0, done: 0 }),
   }));
 
   const toMark = queues.filter((q) => q.waiting > 0).sort((a, b) => b.waiting - a.waiting);
@@ -1118,10 +1153,10 @@ async function FacultyDashboard({ me }: { me: Me }) {
             </RowList>
           </section>
 
-          {catalog.length > SCAN ? (
+          {taughtTotal > DEEP ? (
             <Banner tone="info" icon="alert">
-              This looks at the first {SCAN} courses in the catalogue for your teaching
-              assignments. Anything beyond that is on the course itself.
+              You teach {taughtTotal} courses; this covers the first {DEEP}. Anything beyond
+              that is on the course itself.
             </Banner>
           ) : null}
 

@@ -332,9 +332,82 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
       ...enrollments.map((e) => Number(e.course_id)),
       ...teaching,
     ])];
-    const courses = await Promise.all(courseIds.map((id) =>
-      ctx.onyxAcademics.course(claims.tenant_id, id)));
-    return ok(courses);
+    // One `.in('id', ids)` query, not one `course()` call per id -- every
+    // screen built on this endpoint (the catalogue's "my courses", the
+    // dashboard, a workspace's course picker) used to pay for that loop.
+    return ok(await ctx.onyxAcademics.coursesByIds(claims.tenant_id, courseIds));
+  });
+
+  /**
+   * Everything the faculty dashboard needs about the courses this person
+   * teaches, in one round trip.
+   *
+   * Before this existed, that page found "what do I teach" by reading up to
+   * `deep` catalogue rows one at a time (there was no direct query for it),
+   * then read roster/assignments/sessions/discussions/attendance for each
+   * taught course with five more calls apiece, then read one more call per
+   * published assignment for its marking-queue count -- as many as a
+   * hundred-plus round trips for a single page. `teachingFor()` already
+   * answers "what do I teach" in one query; everything below is that plus
+   * five bulk reads across the taught set instead of that many per-course
+   * ones, plus one more bulk read for marking-queue counts.
+   *
+   * `deep`/`queue` mirror the page's own SCAN/DEEP/QUEUE caps -- how many
+   * taught courses get the full per-course bundle, and how many published
+   * assignments get a submission count -- so a very large teaching load
+   * still costs a bounded, predictable number of rows read, not an
+   * unbounded one.
+   */
+  app.get('/api/onyx/my/teaching-overview', async (req) => {
+    const claims = await requireOnyxRole(asReq(req), ctx.jwtSecret, 'admin', 'faculty');
+    const query = req.query as Record<string, string>;
+    const deep = Math.max(0, Math.min(50, Number(query.deep) || 12));
+    const queueCap = Math.max(0, Math.min(200, Number(query.queue) || 24));
+
+    const allTaughtIds = await ctx.onyxAcademics.teachingFor(claims.tenant_id, claims.user_id);
+    const taughtIds = allTaughtIds.slice(0, deep);
+
+    const [taught, roster, assignments, sessions, discussions, cohort] = await Promise.all([
+      ctx.onyxAcademics.coursesByIds(claims.tenant_id, taughtIds),
+      ctx.onyxAcademics.rosterBulk(claims.tenant_id, taughtIds),
+      ctx.onyxAssignments.listBulk(claims.tenant_id, taughtIds),
+      ctx.onyxAttendance.sessionsBulk(claims.tenant_id, taughtIds),
+      ctx.onyxEngage.openDiscussionsBulk(claims.tenant_id, taughtIds),
+      ctx.onyxAttendance.cohortBulk(claims.tenant_id, taughtIds),
+    ]);
+
+    const publishedIds = assignments
+      .filter((a) => a.status === 'published')
+      .slice(0, queueCap)
+      .map((a) => Number(a.id));
+    const submissionCounts = await ctx.onyxAssignments.submissionCountsBulk(
+      claims.tenant_id, publishedIds);
+
+    return ok({
+      taught, taughtTotal: allTaughtIds.length,
+      roster, assignments, sessions, discussions, cohort, submissionCounts,
+    });
+  });
+
+  /**
+   * Everything the student dashboard needs about this learner's enrolled
+   * courses, in one round trip: what is due, and each course's own
+   * progress (for a progress ring and the "resume where you left off"
+   * card). Before this, the page called `/courses/:id/assignments` and
+   * `/courses/:id/outline` once per enrolled course -- two calls times
+   * every course a learner is on, uncapped.
+   */
+  app.get('/api/onyx/my/learning-overview', async (req) => {
+    const claims = await requireOnyx(asReq(req), ctx.jwtSecret);
+    const enrollments = await ctx.onyxAcademics.enrollmentsFor(claims.tenant_id, claims.user_id);
+    const courseIds = [...new Set(enrollments.map((e) => Number(e.course_id)))];
+
+    const [assignments, outlines] = await Promise.all([
+      ctx.onyxAssignments.listBulk(claims.tenant_id, courseIds, { publishedOnly: true }),
+      ctx.onyxContent.outlinesBulk(claims.tenant_id, courseIds, claims.user_id),
+    ]);
+
+    return ok({ assignments, outlines });
   });
 
   app.get('/api/onyx/courses/:id/roster', async (req) => {

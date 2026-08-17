@@ -94,6 +94,15 @@ export class AttendanceService {
     return data ?? [];
   }
 
+  /** The bulk twin of `sessions()` -- one query across several courses. */
+  async sessionsBulk(tenantId: number, courseIds: number[]) {
+    if (!courseIds.length) return [];
+    const { data } = await this.#db.from('onyx_attendance_sessions')
+      .select(SESSION_COLUMNS).eq('tenant_id', tenantId).in('course_id', courseIds)
+      .order('scheduled_at', { ascending: false });
+    return data ?? [];
+  }
+
   async session(tenantId: number, id: number) {
     const { data } = await this.#db.from('onyx_attendance_sessions')
       .select(SESSION_COLUMNS).eq('tenant_id', tenantId).eq('id', id).maybeSingle();
@@ -330,6 +339,99 @@ export class AttendanceService {
       learners,
       cohort: { held: sessions.length, percent: cohortPercent, below },
     };
+  }
+
+  /**
+   * The cohort half of `courseAnalytics()` -- `{ sessions, cohort }` only,
+   * no per-learner breakdown -- for several courses in one round trip.
+   *
+   * A dashboard scanning a dozen taught courses for "who has fallen below
+   * the threshold" only reads `cohort.below`; it never needed the
+   * per-learner rows `courseAnalytics()` builds, and calling it once per
+   * course was two queries (sessions, then records) times every course.
+   * This reads sessions and records for the whole set in two queries total,
+   * then computes the same percentages `courseAnalytics()` does, per
+   * course, in memory. Keyed by course id -- a plain object, since this
+   * crosses into a JSON response.
+   */
+  async cohortBulk(tenantId: number, courseIds: number[], threshold = 75) {
+    const results: Record<number, {
+      sessions: number; threshold: number;
+      cohort: { held: number; percent: number; below: number };
+    }> = {};
+    if (!courseIds.length) return results;
+
+    type SessionRow = Awaited<ReturnType<AttendanceService['sessionsBulk']>>[number];
+    type RosterRow = Awaited<ReturnType<AcademicsService['rosterBulk']>>[number];
+    type RecordRow = { session_id: number | string; user_id: number | string; status: string };
+
+    const [sessions, roster] = await Promise.all([
+      this.sessionsBulk(tenantId, courseIds),
+      this.#academics.rosterBulk(tenantId, courseIds),
+    ]);
+    const sessionsByCourse = new Map<number, SessionRow[]>();
+    for (const s of sessions) {
+      const c = Number(s.course_id);
+      const list = sessionsByCourse.get(c) ?? [];
+      list.push(s);
+      sessionsByCourse.set(c, list);
+    }
+    const rosterByCourse = new Map<number, RosterRow[]>();
+    for (const e of roster) {
+      const c = Number(e.course_id);
+      const list = rosterByCourse.get(c) ?? [];
+      list.push(e);
+      rosterByCourse.set(c, list);
+    }
+
+    const sessionIds = sessions.map((s) => Number(s.id));
+    const { data: recordData } = sessionIds.length
+      ? await this.#db.from('onyx_attendance_records')
+        .select(RECORD_COLUMNS).eq('tenant_id', tenantId).in('session_id', sessionIds)
+      : { data: [] as RecordRow[] };
+    const records: RecordRow[] = recordData ?? [];
+    const recordsBySession = new Map<number, RecordRow[]>();
+    for (const r of records) {
+      const s = Number(r.session_id);
+      const list = recordsBySession.get(s) ?? [];
+      list.push(r);
+      recordsBySession.set(s, list);
+    }
+
+    for (const courseId of courseIds) {
+      const courseSessions = sessionsByCourse.get(courseId) ?? [];
+      const courseRoster = rosterByCourse.get(courseId) ?? [];
+      if (!courseSessions.length) {
+        results[courseId] = { sessions: 0, threshold, cohort: { held: 0, percent: 0, below: 0 } };
+        continue;
+      }
+      const held = courseSessions.length;
+      // Every record from this course's sessions, grouped by learner once,
+      // rather than re-filtered out of the full record set per learner.
+      const byUser = new Map<string, RecordRow[]>();
+      for (const s of courseSessions) {
+        for (const r of recordsBySession.get(Number(s.id)) ?? []) {
+          const u = String(r.user_id);
+          const list = byUser.get(u) ?? [];
+          list.push(r);
+          byUser.set(u, list);
+        }
+      }
+      const percents = courseRoster.map((e) => {
+        const mine = byUser.get(String(e.user_id)) ?? [];
+        const excused = mine.filter((r) => r.status === 'excused').length;
+        const attended = mine.filter((r) => ATTENDED.includes(r.status as AttendanceStatus)).length;
+        const counted = held - excused;
+        return counted > 0 ? Math.round((attended / counted) * 1000) / 10 : 100;
+      });
+
+      const below = percents.filter((p) => p < threshold).length;
+      const cohortPercent = percents.length
+        ? Math.round((percents.reduce((sum, p) => sum + p, 0) / percents.length) * 10) / 10
+        : 0;
+      results[courseId] = { sessions: held, threshold, cohort: { held, percent: cohortPercent, below } };
+    }
+    return results;
   }
 
   /**
