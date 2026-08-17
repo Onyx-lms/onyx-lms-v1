@@ -46,7 +46,19 @@ async function forward(request: Request, path: string[], method: string) {
   // catches null and undefined -- so zod was handed a string and refused it
   // with "The given data was invalid". Every bodyless POST through here
   // (enrol, publish, claim) hit that.
-  const raw = ['GET', 'DELETE'].includes(method) ? '' : await request.text();
+  //
+  // DELETE used to be lumped in with GET here on the assumption a DELETE
+  // never carries one -- it usually doesn't, but several routes on this API
+  // deliberately require one (deleting an institution needs its name typed
+  // back as `confirm_name`, removing a member/section/question can take a
+  // body too). Grouped with GET, every one of those silently had its body
+  // discarded before it ever reached the API, which validated an empty
+  // request and refused it with "The given data was invalid" -- a
+  // confirmation dialog whose confirmation button always failed. GET stays
+  // bodyless because it structurally cannot carry one; DELETE reads its body
+  // exactly like POST/PATCH/PUT, and empty-string collapsing above already
+  // covers the common bodyless-DELETE case.
+  const raw = method === 'GET' ? '' : await request.text();
   const body = raw === '' ? undefined : raw;
 
   // Only declare a JSON body when there actually is one. Fastify rejects a
