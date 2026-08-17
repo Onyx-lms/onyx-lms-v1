@@ -468,7 +468,7 @@ async function patch(path: string, body: unknown) {
 const ROLE_OPTIONS = ['student', 'faculty', 'exams', 'placement', 'employer', 'admin', 'guardian'];
 
 export interface PlatformPerson {
-  membership_id: number; user_id: number; name: string; email: string;
+  membership_id: number; user_id: string; name: string; email: string;
   phone: string | null; role: string; membership_status: number; account_status: number;
 }
 
@@ -750,9 +750,9 @@ export function AssessmentGradeActions({ tenantId, attemptId, score, maxScore }:
 function SubmissionCard({ tenantId, submission, onGraded }: {
   tenantId: number;
   submission: {
-    id: number; user_id: number; status: string; attempt: number;
+    id: number; user_id: string; status: string; attempt: number;
     submitted_at: string | null; is_late: number; score: number | null; feedback: string | null;
-    student: { id: number; name: string; email: string } | null;
+    student: { id: string; name: string; email: string } | null;
   };
   onGraded: () => void;
 }) {
@@ -870,9 +870,9 @@ export function AssignmentSubmissionsToggle({ tenantId, assignmentId }: {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<Array<{
-    id: number; user_id: number; status: string; attempt: number;
+    id: number; user_id: string; status: string; attempt: number;
     submitted_at: string | null; is_late: number; score: number | null; feedback: string | null;
-    student: { id: number; name: string; email: string } | null;
+    student: { id: string; name: string; email: string } | null;
   }> | null>(null);
 
   async function load() {
