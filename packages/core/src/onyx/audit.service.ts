@@ -33,7 +33,7 @@ export type AuditAction =
   | 'timetable.published' | 'exam.scheduled' | 'exam.updated' | 'seating.allocated'
   | 'marks.entered' | 'marks.moderated' | 'marks.overridden' | 'assessment.updated'
   | 'invoice.issued' | 'guardian.linked' | 'guardian.consent_changed'
-  | 'course.faculty_assigned' | 'course.faculty_removed'
+  | 'course.faculty_assigned' | 'course.faculty_removed' | 'course.removed'
   // Changing where an institution's fees settle to is a finance-grade event,
   // so it is logged like one. The entry names which credentials were written,
   // never their values.

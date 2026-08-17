@@ -11,7 +11,9 @@ import {
 } from '@/lib/onyx-learn';
 import type { Discussion } from '@/lib/onyx-campus';
 import { CreatePanel, ActionButton } from '@/components/onyx-create';
-import { CourseFacultyManager, CourseRosterManager, CourseSettingsForm } from '@/components/onyx-manage';
+import {
+  CourseFacultyManager, CourseRosterManager, CourseSettingsForm, DeleteCourseButton,
+} from '@/components/onyx-manage';
 import {
   Banner, Card, Empty, Hero, Icon, ListRow, Meter, Pill, RowList, SectionHead,
   relativeDue, type IconName,
@@ -516,6 +518,27 @@ export default async function OnyxCoursePage({ params }: { params: Promise<{ id:
                 <p className="mt-3 border-t border-line pt-3 text-xs text-muted">
                   Download links are issued when you click and expire in five minutes.
                 </p>
+              </Card>
+            </section>
+          ) : null}
+
+          {/* Down here, not next to "Edit course details" above, same
+              reasoning as the exam page's own Danger zone: read past what
+              the course actually is before reaching the one control that
+              removes it outright. Same boundary as "Course details" above
+              -- admin, or this course's own faculty. */}
+          {me.role === 'admin' || (me.role === 'faculty' && roster !== null) ? (
+            <section>
+              <SectionHead title="Danger zone" />
+              <Card className="border-red-200 p-4">
+                <p className="text-[13px] text-muted">
+                  Removes this course and everything on it — modules, lessons, enrolments,
+                  assignments, attendance and exams. A bank, assessment or certificate that
+                  drew on it survives, unlinked from any one course.
+                </p>
+                <div className="mt-3 border-t border-red-100 pt-3">
+                  <DeleteCourseButton courseId={Number(id)} />
+                </div>
               </Card>
             </section>
           ) : null}

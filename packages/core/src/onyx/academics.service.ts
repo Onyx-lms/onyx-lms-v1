@@ -282,6 +282,37 @@ export class AcademicsService {
     return this.course(tenantId, id);
   }
 
+  /**
+   * Removes a course outright.
+   *
+   * Everything that hangs off it goes too, at the database: faculty
+   * allocations, enrolments, modules (and their lessons and lesson
+   * progress), resources, attendance sessions (and their records),
+   * assignments (and their rubric criteria, submissions, scores),
+   * discussions, timetable slots and exams (and their seating and marks)
+   * are all ON DELETE CASCADE on course_id (confirmed against
+   * 0002_learn.sql, 0007_engage.sql, 0008_campus.sql). A question bank, an
+   * assessment, a problem/workspace, a certificate or a support ticket
+   * that happened to draw on this course survives with course_id set to
+   * null instead -- those belong to the institution, not to any one
+   * course, the same reasoning ExaminationsService.remove() gives for
+   * leaving an exam's linked assessment untouched.
+   *
+   * Same authorization the route applies before calling this
+   * (requireCourseManager, admin or this course's own faculty) -- this is
+   * the role-only backstop that pattern always keeps alongside the
+   * course-scoped check.
+   */
+  async remove(tenantId: number, id: number, role: Role): Promise<void> {
+    if (role !== 'admin' && role !== 'faculty') {
+      throw new HttpError(403, 'Only an administrator or the course’s own faculty can remove a course.');
+    }
+    await this.course(tenantId, id); // 404s cleanly if it does not exist
+    const { error } = await this.#db.from('onyx_courses')
+      .delete().eq('tenant_id', tenantId).eq('id', id);
+    if (error) throw new HttpError(500, 'Could not remove the course: ' + error.message);
+  }
+
   // ---- who teaches what ----
 
   /**

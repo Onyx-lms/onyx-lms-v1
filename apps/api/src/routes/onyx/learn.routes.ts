@@ -225,6 +225,25 @@ export function registerOnyxLearnRoutes(app: FastifyInstance, ctx: AppContext): 
   });
 
   /**
+   * Removes a course outright. Same guard as editing one -- an
+   * administrator, or the course's own faculty (requireCourseManager) --
+   * not a separately restricted action, matching how this codebase
+   * already treats edit and delete as one authorization boundary
+   * elsewhere (see DELETE /api/onyx/exams/:id).
+   */
+  app.delete('/api/onyx/courses/:id', async (req) => {
+    const claims = await requireCourseManager(req, idOf(req));
+    const course = await ctx.onyxAcademics.course(claims.tenant_id, idOf(req));
+    await ctx.onyxAcademics.remove(claims.tenant_id, idOf(req), claims.tenant_role);
+    await ctx.onyxAudit.record(claims, {
+      action: 'course.removed', entityType: 'course', entityId: idOf(req),
+      before: { code: course.code, title: course.title, status: course.status },
+      after: null, ip: ipOf(req),
+    });
+    return ok({}, 'Removed.');
+  });
+
+  /**
    * Open a course to learners, and close it again.
    *
    * The same thing is expressible as PATCH { status }, but assignments and

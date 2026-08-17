@@ -335,6 +335,12 @@ export function registerOnyxPlatformRoutes(app: FastifyInstance, ctx: AppContext
       idOf(req), subIdOf(req, 'courseId'), claims.user_id, body), 'Updated.');
   });
 
+  app.delete('/api/onyx/platform/tenants/:id/courses/:courseId', async (req) => {
+    const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
+    await ctx.onyxPlatform.deleteCourse(idOf(req), subIdOf(req, 'courseId'), claims.user_id);
+    return ok({}, 'Removed.');
+  });
+
   app.patch('/api/onyx/platform/tenants/:id/assignments/:assignmentId', async (req) => {
     const claims = await requirePlatformAdmin(asReq(req), ctx.jwtSecret);
     const body = validate(z.object({

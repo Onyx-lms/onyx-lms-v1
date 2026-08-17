@@ -982,6 +982,59 @@ export function CourseEditToggle({ tenantId, course }: {
   );
 }
 
+/**
+ * Removes a course outright, from the platform console -- an operator
+ * acting on a tenant's behalf. Everything on it (modules, lessons,
+ * enrolments, assignments, attendance, exams and their marks) cascades at
+ * the database; a bank, assessment, problem or certificate that drew on it
+ * survives, unlinked. A course is a smaller blast radius than a whole
+ * institution, so this asks a plain yes/no rather than DeleteTenantButton's
+ * type-the-name confirmation.
+ */
+export function CourseDeleteButton({ tenantId, course }: {
+  tenantId: number; course: { id: number; title: string };
+}) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  if (!confirming) {
+    return (
+      <button type="button" onClick={() => setConfirming(true)}
+        className="rounded-lg border border-red-600 px-3 py-1.5 text-xs text-red-700">
+        Delete
+      </button>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center justify-end gap-1.5">
+      <span className="max-w-[14rem] truncate text-[12px] text-muted">
+        Delete {course.title}?
+      </span>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => start(async () => {
+          setError(null);
+          const res = await post(
+            'onyx/platform/tenants/' + tenantId + '/courses/' + course.id, undefined, 'DELETE');
+          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+          router.refresh();
+        })}
+        className="text-[12.5px] font-bold text-red-700 hover:underline disabled:opacity-50"
+      >
+        {pending ? 'Deleting…' : 'Yes'}
+      </button>
+      <button type="button" onClick={() => setConfirming(false)}
+        className="text-[12.5px] text-muted hover:underline">
+        No
+      </button>
+      {error ? <span role="alert" className="text-[12px] text-red-700">{error}</span> : null}
+    </div>
+  );
+}
+
 /** Edit an assignment's title, due date, points or status directly. */
 export function AssignmentEditToggle({ tenantId, assignment }: {
   tenantId: number;

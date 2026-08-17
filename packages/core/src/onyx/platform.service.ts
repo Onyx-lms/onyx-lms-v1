@@ -1373,6 +1373,25 @@ export class PlatformService {
     return { ...course, ...after };
   }
 
+  /**
+   * Removes a course outright, from the platform console -- an operator
+   * acting on a tenant's behalf, same as createCourse/updateCourse above.
+   * Everything that hangs off it cascades at the database (see
+   * AcademicsService.remove()'s own comment for the full table list); a
+   * question bank, assessment, problem/workspace, certificate or ticket
+   * that drew on it survives with course_id set to null instead.
+   */
+  async deleteCourse(tenantId: number, courseId: number, actorId: string | null): Promise<void> {
+    const { data: course } = await this.#db.from('onyx_courses')
+      .select('id, tenant_id, title, code').eq('id', courseId).maybeSingle();
+    if (!course || Number(course.tenant_id) !== tenantId) throw new HttpError(404, 'No such course.');
+
+    const { error } = await this.#db.from('onyx_courses').delete().eq('id', courseId);
+    if (error) throw new HttpError(500, 'Could not remove the course: ' + error.message);
+    await this.#log(actorId, 'course.removed', 'course', courseId,
+      { code: course.code, title: course.title }, null);
+  }
+
   async createAssignment(tenantId: number, actorId: string | null, input: {
     course_id: number; title: string; due_at?: string | null; total_points?: number;
   }) {

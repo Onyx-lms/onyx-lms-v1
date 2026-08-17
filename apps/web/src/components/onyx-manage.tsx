@@ -2398,6 +2398,54 @@ export function CourseSettingsForm({ courseId, course }: {
   );
 }
 
+/**
+ * Removes a course outright -- everything on it (modules, lessons,
+ * enrolments, assignments, attendance, exams and their marks) cascades at
+ * the database; see AcademicsService.remove()'s own comment for the full
+ * table list and for what deliberately survives instead (a bank, an
+ * assessment, a problem, a certificate). `DELETE /api/onyx/courses/:id`
+ * shares the same guard as editing one -- an administrator, or this
+ * course's own faculty -- not a separately restricted action.
+ */
+export function DeleteCourseButton({ courseId }: { courseId: number }) {
+  const router = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [pending, start] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  if (!confirming) {
+    return (
+      <button type="button" onClick={() => setConfirming(true)}
+        className="inline-flex min-h-[38px] items-center gap-2 rounded-2xl border
+                   border-rose-600 px-3.5 text-[13px] font-bold text-rose-700
+                   hover:bg-rose-50">
+        <Icon name="trash" className="h-4 w-4" />Delete course
+      </button>
+    );
+  }
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      <span className="text-[13px] font-semibold text-rose-700">
+        Delete this course, and everything on it, for good?
+      </span>
+      <button type="button" disabled={pending}
+        className="rounded-xl bg-rose-600 px-3 py-2 text-[13px] font-bold text-white
+                   disabled:opacity-60"
+        onClick={() => start(async () => {
+          setError(null);
+          const res = await send('courses/' + courseId, undefined, 'DELETE');
+          if (!res.ok) { setError(res.message ?? 'That did not work.'); return; }
+          router.push('/onyx/courses');
+          router.refresh();
+        })}>
+        {pending ? 'Deleting…' : 'Delete'}
+      </button>
+      <button type="button" onClick={() => setConfirming(false)} className={ghost}>Cancel</button>
+      {error ? <span role="alert" className="text-[13px] text-rose-700">{error}</span> : null}
+    </span>
+  );
+}
+
 /* -------------------------------------------------- CMP-02: exam papers ---- */
 
 const OPTION_IDS = ['a', 'b', 'c', 'd'] as const;
